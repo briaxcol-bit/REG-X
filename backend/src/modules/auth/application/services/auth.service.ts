@@ -40,6 +40,7 @@ export class AuthService {
     })
 
     if (error || !data.user) {
+      this.logger.error(`Login failed for ${email}: ${error?.message} (status: ${error?.status})`)
       throw new UnauthorizedException('Invalid credentials')
     }
 
