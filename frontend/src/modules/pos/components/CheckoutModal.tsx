@@ -86,7 +86,7 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-white/10 bg-grafito-900 shadow-2xl"
+            className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-grafito-200 dark:border-white/10 bg-white dark:bg-grafito-900 shadow-2xl"
           >
             {success ? (
               // ── Success state ──────────────────────────
@@ -99,31 +99,31 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
                 >
                   <CheckCircle2 className="h-10 w-10 text-green-400" />
                 </motion.div>
-                <h3 className="text-xl font-bold text-white">¡Venta completada!</h3>
-                <p className="text-grafito-400">
+                <h3 className="text-xl font-bold text-grafito-900 dark:text-white">¡Venta completada!</h3>
+                <p className="text-grafito-500 dark:text-grafito-400">
                   {formatCurrency(total, currency)} cobrado exitosamente
                 </p>
                 {change > 0 && (
                   <div className="rounded-xl bg-green-500/10 px-6 py-3 text-center">
-                    <p className="text-xs text-grafito-400">Cambio</p>
+                    <p className="text-xs text-grafito-500 dark:text-grafito-400">Cambio</p>
                     <p className="text-2xl font-bold text-green-400">{formatCurrency(change, currency)}</p>
                   </div>
                 )}
-                <button className="flex items-center gap-2 rounded-lg bg-grafito-800 px-4 py-2 text-sm text-grafito-300 hover:bg-grafito-700 transition-colors">
+                <button className="flex items-center gap-2 rounded-lg bg-grafito-100 dark:bg-grafito-800 px-4 py-2 text-sm text-grafito-600 dark:text-grafito-300 hover:bg-grafito-200 dark:hover:bg-grafito-700 transition-colors">
                   <Printer className="h-4 w-4" /> Imprimir recibo
                 </button>
               </div>
             ) : (
               <>
                 {/* ── Header ────────────────────────────── */}
-                <div className="flex items-center justify-between border-b border-white/5 p-6">
+                <div className="flex items-center justify-between border-b border-grafito-200 dark:border-white/5 p-6">
                   <div>
-                    <h3 className="text-lg font-semibold text-white">Cobrar venta</h3>
+                    <h3 className="text-lg font-semibold text-grafito-900 dark:text-white">Cobrar venta</h3>
                     <p className="text-2xl font-bold text-brand-400 mt-0.5">
                       {formatCurrency(total, currency)}
                     </p>
                   </div>
-                  <button onClick={onClose} className="rounded-lg p-2 text-grafito-400 hover:bg-white/5">
+                  <button onClick={onClose} className="rounded-lg p-2 text-grafito-500 dark:text-grafito-400 hover:bg-grafito-100 dark:hover:bg-white/5">
                     <X className="h-5 w-5" />
                   </button>
                 </div>
@@ -139,13 +139,13 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
                           'flex flex-col items-center gap-1.5 rounded-xl p-3 border transition-all',
                           selectedMethod === method
                             ? 'border-brand-500 bg-brand-500/10'
-                            : 'border-white/5 bg-grafito-800 hover:border-white/20',
+                            : 'border-grafito-200 dark:border-white/5 bg-grafito-100 dark:bg-grafito-800 hover:border-white/20',
                         )}
                       >
                         <div className={cn('flex h-8 w-8 items-center justify-center rounded-lg', color)}>
                           <Icon className="h-4 w-4" />
                         </div>
-                        <span className="text-xs font-medium text-white">{label}</span>
+                        <span className="text-xs font-medium text-grafito-900 dark:text-white">{label}</span>
                       </button>
                     ))}
                   </div>
@@ -153,13 +153,13 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
                   {/* Cash input */}
                   {selectedMethod === 'CASH' && (
                     <div className="space-y-3">
-                      <label className="text-sm text-grafito-400">Efectivo recibido</label>
+                      <label className="text-sm text-grafito-500 dark:text-grafito-400">Efectivo recibido</label>
                       <input
                         type="number"
                         value={cashInput}
                         onChange={(e) => setCashInput(e.target.value)}
                         placeholder={formatCurrency(total, currency)}
-                        className="w-full rounded-xl bg-grafito-800 border border-white/10 px-4 py-3 text-xl font-bold text-white placeholder:text-grafito-600 outline-none focus:border-brand-500"
+                        className="w-full rounded-xl bg-grafito-100 dark:bg-grafito-800 border border-grafito-200 dark:border-white/10 px-4 py-3 text-xl font-bold text-grafito-900 dark:text-white placeholder:text-grafito-400 dark:placeholder:text-grafito-600 outline-none focus:border-brand-500"
                         autoFocus
                       />
                       {/* Quick amounts */}
@@ -170,15 +170,15 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
                             <button
                               key={amount}
                               onClick={() => setCashInput(amount.toFixed(2))}
-                              className="rounded-lg bg-grafito-800 py-2 text-xs font-medium text-grafito-300 hover:bg-grafito-700 transition-colors border border-white/5"
+                              className="rounded-lg bg-grafito-100 dark:bg-grafito-800 py-2 text-xs font-medium text-grafito-600 dark:text-grafito-300 hover:bg-grafito-200 dark:hover:bg-grafito-700 transition-colors border border-grafito-200 dark:border-white/5"
                             >
                               {formatCurrency(amount, currency)}
                             </button>
                           ))}
                       </div>
                       {cashReceived > 0 && (
-                        <div className="flex items-center justify-between rounded-xl bg-grafito-800 px-4 py-3">
-                          <span className="text-sm text-grafito-400">Cambio</span>
+                        <div className="flex items-center justify-between rounded-xl bg-grafito-100 dark:bg-grafito-800 px-4 py-3">
+                          <span className="text-sm text-grafito-500 dark:text-grafito-400">Cambio</span>
                           <span className={cn('text-lg font-bold', change > 0 ? 'text-green-400' : 'text-red-400')}>
                             {formatCurrency(change, currency)}
                           </span>
@@ -189,7 +189,7 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
                 </div>
 
                 {/* Confirm */}
-                <div className="border-t border-white/5 p-6">
+                <div className="border-t border-grafito-200 dark:border-white/5 p-6">
                   <motion.button
                     whileTap={{ scale: 0.98 }}
                     onClick={handleComplete}
@@ -197,8 +197,8 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
                     className={cn(
                       'flex w-full items-center justify-center gap-2 rounded-xl py-4 font-bold text-base transition-all',
                       canComplete && !isPending
-                        ? 'bg-brand-500 text-white hover:bg-brand-600'
-                        : 'bg-grafito-800 text-grafito-600 cursor-not-allowed',
+                        ? 'bg-brand-500 text-grafito-900 dark:text-white hover:bg-brand-600'
+                        : 'bg-grafito-100 dark:bg-grafito-800 text-grafito-600 cursor-not-allowed',
                     )}
                   >
                     {isPending ? (

@@ -28,18 +28,18 @@ export function CustomerPicker({ open, onClose, onSelect }: CustomerPickerProps)
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="fixed left-1/2 top-1/4 z-50 w-full max-w-sm -translate-x-1/2 rounded-2xl border border-white/10 bg-grafito-900 shadow-2xl overflow-hidden"
+            className="fixed left-1/2 top-1/4 z-50 w-full max-w-sm -translate-x-1/2 rounded-2xl border border-grafito-200 dark:border-white/10 bg-white dark:bg-grafito-900 shadow-2xl overflow-hidden"
           >
-            <div className="flex items-center gap-2 border-b border-white/5 px-4 py-3">
-              <Search className="h-4 w-4 text-grafito-400" />
+            <div className="flex items-center gap-2 border-b border-grafito-200 dark:border-white/5 px-4 py-3">
+              <Search className="h-4 w-4 text-grafito-500 dark:text-grafito-400" />
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Buscar cliente…"
-                className="flex-1 bg-transparent text-sm text-white placeholder:text-grafito-500 outline-none"
+                className="flex-1 bg-transparent text-sm text-grafito-900 dark:text-white placeholder:text-grafito-400 dark:placeholder:text-grafito-500 outline-none"
                 autoFocus
               />
-              <button onClick={onClose}><X className="h-4 w-4 text-grafito-400" /></button>
+              <button onClick={onClose}><X className="h-4 w-4 text-grafito-500 dark:text-grafito-400" /></button>
             </div>
 
             <div className="max-h-64 overflow-y-auto">
@@ -50,14 +50,14 @@ export function CustomerPicker({ open, onClose, onSelect }: CustomerPickerProps)
                   <button
                     key={c.id}
                     onClick={() => onSelect(c.id)}
-                    className="flex w-full items-center gap-3 px-4 py-3 hover:bg-grafito-800 transition-colors"
+                    className="flex w-full items-center gap-3 px-4 py-3 hover:bg-grafito-100 dark:bg-grafito-800 transition-colors"
                   >
                     <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-500/20">
                       <UserCircle className="h-4 w-4 text-brand-400" />
                     </div>
                     <div className="text-left">
-                      <p className="text-sm font-medium text-white">{c.fullName}</p>
-                      <p className="text-xs text-grafito-400">{c.email ?? c.phone ?? ''}</p>
+                      <p className="text-sm font-medium text-grafito-900 dark:text-white">{c.fullName}</p>
+                      <p className="text-xs text-grafito-500 dark:text-grafito-400">{c.email ?? c.phone ?? ''}</p>
                     </div>
                   </button>
                 ))

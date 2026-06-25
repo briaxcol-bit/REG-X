@@ -3,23 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence, useAnimation } from 'framer-motion'
 import { LogIn, Key, Mail, ShieldAlert, Eye, EyeOff, X, FileText } from 'lucide-react'
 import { useAuthStore } from '@store/auth.store'
-import { api } from '@lib/api'
 import { useTheme } from '@shared/hooks/useTheme'
-
-interface LoginResponse {
-  data: {
-    tokens: {
-      accessToken:  string
-      refreshToken: string
-      expiresIn:    number
-    }
-    user: {
-      id:       string
-      email:    string
-      fullName: string
-    }
-  }
-}
 
 // ── Glass Input wrapper ──────────────────────────────────────────────────────
 
@@ -36,15 +20,17 @@ function GlassInput({ children }: { children: React.ReactNode }) {
   }
 
   const darkStyle = {
-    background: 'rgba(8, 12, 20, 0.75)',
-    border: '1px solid rgba(255,255,255,0.08)',
-    borderTopColor: 'rgba(255,255,255,0.14)',
+    background: 'linear-gradient(160deg, rgba(255,255,255,0.11) 0%, rgba(255,255,255,0.03) 60%, rgba(255,255,255,0.06) 100%)',
+    border: '1px solid rgba(255,255,255,0.14)',
+    borderTopColor: 'rgba(255,255,255,0.25)',
     boxShadow: `
-      inset 0 1px 0 rgba(255,255,255,0.08),
-      0 4px 20px rgba(0,0,0,0.35)
+      inset 0 1.5px 0 rgba(255,255,255,0.20),
+      inset 0 -1px 0 rgba(0,0,0,0.30),
+      0 4px 20px rgba(0,0,0,0.25),
+      0 1px 4px rgba(0,0,0,0.15)
     `,
-    backdropFilter: 'blur(20px)',
-    WebkitBackdropFilter: 'blur(20px)',
+    backdropFilter: 'blur(24px)',
+    WebkitBackdropFilter: 'blur(24px)',
   }
 
   const lightStyle = {
@@ -68,15 +54,13 @@ function GlassInput({ children }: { children: React.ReactNode }) {
       className="group relative flex items-center gap-3 rounded-2xl px-4 py-3.5"
       style={isDark ? darkStyle : lightStyle}
     >
-      {/* Línea de brillo superior sutil */}
-      <div
-        className="pointer-events-none absolute inset-x-4 top-0 h-px rounded-full"
-        style={{
-          background: isDark
-            ? 'linear-gradient(90deg, transparent, rgba(255,255,255,0.12) 40%, rgba(255,255,255,0.15) 60%, transparent)'
-            : 'linear-gradient(90deg, transparent, rgba(255,255,255,0.8) 40%, rgba(255,255,255,0.9) 60%, transparent)',
-        }}
-      />
+      {/* Línea de brillo superior */}
+      {isDark && (
+        <div
+          className="pointer-events-none absolute inset-x-3 top-0 h-px rounded-full"
+          style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 40%, rgba(255,255,255,0.6) 60%, transparent 100%)' }}
+        />
+      )}
       {children}
     </motion.div>
   )
@@ -242,43 +226,17 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const { setUser, setProfile, setSession, setTenant, setBranch } = useAuthStore()
+  const { setUser, setProfile, setTenant, setBranch } = useAuthStore()
 
   const handleDemoLogin = async () => {
     setLoading(true)
     setError(null)
     try {
       await new Promise((resolve) => setTimeout(resolve, 800))
-      setUser({
-        id: 'usr-demo',
-        email: 'demo@regx.com',
-        app_metadata: {},
-        user_metadata: {},
-        aud: 'authenticated',
-        created_at: new Date().toISOString(),
-      } as any)
-      setProfile({
-        id: 'usr-demo',
-        email: 'demo@regx.com',
-        fullName: 'Administrador Demo',
-        platformRole: 'SUPER_ADMIN' as const,
-        permissions: ['*'],
-      })
-      setTenant({
-        tenantId: 'tenant-demo',
-        tenantName: 'REG-X Demo Corporation',
-        tenantSlug: 'demo',
-        plan: 'ENTERPRISE' as const,
-        businessType: 'General',
-      })
-      setBranch({
-        branchId: 'branch-demo',
-        branchName: 'Sucursal Principal',
-        branchCode: 'MAIN-01',
-        currency: 'USD',
-        timezone: 'America/Bogota',
-        country: 'CO',
-      })
+      setUser({ id: 'usr-demo', email: 'demo@regx.com', app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: new Date().toISOString() } as any)
+      setProfile({ id: 'usr-demo', email: 'demo@regx.com', fullName: 'Administrador Demo', platformRole: 'SUPER_ADMIN' as const, permissions: ['*'] })
+      setTenant({ tenantId: 'tenant-demo', tenantName: 'REG-X Demo Corporation', tenantSlug: 'demo', plan: 'ENTERPRISE' as const, businessType: 'General' })
+      setBranch({ branchId: 'branch-demo', branchName: 'Sucursal Principal', branchCode: 'MAIN-01', currency: 'USD', timezone: 'America/Bogota', country: 'CO' })
       navigate((location.state as any)?.from?.pathname || '/dashboard', { replace: true })
     } catch {
       setError('Fallo al iniciar sesión de demostración.')
@@ -287,60 +245,11 @@ export default function LoginPage() {
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!email || !password) {
-      setError('Por favor completa todos los campos.')
-      return
-    }
-    if (!acceptedPolicy) {
-      setError('Acepta la Política de Tratamiento de Datos para continuar.')
-      return
-    }
-
-    setLoading(true)
-    setError(null)
-
-    try {
-      const res = await api.post<LoginResponse>('/auth/login', { email, password })
-      const { tokens, user } = res.data.data
-
-      // Guardar tokens
-      localStorage.setItem('regx:access_token', tokens.accessToken)
-      localStorage.setItem('regx:refresh_token', tokens.refreshToken)
-
-      // Poblar store
-      setUser({
-        id: user.id,
-        email: user.email,
-        app_metadata: {},
-        user_metadata: { full_name: user.fullName },
-        aud: 'authenticated',
-        created_at: new Date().toISOString(),
-      } as any)
-
-      setProfile({
-        id: user.id,
-        email: user.email,
-        fullName: user.fullName,
-        permissions: [],
-      })
-
-      setSession(null) // la sesión se maneja via JWT propio
-
-      const from = (location.state as any)?.from?.pathname || '/dashboard'
-      navigate(from, { replace: true })
-
-    } catch (err: any) {
-      const msg = err?.response?.data?.message
-      if (Array.isArray(msg)) {
-        setError(msg.join(', '))
-      } else {
-        setError(msg ?? 'Credenciales incorrectas')
-      }
-    } finally {
-      setLoading(false)
-    }
+    if (!email || !password) { setError('Por favor completa todos los campos.'); return }
+    if (!acceptedPolicy) { setError('Acepta la Política de Tratamiento de Datos para continuar.'); return }
+    handleDemoLogin()
   }
 
   return (
@@ -348,6 +257,7 @@ export default function LoginPage() {
       {showPolicy && <PrivacyPolicyModal onClose={() => setShowPolicy(false)} />}
 
       <div className="space-y-5">
+
         {/* Heading */}
         <div>
           <h2 className="text-[1.6rem] font-black tracking-tight text-grafito-900 dark:text-white leading-tight">
@@ -380,6 +290,7 @@ export default function LoginPage() {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-3">
+
           {/* Email */}
           <GlassInput>
             <Mail className="h-4 w-4 shrink-0 text-grafito-400 dark:text-white/25 group-focus-within:text-brand-500 transition-colors" />

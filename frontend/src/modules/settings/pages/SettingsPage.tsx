@@ -14,8 +14,8 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6 p-6">
       <div>
-        <h1 className="text-2xl font-bold text-white tracking-tight">Configuración</h1>
-        <p className="text-sm text-grafito-400">Administra las preferencias y ajustes del sistema.</p>
+        <h1 className="text-2xl font-bold text-grafito-900 dark:text-white tracking-tight">Configuración</h1>
+        <p className="text-sm text-grafito-500 dark:text-grafito-400">Administra las preferencias y ajustes del sistema.</p>
       </div>
 
       <div className="flex flex-col gap-6 md:flex-row">
@@ -27,8 +27,8 @@ export default function SettingsPage() {
               onClick={() => setActiveTab(item.id)}
               className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold transition-all ${
                 activeTab === item.id
-                  ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/20'
-                  : 'text-grafito-300 hover:bg-grafito-800'
+                  ? 'bg-brand-500 text-grafito-900 dark:text-white shadow-lg shadow-brand-500/20'
+                  : 'text-grafito-600 dark:text-grafito-300 hover:bg-grafito-100 dark:bg-grafito-800'
               }`}
             >
               <item.icon className="h-4 w-4" />
@@ -38,12 +38,12 @@ export default function SettingsPage() {
         </div>
 
         {/* Panel de Configuración Activo */}
-        <div className="flex-1 rounded-2xl border border-white/5 bg-grafito-900/60 p-6 backdrop-blur-md space-y-4">
-          <h2 className="text-lg font-bold text-white uppercase tracking-wider text-xs text-grafito-400">
+        <div className="flex-1 rounded-2xl border border-grafito-200 dark:border-white/5 bg-white dark:bg-grafito-900/60 p-6 backdrop-blur-md space-y-4">
+          <h2 className="text-lg font-bold text-grafito-900 dark:text-white uppercase tracking-wider text-xs text-grafito-500 dark:text-grafito-400">
             Ajustes de {menuItems.find(m => m.id === activeTab)?.name}
           </h2>
           <div className="space-y-4">
-            <p className="text-sm text-grafito-300">
+            <p className="text-sm text-grafito-600 dark:text-grafito-300">
               La edición de configuraciones globales está bloqueada en este entorno demo.
             </p>
           </div>

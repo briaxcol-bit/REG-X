@@ -13,30 +13,30 @@ export default function ProductsPage() {
     <div className="space-y-6 p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Productos</h1>
-          <p className="text-sm text-grafito-400">Catálogo general de tus artículos y servicios.</p>
+          <h1 className="text-2xl font-bold text-grafito-900 dark:text-white tracking-tight">Productos</h1>
+          <p className="text-sm text-grafito-500 dark:text-grafito-400">Catálogo general de tus artículos y servicios.</p>
         </div>
         <Link
           to="/products/new"
-          className="flex items-center gap-2 rounded-xl bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-600 active:scale-[0.98] transition-all"
+          className="flex items-center gap-2 rounded-xl bg-brand-500 px-4 py-2.5 text-sm font-semibold text-grafito-900 dark:text-white hover:bg-brand-600 active:scale-[0.98] transition-all"
         >
           <Plus className="h-4 w-4" />
           Nuevo Producto
         </Link>
       </div>
 
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between bg-grafito-900/60 p-4 rounded-xl border border-white/5">
-        <div className="flex flex-1 items-center gap-2 rounded-xl bg-grafito-800 px-3 py-2 text-white">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between bg-white dark:bg-grafito-900/60 p-4 rounded-xl border border-grafito-200 dark:border-white/5">
+        <div className="flex flex-1 items-center gap-2 rounded-xl bg-grafito-100 dark:bg-grafito-800 px-3 py-2 text-grafito-900 dark:text-white">
           <Search className="h-4 w-4 text-grafito-500" />
           <input
             placeholder="Buscar por nombre, SKU o código de barra..."
-            className="flex-1 bg-transparent text-sm placeholder:text-grafito-600 outline-none"
+            className="flex-1 bg-transparent text-sm placeholder:text-grafito-400 dark:placeholder:text-grafito-600 outline-none"
           />
         </div>
         <div className="flex items-center gap-2">
           <Link
             to="/products/categories"
-            className="flex items-center gap-1.5 rounded-lg border border-white/5 bg-grafito-800 px-3.5 py-2 text-xs text-grafito-300 hover:bg-grafito-700 transition-all"
+            className="flex items-center gap-1.5 rounded-lg border border-grafito-200 dark:border-white/5 bg-grafito-100 dark:bg-grafito-800 px-3.5 py-2 text-xs text-grafito-600 dark:text-grafito-300 hover:bg-grafito-200 dark:hover:bg-grafito-700 transition-all"
           >
             <Tag className="h-3.5 w-3.5" />
             Categorías
@@ -44,10 +44,10 @@ export default function ProductsPage() {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-white/5 bg-grafito-900/60 p-6 backdrop-blur-md overflow-hidden">
-        <table className="w-full text-left text-sm text-grafito-300">
+      <div className="rounded-2xl border border-grafito-200 dark:border-white/5 bg-white dark:bg-grafito-900/60 p-6 backdrop-blur-md overflow-hidden">
+        <table className="w-full text-left text-sm text-grafito-600 dark:text-grafito-300">
           <thead>
-            <tr className="text-xs font-semibold text-grafito-500 uppercase border-b border-white/5 pb-2">
+            <tr className="text-xs font-semibold text-grafito-500 uppercase border-b border-grafito-200 dark:border-white/5 pb-2">
               <th className="pb-3">Nombre</th>
               <th className="pb-3">SKU</th>
               <th className="pb-3">Precio</th>
@@ -57,8 +57,8 @@ export default function ProductsPage() {
           </thead>
           <tbody className="divide-y divide-white/5">
             {products.map((p) => (
-              <tr key={p.id} className="hover:bg-white/5 transition-colors">
-                <td className="py-3.5 font-semibold text-white">{p.name}</td>
+              <tr key={p.id} className="hover:bg-grafito-100 dark:hover:bg-white/5 transition-colors">
+                <td className="py-3.5 font-semibold text-grafito-900 dark:text-white">{p.name}</td>
                 <td className="py-3.5 font-mono text-xs">{p.sku}</td>
                 <td className="py-3.5 text-brand-400 font-bold">${p.price.toFixed(2)}</td>
                 <td className="py-3.5">{p.stock} uds</td>

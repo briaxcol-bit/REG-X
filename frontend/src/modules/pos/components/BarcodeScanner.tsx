@@ -43,14 +43,14 @@ export function BarcodeScanner({ open, onClose, onScan }: BarcodeScannerProps) {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
-            className="fixed bottom-0 left-1/2 z-50 w-full max-w-sm -translate-x-1/2 rounded-t-2xl border border-white/10 bg-grafito-900 p-6 shadow-2xl"
+            className="fixed bottom-0 left-1/2 z-50 w-full max-w-sm -translate-x-1/2 rounded-t-2xl border border-grafito-200 dark:border-white/10 bg-white dark:bg-grafito-900 p-6 shadow-2xl"
           >
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-2">
                 <Barcode className="h-5 w-5 text-brand-400" />
-                <h3 className="font-semibold text-white">Escanear código</h3>
+                <h3 className="font-semibold text-grafito-900 dark:text-white">Escanear código</h3>
               </div>
-              <button onClick={onClose} className="rounded-lg p-2 text-grafito-400 hover:bg-white/5">
+              <button onClick={onClose} className="rounded-lg p-2 text-grafito-500 dark:text-grafito-400 hover:bg-grafito-100 dark:hover:bg-white/5">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -61,7 +61,7 @@ export function BarcodeScanner({ open, onClose, onScan }: BarcodeScannerProps) {
                 <button
                   key={m}
                   onClick={() => setMode(m)}
-                  className="flex items-center gap-1.5 rounded-lg bg-grafito-800 px-3 py-2 text-sm text-white"
+                  className="flex items-center gap-1.5 rounded-lg bg-grafito-100 dark:bg-grafito-800 px-3 py-2 text-sm text-grafito-900 dark:text-white"
                 >
                   <Keyboard className="h-4 w-4" /> Entrada manual
                 </button>
@@ -74,13 +74,13 @@ export function BarcodeScanner({ open, onClose, onScan }: BarcodeScannerProps) {
                 value={manualInput}
                 onChange={(e) => setManualInput(e.target.value)}
                 placeholder="Escribe o escanea el código…"
-                className="w-full rounded-xl bg-grafito-800 border border-white/10 px-4 py-3 text-sm text-white placeholder:text-grafito-500 outline-none focus:border-brand-500 font-mono"
+                className="w-full rounded-xl bg-grafito-100 dark:bg-grafito-800 border border-grafito-200 dark:border-white/10 px-4 py-3 text-sm text-grafito-900 dark:text-white placeholder:text-grafito-400 dark:placeholder:text-grafito-500 outline-none focus:border-brand-500 font-mono"
                 autoComplete="off"
               />
               <button
                 type="submit"
                 disabled={!manualInput.trim()}
-                className="w-full rounded-xl bg-brand-500 py-3 text-sm font-bold text-white hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="w-full rounded-xl bg-brand-500 py-3 text-sm font-bold text-grafito-900 dark:text-white hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 Buscar producto
               </button>

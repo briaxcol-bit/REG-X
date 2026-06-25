@@ -57,34 +57,51 @@
   * { @apply border-border; }
 
   html {
-    @apply dark;    /* Default dark mode */
+    /* El tema lo gestiona useTheme + el script anti-flash en index.html */
     font-feature-settings: "cv11", "ss01";
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
   }
 
-  /* ── Inputs: elimina TODA apariencia nativa del browser ── */
+  /* ── Inputs: elimina apariencia nativa del browser ── */
   input, textarea, select {
     -webkit-appearance: none;
     -moz-appearance: none;
     appearance: none;
     background-color: transparent !important;
     background-image: none !important;
-    color-scheme: dark;
     border: none;
     outline: none;
   }
 
-  /* ── Autofill: fondo invisible, texto blanco ── */
+  /* color-scheme solo en dark mode */
+  .dark input, .dark textarea, .dark select {
+    color-scheme: dark;
+  }
+
+  /* ── Autofill dark mode: fondo oscuro para cubrir el autofill del browser ── */
+  .dark input:-webkit-autofill,
+  .dark input:-webkit-autofill:hover,
+  .dark input:-webkit-autofill:focus,
+  .dark input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 1000px #080c14 inset !important;
+    box-shadow: 0 0 0 1000px #080c14 inset !important;
+    /* #080c14 ≈ rgba(8,12,20) — coincide con el fondo del GlassInput en dark mode */
+    -webkit-text-fill-color: #f9fafb !important;
+    caret-color: #f9fafb;
+    transition: background-color 9999s ease-in-out 0s;
+  }
+
+  /* ── Autofill light mode: texto oscuro sobre fondo claro ── */
   input:-webkit-autofill,
   input:-webkit-autofill:hover,
   input:-webkit-autofill:focus,
   input:-webkit-autofill:active {
-    -webkit-box-shadow: 0 0 0 1000px transparent inset !important;
-    box-shadow: 0 0 0 1000px transparent inset !important;
-    -webkit-text-fill-color: #f9fafb !important;
-    caret-color: #f9fafb;
+    -webkit-box-shadow: 0 0 0 1000px rgba(255,255,255,0.85) inset !important;
+    box-shadow: 0 0 0 1000px rgba(255,255,255,0.85) inset !important;
+    -webkit-text-fill-color: #111827 !important;
+    caret-color: #111827;
     transition: background-color 9999s ease-in-out 0s;
   }
 

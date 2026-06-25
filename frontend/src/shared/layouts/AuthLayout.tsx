@@ -1,5 +1,6 @@
-import { Store, TrendingUp, Clock, ShieldCheck } from 'lucide-react'
+import { Store, TrendingUp, Clock, ShieldCheck, Sun, Moon } from 'lucide-react'
 import { motion } from 'framer-motion'
+import { useTheme } from '@shared/hooks/useTheme'
 
 interface AuthLayoutProps {
   children: React.ReactNode
@@ -23,27 +24,25 @@ const benefits = [
   },
 ]
 
-
 export function AuthLayout({ children }: AuthLayoutProps) {
+  const { isDark, toggle } = useTheme()
+
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-grafito-950">
+    <div className="flex h-screen w-full overflow-hidden bg-white dark:bg-grafito-950 transition-colors duration-300">
 
-      {/* ── Left panel ─────────────────────────────────── */}
-      <div className="hidden lg:flex lg:w-[54%] flex-col justify-between relative overflow-hidden p-12">
+      {/* ── Left panel — siempre oscuro (decorativo) ─────── */}
+      <div className="hidden lg:flex lg:w-[54%] flex-col justify-between relative overflow-hidden p-12 bg-grafito-950">
 
-        {/* Fondo con gradiente radial */}
+        {/* Fondo */}
         <div
           className="pointer-events-none absolute inset-0"
           style={{
             background: `
               radial-gradient(ellipse 70% 60% at 20% 10%, rgba(242,13,24,0.08) 0%, transparent 60%),
-              radial-gradient(ellipse 50% 50% at 80% 90%, rgba(242,13,24,0.05) 0%, transparent 60%),
-              #030712
+              radial-gradient(ellipse 50% 50% at 80% 90%, rgba(242,13,24,0.05) 0%, transparent 60%)
             `,
           }}
         />
-
-        {/* Grid sutil */}
         <div
           className="pointer-events-none absolute inset-0 opacity-30"
           style={{
@@ -71,8 +70,6 @@ export function AuthLayout({ children }: AuthLayoutProps) {
 
         {/* Centro */}
         <div className="relative z-10 space-y-8">
-
-          {/* Badge */}
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
@@ -86,7 +83,6 @@ export function AuthLayout({ children }: AuthLayoutProps) {
             </div>
           </motion.div>
 
-          {/* Headline */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -102,7 +98,6 @@ export function AuthLayout({ children }: AuthLayoutProps) {
             </p>
           </motion.div>
 
-          {/* Benefit cards */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -116,9 +111,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ duration: 0.38, delay: 0.28 + i * 0.08 }}
                 className="flex items-start gap-4 rounded-2xl border border-white/[0.06] bg-white/[0.03] px-5 py-4 backdrop-blur-sm"
-                style={{
-                  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)',
-                }}
+                style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)' }}
               >
                 <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-500/10 border border-brand-500/10">
                   <Icon className="h-4 w-4 text-brand-400" />
@@ -130,24 +123,44 @@ export function AuthLayout({ children }: AuthLayoutProps) {
               </motion.div>
             ))}
           </motion.div>
-
         </div>
 
-        {/* Footer */}
         <p className="relative z-10 text-xs text-grafito-800">
           © {new Date().getFullYear()} REG-X. Todos los derechos reservados.
         </p>
       </div>
 
       {/* Divider */}
-      <div className="hidden lg:block w-px bg-white/[0.05]" />
+      <div className="hidden lg:block w-px bg-grafito-800 dark:bg-white/[0.05]" />
 
       {/* ── Right panel ─────────────────────────────────── */}
       <div className="flex flex-1 items-center justify-center overflow-y-auto p-6 lg:p-10 relative">
-        {/* Orbs de color para que el blur tenga algo que difuminar */}
-        <div className="pointer-events-none absolute top-1/4 left-1/4 h-48 w-48 rounded-full bg-brand-500/10 blur-3xl" />
-        <div className="pointer-events-none absolute bottom-1/3 right-1/4 h-40 w-40 rounded-full bg-brand-700/8 blur-3xl" />
-        <div className="pointer-events-none absolute top-1/2 right-1/3 h-32 w-32 rounded-full bg-grafito-700/20 blur-2xl" />
+
+        {/* Orbs de fondo para el blur */}
+        <div className="pointer-events-none absolute top-1/4 left-1/4 h-48 w-48 rounded-full bg-brand-500/10 blur-3xl dark:bg-brand-500/10" />
+        <div className="pointer-events-none absolute bottom-1/3 right-1/4 h-40 w-40 rounded-full bg-brand-700/5 blur-3xl" />
+
+        {/* Toggle dark/light — esquina superior derecha */}
+        <div className="absolute top-5 right-5 z-20">
+          <motion.button
+            onClick={toggle}
+            whileTap={{ scale: 0.88 }}
+            whileHover={{ scale: 1.05 }}
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-grafito-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/5 text-grafito-500 dark:text-grafito-400 hover:text-grafito-800 dark:hover:text-white transition-colors"
+            title={isDark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+          >
+            <motion.div
+              key={isDark ? 'moon' : 'sun'}
+              initial={{ rotate: -30, opacity: 0 }}
+              animate={{ rotate: 0, opacity: 1 }}
+              exit={{ rotate: 30, opacity: 0 }}
+              transition={{ duration: 0.25 }}
+            >
+              {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </motion.div>
+          </motion.button>
+        </div>
+
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
@@ -160,7 +173,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
               <Store className="h-5 w-5 text-white" />
             </div>
             <div>
-              <span className="font-bold text-white text-lg">REG-X</span>
+              <span className="font-bold text-grafito-900 dark:text-white text-lg">REG-X</span>
               <p className="text-xs text-grafito-500">ERP/POS Enterprise</p>
             </div>
           </div>

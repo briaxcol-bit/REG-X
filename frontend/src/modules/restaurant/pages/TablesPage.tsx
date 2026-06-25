@@ -16,13 +16,13 @@ export default function TablesPage() {
       <div className="flex items-center gap-3">
         <button
           onClick={() => navigate('/restaurant')}
-          className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/5 bg-grafito-800 text-grafito-300 hover:bg-grafito-700 transition-colors"
+          className="flex h-10 w-10 items-center justify-center rounded-xl border border-grafito-200 dark:border-white/5 bg-grafito-100 dark:bg-grafito-800 text-grafito-600 dark:text-grafito-300 hover:bg-grafito-200 dark:hover:bg-grafito-700 transition-colors"
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Mapa de Mesas</h1>
-          <p className="text-sm text-grafito-400">Distribución física y estado actual de las mesas.</p>
+          <h1 className="text-2xl font-bold text-grafito-900 dark:text-white tracking-tight">Mapa de Mesas</h1>
+          <p className="text-sm text-grafito-500 dark:text-grafito-400">Distribución física y estado actual de las mesas.</p>
         </div>
       </div>
 
@@ -37,7 +37,7 @@ export default function TablesPage() {
             }`}
           >
             <div className="flex justify-between items-center">
-              <h3 className="font-bold text-white text-lg">{t.number}</h3>
+              <h3 className="font-bold text-grafito-900 dark:text-white text-lg">{t.number}</h3>
               <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
                 t.status === 'Disponible' ? 'bg-emerald-500/10 text-emerald-400' :
                 t.status === 'Ocupada' ? 'bg-brand-500/10 text-brand-400' :
@@ -46,7 +46,7 @@ export default function TablesPage() {
                 {t.status}
               </span>
             </div>
-            <div className="flex items-center gap-1 text-xs text-grafito-400">
+            <div className="flex items-center gap-1 text-xs text-grafito-500 dark:text-grafito-400">
               <User className="h-3.5 w-3.5" />
               <span>Capacidad: {t.capacity} personas</span>
             </div>

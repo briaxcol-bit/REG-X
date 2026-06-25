@@ -23,17 +23,17 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Panel de Control</h1>
-          <p className="text-sm text-grafito-400">Resumen y estado actual de tu negocio.</p>
+          <h1 className="text-2xl font-bold text-grafito-900 dark:text-white tracking-tight">Panel de Control</h1>
+          <p className="text-sm text-grafito-500 dark:text-grafito-400">Resumen y estado actual de tu negocio.</p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-2 rounded-xl border border-white/5 bg-grafito-800 px-4 py-2.5 text-sm text-grafito-300 hover:bg-grafito-700 transition-all">
+          <button className="flex items-center gap-2 rounded-xl border border-grafito-200 dark:border-white/5 bg-grafito-100 dark:bg-grafito-800 px-4 py-2.5 text-sm text-grafito-600 dark:text-grafito-300 hover:bg-grafito-200 dark:hover:bg-grafito-700 transition-all">
             <Calendar className="h-4 w-4" />
             Hoy (24 Jun, 2026)
           </button>
           <Link
             to="/pos"
-            className="flex items-center gap-2 rounded-xl bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-600 active:scale-[0.98] transition-all"
+            className="flex items-center gap-2 rounded-xl bg-brand-500 px-4 py-2.5 text-sm font-semibold text-grafito-900 dark:text-white hover:bg-brand-600 active:scale-[0.98] transition-all"
           >
             <Plus className="h-4 w-4" />
             Nueva Venta (POS)
@@ -49,16 +49,16 @@ export default function DashboardPage() {
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.05 }}
-            className="relative overflow-hidden rounded-2xl border border-white/5 bg-grafito-900/60 p-6 backdrop-blur-md"
+            className="relative overflow-hidden rounded-2xl border border-grafito-200 dark:border-white/5 bg-white dark:bg-grafito-900/60 p-6 backdrop-blur-md"
           >
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-grafito-400">{stat.name}</span>
+              <span className="text-sm font-medium text-grafito-500 dark:text-grafito-400">{stat.name}</span>
               <div className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br ${stat.color}`}>
                 <stat.icon className="h-5 w-5" />
               </div>
             </div>
             <div className="mt-4">
-              <span className="text-2xl font-bold text-white">{stat.value}</span>
+              <span className="text-2xl font-bold text-grafito-900 dark:text-white">{stat.value}</span>
               <div className="mt-1 flex items-center gap-1.5">
                 <TrendingUp className="h-3 w-3 text-emerald-400" />
                 <span className="text-xs text-emerald-400 font-semibold">{stat.change}</span>
@@ -72,13 +72,13 @@ export default function DashboardPage() {
       {/* Grid Principal */}
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Gráfico / Info Principal (2/3 de ancho) */}
-        <div className="lg:col-span-2 rounded-2xl border border-white/5 bg-grafito-900/60 p-6 backdrop-blur-md space-y-4">
+        <div className="lg:col-span-2 rounded-2xl border border-grafito-200 dark:border-white/5 bg-white dark:bg-grafito-900/60 p-6 backdrop-blur-md space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-white">Rendimiento de Ventas</h2>
-            <span className="text-xs text-grafito-400 hover:underline cursor-pointer">Ver reporte completo</span>
+            <h2 className="text-lg font-bold text-grafito-900 dark:text-white">Rendimiento de Ventas</h2>
+            <span className="text-xs text-grafito-500 dark:text-grafito-400 hover:underline cursor-pointer">Ver reporte completo</span>
           </div>
           {/* Un placeholder gráfico con gradiente y líneas simuladas */}
-          <div className="relative h-60 w-full rounded-xl bg-grafito-950 p-4 overflow-hidden border border-white/5">
+          <div className="relative h-60 w-full rounded-xl bg-white dark:bg-grafito-950 p-4 overflow-hidden border border-grafito-200 dark:border-white/5">
             <div className="absolute inset-0 bg-gradient-to-t from-brand-500/5 to-transparent opacity-60"></div>
             {/* Barras/líneas simuladas para hacerlo ver sofisticado */}
             <div className="flex h-full items-end justify-between gap-2 pt-6">
@@ -96,17 +96,17 @@ export default function DashboardPage() {
         </div>
 
         {/* Ventas Recientes (1/3 de ancho) */}
-        <div className="rounded-2xl border border-white/5 bg-grafito-900/60 p-6 backdrop-blur-md space-y-4 flex flex-col justify-between">
+        <div className="rounded-2xl border border-grafito-200 dark:border-white/5 bg-white dark:bg-grafito-900/60 p-6 backdrop-blur-md space-y-4 flex flex-col justify-between">
           <div>
-            <h2 className="text-lg font-bold text-white">Últimas Actividades</h2>
-            <p className="text-xs text-grafito-400">Monitoreo en tiempo real de transacciones.</p>
+            <h2 className="text-lg font-bold text-grafito-900 dark:text-white">Últimas Actividades</h2>
+            <p className="text-xs text-grafito-500 dark:text-grafito-400">Monitoreo en tiempo real de transacciones.</p>
           </div>
           <div className="space-y-3.5 my-4">
             {recentSales.map((sale) => (
-              <div key={sale.id} className="flex items-center justify-between rounded-xl bg-grafito-800/40 p-3 border border-white/5">
+              <div key={sale.id} className="flex items-center justify-between rounded-xl bg-grafito-100 dark:bg-grafito-800/40 p-3 border border-grafito-200 dark:border-white/5">
                 <div>
-                  <p className="text-sm font-semibold text-white">{sale.customer}</p>
-                  <p className="text-[10px] text-grafito-400">{sale.time}</p>
+                  <p className="text-sm font-semibold text-grafito-900 dark:text-white">{sale.customer}</p>
+                  <p className="text-[10px] text-grafito-500 dark:text-grafito-400">{sale.time}</p>
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-bold text-brand-400">{formatCurrency(sale.amount)}</p>
@@ -121,7 +121,7 @@ export default function DashboardPage() {
           </div>
           <Link
             to="/reports/sales"
-            className="flex items-center justify-center gap-1.5 rounded-xl border border-white/5 bg-grafito-800 py-2.5 text-xs text-grafito-300 hover:bg-grafito-700 transition-all"
+            className="flex items-center justify-center gap-1.5 rounded-xl border border-grafito-200 dark:border-white/5 bg-grafito-100 dark:bg-grafito-800 py-2.5 text-xs text-grafito-600 dark:text-grafito-300 hover:bg-grafito-200 dark:hover:bg-grafito-700 transition-all"
           >
             Ver Todas las Ventas
             <ArrowUpRight className="h-3.5 w-3.5" />

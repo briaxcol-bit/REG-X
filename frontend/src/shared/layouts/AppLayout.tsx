@@ -12,7 +12,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-grafito-950 text-white">
+    <div className="flex h-screen w-screen overflow-hidden bg-grafito-100 dark:bg-grafito-950 text-grafito-900 dark:text-white transition-colors duration-200">
       {/* ── Sidebar ──────────────────────────────────────── */}
       <Sidebar
         collapsed={sidebarCollapsed}

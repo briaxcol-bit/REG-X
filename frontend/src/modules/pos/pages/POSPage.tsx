@@ -32,8 +32,8 @@ function ProductCard({ product, onAdd }: ProductCardProps) {
       whileTap={{ scale: 0.96 }}
       onClick={onAdd}
       className={cn(
-        'group relative flex flex-col items-center justify-between rounded-xl border border-white/5 bg-grafito-800 p-3',
-        'hover:border-brand-500/40 hover:bg-grafito-700 transition-all duration-150',
+        'group relative flex flex-col items-center justify-between rounded-xl border border-grafito-200 dark:border-white/5 bg-grafito-100 dark:bg-grafito-800 p-3',
+        'hover:border-brand-500/40 hover:bg-grafito-200 dark:hover:bg-grafito-700 transition-all duration-150',
         product.stock === 0 && 'opacity-50 cursor-not-allowed',
       )}
       disabled={product.stock === 0}
@@ -53,7 +53,7 @@ function ProductCard({ product, onAdd }: ProductCardProps) {
       </div>
 
       <div className="w-full text-left">
-        <p className="text-xs font-medium text-white line-clamp-2 leading-tight">{product.name}</p>
+        <p className="text-xs font-medium text-grafito-900 dark:text-white line-clamp-2 leading-tight">{product.name}</p>
         <p className="mt-1 text-sm font-bold text-brand-400">
           {formatCurrency(product.price)}
         </p>
@@ -81,11 +81,11 @@ function CartRow({ item }: { item: ReturnType<typeof usePOSStore.getState>['item
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -20 }}
-      className="flex items-center gap-3 rounded-lg bg-grafito-800/60 px-3 py-2.5"
+      className="flex items-center gap-3 rounded-lg bg-grafito-100 dark:bg-grafito-800/60 px-3 py-2.5"
     >
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-white truncate">{item.name}</p>
-        <p className="text-xs text-grafito-400">{formatCurrency(item.price)} c/u</p>
+        <p className="text-sm font-medium text-grafito-900 dark:text-white truncate">{item.name}</p>
+        <p className="text-xs text-grafito-500 dark:text-grafito-400">{formatCurrency(item.price)} c/u</p>
         {item.discount > 0 && (
           <p className="text-xs text-green-400">−{item.discount}% dto.</p>
         )}
@@ -95,22 +95,22 @@ function CartRow({ item }: { item: ReturnType<typeof usePOSStore.getState>['item
       <div className="flex items-center gap-1">
         <button
           onClick={() => updateQuantity(item.id, item.quantity - 1)}
-          className="flex h-6 w-6 items-center justify-center rounded-md bg-grafito-700 text-grafito-300 hover:bg-brand-500/20 hover:text-brand-400 transition-colors"
+          className="flex h-6 w-6 items-center justify-center rounded-md bg-grafito-700 text-grafito-600 dark:text-grafito-300 hover:bg-brand-500/20 hover:text-brand-400 transition-colors"
         >
           <Minus className="h-3 w-3" />
         </button>
-        <span className="w-6 text-center text-sm font-semibold text-white">
+        <span className="w-6 text-center text-sm font-semibold text-grafito-900 dark:text-white">
           {item.quantity}
         </span>
         <button
           onClick={() => updateQuantity(item.id, item.quantity + 1)}
-          className="flex h-6 w-6 items-center justify-center rounded-md bg-grafito-700 text-grafito-300 hover:bg-brand-500/20 hover:text-brand-400 transition-colors"
+          className="flex h-6 w-6 items-center justify-center rounded-md bg-grafito-700 text-grafito-600 dark:text-grafito-300 hover:bg-brand-500/20 hover:text-brand-400 transition-colors"
         >
           <Plus className="h-3 w-3" />
         </button>
       </div>
 
-      <span className="w-20 text-right text-sm font-bold text-white">
+      <span className="w-20 text-right text-sm font-bold text-grafito-900 dark:text-white">
         {formatCurrency(item.total)}
       </span>
 
@@ -176,27 +176,27 @@ export default function POSPage() {
   return (
     <div className="flex h-full overflow-hidden">
       {/* ═══════════════ LEFT: Product Grid ═══════════════ */}
-      <div className="flex flex-1 flex-col overflow-hidden border-r border-white/5">
+      <div className="flex flex-1 flex-col overflow-hidden border-r border-grafito-200 dark:border-white/5">
         {/* Search + scanner bar */}
-        <div className="flex items-center gap-2 border-b border-white/5 bg-grafito-900 p-3">
-          <div className="flex flex-1 items-center gap-2 rounded-xl bg-grafito-800 px-3 py-2.5">
-            <Search className="h-4 w-4 shrink-0 text-grafito-400" />
+        <div className="flex items-center gap-2 border-b border-grafito-200 dark:border-white/5 bg-white dark:bg-grafito-900 p-3">
+          <div className="flex flex-1 items-center gap-2 rounded-xl bg-grafito-100 dark:bg-grafito-800 px-3 py-2.5">
+            <Search className="h-4 w-4 shrink-0 text-grafito-500 dark:text-grafito-400" />
             <input
               ref={searchRef}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Buscar producto o SKU…"
-              className="flex-1 bg-transparent text-sm text-white placeholder:text-grafito-500 outline-none"
+              className="flex-1 bg-transparent text-sm text-grafito-900 dark:text-white placeholder:text-grafito-400 dark:placeholder:text-grafito-500 outline-none"
             />
             {search && (
               <button onClick={() => setSearch('')}>
-                <X className="h-3.5 w-3.5 text-grafito-400" />
+                <X className="h-3.5 w-3.5 text-grafito-500 dark:text-grafito-400" />
               </button>
             )}
           </div>
           <button
             onClick={() => setScannerOpen(true)}
-            className="flex h-10 w-10 items-center justify-center rounded-xl bg-grafito-800 text-grafito-300 hover:bg-brand-500/20 hover:text-brand-400 transition-colors"
+            className="flex h-10 w-10 items-center justify-center rounded-xl bg-grafito-100 dark:bg-grafito-800 text-grafito-600 dark:text-grafito-300 hover:bg-brand-500/20 hover:text-brand-400 transition-colors"
             title="Escanear código de barras"
           >
             <Barcode className="h-5 w-5" />
@@ -204,14 +204,14 @@ export default function POSPage() {
         </div>
 
         {/* Category filter */}
-        <div className="flex gap-2 overflow-x-auto border-b border-white/5 bg-grafito-900/60 px-3 py-2 scrollbar-none">
+        <div className="flex gap-2 overflow-x-auto border-b border-grafito-200 dark:border-white/5 bg-white dark:bg-grafito-900/60 px-3 py-2 scrollbar-none">
           <button
             onClick={() => setSelectedCategory(null)}
             className={cn(
               'shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors',
               !selectedCategory
-                ? 'bg-brand-500 text-white'
-                : 'bg-grafito-800 text-grafito-300 hover:bg-grafito-700',
+                ? 'bg-brand-500 text-grafito-900 dark:text-white'
+                : 'bg-grafito-100 dark:bg-grafito-800 text-grafito-600 dark:text-grafito-300 hover:bg-grafito-200 dark:hover:bg-grafito-700',
             )}
           >
             Todos
@@ -224,7 +224,7 @@ export default function POSPage() {
           {loadingProducts ? (
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {Array.from({ length: 15 }).map((_, i) => (
-                <div key={i} className="h-36 animate-pulse rounded-xl bg-grafito-800" />
+                <div key={i} className="h-36 animate-pulse rounded-xl bg-grafito-100 dark:bg-grafito-800" />
               ))}
             </div>
           ) : products.length === 0 ? (
@@ -247,12 +247,12 @@ export default function POSPage() {
       </div>
 
       {/* ═══════════════ RIGHT: Cart ═══════════════════════ */}
-      <div className="flex w-96 shrink-0 flex-col bg-grafito-900">
+      <div className="flex w-96 shrink-0 flex-col bg-white dark:bg-grafito-900">
         {/* Cart header */}
-        <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
+        <div className="flex items-center justify-between border-b border-grafito-200 dark:border-white/5 px-4 py-3">
           <div className="flex items-center gap-2">
             <Receipt className="h-4 w-4 text-brand-400" />
-            <span className="font-semibold text-white">
+            <span className="font-semibold text-grafito-900 dark:text-white">
               Venta
               {itemCount > 0 && (
                 <span className="ml-2 rounded-full bg-brand-500 px-2 py-0.5 text-xs">
@@ -268,7 +268,7 @@ export default function POSPage() {
                 'flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs transition-colors',
                 customerId
                   ? 'bg-brand-500/15 text-brand-400'
-                  : 'text-grafito-400 hover:bg-white/5 hover:text-white',
+                  : 'text-grafito-500 dark:text-grafito-400 hover:bg-grafito-100 dark:hover:bg-white/5 hover:text-grafito-900 dark:text-white',
               )}
             >
               <UserCircle className="h-4 w-4" />
@@ -277,7 +277,7 @@ export default function POSPage() {
             {items.length > 0 && (
               <button
                 onClick={clearCart}
-                className="rounded-lg p-1.5 text-grafito-400 hover:bg-red-500/10 hover:text-red-400 transition-colors"
+                className="rounded-lg p-1.5 text-grafito-500 dark:text-grafito-400 hover:bg-red-500/10 hover:text-red-400 transition-colors"
                 title="Vaciar carrito"
               >
                 <Trash2 className="h-4 w-4" />
@@ -295,7 +295,7 @@ export default function POSPage() {
                 animate={{ opacity: 1 }}
                 className="flex h-full flex-col items-center justify-center gap-3 text-center"
               >
-                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-grafito-800">
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-grafito-100 dark:bg-grafito-800">
                   <Receipt className="h-8 w-8 text-grafito-600" />
                 </div>
                 <p className="text-sm text-grafito-500">
@@ -310,8 +310,8 @@ export default function POSPage() {
 
         {/* Totals */}
         {items.length > 0 && (
-          <div className="border-t border-white/5 p-4 space-y-2">
-            <div className="flex justify-between text-sm text-grafito-400">
+          <div className="border-t border-grafito-200 dark:border-white/5 p-4 space-y-2">
+            <div className="flex justify-between text-sm text-grafito-500 dark:text-grafito-400">
               <span>Subtotal</span>
               <span>{formatCurrency(subtotal, currency)}</span>
             </div>
@@ -322,12 +322,12 @@ export default function POSPage() {
               </div>
             )}
             {taxes > 0 && (
-              <div className="flex justify-between text-sm text-grafito-400">
+              <div className="flex justify-between text-sm text-grafito-500 dark:text-grafito-400">
                 <span>Impuestos</span>
                 <span>{formatCurrency(taxes, currency)}</span>
               </div>
             )}
-            <div className="flex justify-between border-t border-white/10 pt-2 font-bold text-white">
+            <div className="flex justify-between border-t border-grafito-200 dark:border-white/10 pt-2 font-bold text-grafito-900 dark:text-white">
               <span className="text-lg">TOTAL</span>
               <span className="text-2xl text-brand-400">{formatCurrency(total, currency)}</span>
             </div>
@@ -335,13 +335,13 @@ export default function POSPage() {
         )}
 
         {/* Payment buttons */}
-        <div className="border-t border-white/5 p-4 space-y-2">
+        <div className="border-t border-grafito-200 dark:border-white/5 p-4 space-y-2">
           {/* Quick cash */}
           <div className="grid grid-cols-3 gap-2">
             {[formatCurrency(total + 0.01, currency), '50', '100'].map((v) => (
               <button
                 key={v}
-                className="rounded-lg bg-grafito-800 py-2 text-xs font-medium text-grafito-300 hover:bg-grafito-700 transition-colors"
+                className="rounded-lg bg-grafito-100 dark:bg-grafito-800 py-2 text-xs font-medium text-grafito-600 dark:text-grafito-300 hover:bg-grafito-200 dark:hover:bg-grafito-700 transition-colors"
               >
                 {v}
               </button>
@@ -356,8 +356,8 @@ export default function POSPage() {
             className={cn(
               'flex w-full items-center justify-center gap-2 rounded-xl py-4 font-bold text-base transition-all',
               items.length > 0
-                ? 'bg-brand-500 text-white hover:bg-brand-600 shadow-brand-lg'
-                : 'bg-grafito-800 text-grafito-600 cursor-not-allowed',
+                ? 'bg-brand-500 text-grafito-900 dark:text-white hover:bg-brand-600 shadow-brand-lg'
+                : 'bg-grafito-100 dark:bg-grafito-800 text-grafito-600 cursor-not-allowed',
             )}
           >
             <CreditCard className="h-5 w-5" />

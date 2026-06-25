@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es" class="dark">
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
@@ -25,6 +25,16 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- Anti-flash: aplica tema ANTES de que React monte -->
+    <script>
+      (function () {
+        var stored = localStorage.getItem('regx-theme')
+        var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+        var theme = stored || (prefersDark ? 'dark' : 'light')
+        document.documentElement.classList.toggle('dark', theme === 'dark')
+        document.documentElement.setAttribute('data-theme', theme)
+      })()
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
