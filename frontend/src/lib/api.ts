@@ -15,23 +15,22 @@ const createApiClient = (): AxiosInstance => {
 
   // ── Request interceptor — inject JWT + tenant ────────────
   client.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
-    const { data } = await supabase.auth.getSession()
-    const token = data.session?.access_token
-
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`
+    // Prioridad: token propio del backend → sesión de Supabase
+    const jwtToken = localStorage.getItem('regx:access_token')
+    if (jwtToken) {
+      config.headers.Authorization = `Bearer ${jwtToken}`
+    } else {
+      const { data } = await supabase.auth.getSession()
+      if (data.session?.access_token) {
+        config.headers.Authorization = `Bearer ${data.session.access_token}`
+      }
     }
 
-    // Inject tenant from localStorage (set on login)
     const tenantId = localStorage.getItem('regx:tenant_id')
-    if (tenantId) {
-      config.headers['x-tenant-id'] = tenantId
-    }
+    if (tenantId) config.headers['x-tenant-id'] = tenantId
 
     const branchId = localStorage.getItem('regx:branch_id')
-    if (branchId) {
-      config.headers['x-branch-id'] = branchId
-    }
+    if (branchId) config.headers['x-branch-id'] = branchId
 
     return config
   })
@@ -45,19 +44,29 @@ const createApiClient = (): AxiosInstance => {
       if (error.response?.status === 401 && !originalRequest._retry) {
         originalRequest._retry = true
 
-        const { data, error: refreshError } = await supabase.auth.refreshSession()
-        if (refreshError || !data.session) {
-          await supabase.auth.signOut()
-          window.location.href = '/auth/login'
-          return Promise.reject(error)
+        const refreshToken = localStorage.getItem('regx:refresh_token')
+        if (refreshToken) {
+          try {
+            const { data } = await client.post<{ data: { tokens: { accessToken: string; refreshToken: string } } }>(
+              '/auth/refresh',
+              { refreshToken },
+            )
+            const { accessToken, refreshToken: newRefresh } = data.data.tokens
+            localStorage.setItem('regx:access_token',  accessToken)
+            localStorage.setItem('regx:refresh_token', newRefresh)
+            if (originalRequest.headers) {
+              (originalRequest.headers as Record<string, string>)['Authorization'] = `Bearer ${accessToken}`
+            }
+            return client(originalRequest)
+          } catch {
+            // refresh falló → forzar logout
+          }
         }
 
-        if (originalRequest.headers) {
-          (originalRequest.headers as Record<string, string>)['Authorization'] =
-            `Bearer ${data.session.access_token}`
-        }
-
-        return client(originalRequest)
+        localStorage.removeItem('regx:access_token')
+        localStorage.removeItem('regx:refresh_token')
+        window.location.href = '/auth/login'
+        return Promise.reject(error)
       }
 
       return Promise.reject(error)

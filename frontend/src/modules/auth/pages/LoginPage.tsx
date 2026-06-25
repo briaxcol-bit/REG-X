@@ -3,80 +3,83 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { LogIn, Key, Mail, ShieldAlert } from 'lucide-react'
 import { useAuthStore } from '@store/auth.store'
+import { api } from '@lib/api'
+
+interface LoginResponse {
+  data: {
+    tokens: {
+      accessToken:  string
+      refreshToken: string
+      expiresIn:    number
+    }
+    user: {
+      id:       string
+      email:    string
+      fullName: string
+    }
+  }
+}
 
 export default function LoginPage() {
-  const navigate = useNavigate()
-  const location = useLocation()
-  const [email, setEmail] = useState('')
+  const navigate  = useNavigate()
+  const location  = useLocation()
+  const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  
-  const { setUser, setProfile, setTenant, setBranch } = useAuthStore()
+  const [loading,  setLoading]  = useState(false)
+  const [error,    setError]    = useState<string | null>(null)
 
-  const handleDemoLogin = async () => {
+  const { setUser, setProfile, setSession } = useAuthStore()
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!email || !password) {
+      setError('Por favor completa todos los campos')
+      return
+    }
+
     setLoading(true)
     setError(null)
+
     try {
-      // Fake delay
-      await new Promise((resolve) => setTimeout(resolve, 800))
-      
-      const mockUser = {
-        id: 'usr-demo',
-        email: 'demo@regx.com',
-        app_metadata: {},
-        user_metadata: {},
-        aud: 'authenticated',
-        created_at: new Date().toISOString(),
-      }
+      const res = await api.post<LoginResponse>('/auth/login', { email, password })
+      const { tokens, user } = res.data.data
 
-      const mockProfile = {
-        id: 'usr-demo',
-        email: 'demo@regx.com',
-        fullName: 'Administrador Demo',
-        platformRole: 'SUPER_ADMIN' as const,
-        permissions: ['*'],
-      }
+      // Guardar tokens
+      localStorage.setItem('regx:access_token',  tokens.accessToken)
+      localStorage.setItem('regx:refresh_token', tokens.refreshToken)
 
-      const mockTenant = {
-        tenantId: 'tenant-demo',
-        tenantName: 'REG-X Demo Corporation',
-        tenantSlug: 'demo',
-        plan: 'ENTERPRISE' as const,
-        businessType: 'General',
-      }
+      // Poblar store
+      setUser({
+        id:             user.id,
+        email:          user.email,
+        app_metadata:   {},
+        user_metadata:  { full_name: user.fullName },
+        aud:            'authenticated',
+        created_at:     new Date().toISOString(),
+      } as any)
 
-      const mockBranch = {
-        branchId: 'branch-demo',
-        branchName: 'Sucursal Principal',
-        branchCode: 'MAIN-01',
-        currency: 'USD',
-        timezone: 'America/Bogota',
-        country: 'CO',
-      }
+      setProfile({
+        id:          user.id,
+        email:       user.email,
+        fullName:    user.fullName,
+        permissions: [],
+      })
 
-      // Populate state
-      setUser(mockUser as any)
-      setProfile(mockProfile)
-      setTenant(mockTenant)
-      setBranch(mockBranch)
+      setSession(null) // la sesión se maneja via JWT propio
 
       const from = (location.state as any)?.from?.pathname || '/dashboard'
       navigate(from, { replace: true })
-    } catch (err) {
-      setError('Fallo al iniciar sesión de demostración.')
+
+    } catch (err: any) {
+      const msg = err?.response?.data?.message
+      if (Array.isArray(msg)) {
+        setError(msg.join(', '))
+      } else {
+        setError(msg ?? 'Credenciales incorrectas')
+      }
     } finally {
       setLoading(false)
     }
-  }
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!email || !password) {
-      setError('Por favor complete todos los campos')
-      return
-    }
-    handleDemoLogin()
   }
 
   return (
@@ -91,10 +94,14 @@ export default function LoginPage() {
       </div>
 
       {error && (
-        <div className="flex items-center gap-3 rounded-lg border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-400">
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-center gap-3 rounded-lg border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-400"
+        >
           <ShieldAlert className="h-5 w-5 shrink-0" />
           <span>{error}</span>
-        </div>
+        </motion.div>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -109,6 +116,7 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="correo@ejemplo.com"
+              autoComplete="email"
               className="flex-1 bg-transparent text-sm placeholder:text-grafito-600 outline-none"
             />
           </div>
@@ -134,6 +142,7 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
+              autoComplete="current-password"
               className="flex-1 bg-transparent text-sm placeholder:text-grafito-600 outline-none"
             />
           </div>
@@ -144,25 +153,10 @@ export default function LoginPage() {
           disabled={loading}
           className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-500 py-3 text-sm font-semibold text-white hover:bg-brand-600 active:scale-[0.98] transition-all disabled:opacity-50"
         >
-          {loading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
+          {loading ? 'Verificando...' : 'Iniciar Sesión'}
           <LogIn className="h-4 w-4" />
         </button>
       </form>
-
-      <div className="relative flex py-2 items-center">
-        <div className="flex-grow border-t border-white/5"></div>
-        <span className="flex-shrink mx-4 text-grafito-600 text-xs uppercase tracking-widest font-bold">O</span>
-        <div className="flex-grow border-t border-white/5"></div>
-      </div>
-
-      <button
-        type="button"
-        onClick={handleDemoLogin}
-        disabled={loading}
-        className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 py-3 text-sm font-semibold text-grafito-300 hover:bg-white/10 active:scale-[0.98] transition-all"
-      >
-        Entrar con Cuenta Demo
-      </button>
 
       <p className="text-center text-xs text-grafito-500">
         ¿No tienes una cuenta?{' '}
