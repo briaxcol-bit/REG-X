@@ -1,0 +1,78 @@
+_format_version: "3.0"
+_transform: true
+
+# ============================================================
+# REG-X Kong API Gateway — Declarative Config
+# ============================================================
+
+services:
+  # ── Backend API ───────────────────────────────────────────
+  - name: regx-backend
+    url: http://regx-backend:3000
+    connect_timeout: 10000
+    write_timeout:   30000
+    read_timeout:    30000
+    routes:
+      - name:          api-v1
+        paths:         ["/api/v1"]
+        strip_path:    false
+        preserve_host: true
+        protocols:     [http, https]
+
+plugins:
+  # ── Global rate limiting ──────────────────────────────────
+  - name: rate-limiting
+    config:
+      minute: 200
+      hour:   5000
+      policy: redis
+      redis_host: regx-redis
+      redis_port: 6379
+
+  # ── CORS ─────────────────────────────────────────────────
+  - name: cors
+    config:
+      origins:
+        - "https://app.regx.co"
+        - "http://localhost:5173"
+      methods:
+        - GET
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+        - OPTIONS
+      headers:
+        - Authorization
+        - Content-Type
+        - x-tenant-id
+        - x-branch-id
+        - x-api-key
+      credentials: true
+      max_age: 3600
+
+  # ── Request size limiting ─────────────────────────────────
+  - name: request-size-limiting
+    config:
+      allowed_payload_size: 10
+
+  # ── Response compression ──────────────────────────────────
+  - name: response-transformer
+    config:
+      add:
+        headers:
+          - "X-Powered-By: REG-X"
+
+  # ── Prometheus metrics ─────────────────────────────────────
+  - name: prometheus
+
+  # ── Bot detection ─────────────────────────────────────────
+  - name: bot-detection
+    config:
+      deny:
+        - "*(Googlebot|Bingbot|YandexBot)*"
+
+consumers:
+  - username: regx-internal
+    keyauth_credentials:
+      - key: internal-service-key-replace-in-prod

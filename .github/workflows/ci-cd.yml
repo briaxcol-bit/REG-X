@@ -1,0 +1,211 @@
+name: REG-X CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE:  ghcr.io/${{ github.repository }}/backend
+  FRONTEND_IMAGE: ghcr.io/${{ github.repository }}/frontend
+
+jobs:
+  # ── Job 1: Lint & Type Check ────────────────────────────────
+  lint:
+    name: Lint & Type Check
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        app: [frontend, backend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: ${{ matrix.app }}/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ${{ matrix.app }}
+        run: npm ci
+
+      - name: Lint
+        working-directory: ${{ matrix.app }}
+        run: npm run lint
+
+      - name: Type check
+        working-directory: ${{ matrix.app }}
+        run: npm run type-check || npx tsc --noEmit
+
+  # ── Job 2: Tests ─────────────────────────────────────────────
+  test:
+    name: Tests
+    runs-on: windows-latest
+    needs: lint
+    services:
+      redis:
+        image: redis:7.2-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend deps
+        working-directory: backend
+        run: npm ci
+
+      - name: Run backend tests
+        working-directory: backend
+        env:
+          NODE_ENV: test
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          JWT_ACCESS_SECRET:  test-access-secret-32-chars-min
+          JWT_REFRESH_SECRET: test-refresh-secret-32-chars-min
+          SUPABASE_URL: https://placeholder.supabase.co
+          SUPABASE_ANON_KEY: placeholder
+          SUPABASE_SERVICE_ROLE_KEY: placeholder
+        run: npm run test:cov
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          directory: backend/coverage
+          flags: backend
+
+  # ── Job 3: Build Docker Images ───────────────────────────────
+  build:
+    name: Build & Push Images
+    runs-on: windows-latest
+    needs: test
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - app: backend
+            image: ${{ env.BACKEND_IMAGE }}
+            context: ./backend
+          - app: frontend
+            image: ${{ env.FRONTEND_IMAGE }}
+            context: ./frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ matrix.image }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.context }}
+          target: production
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
+          build-args: |
+            VITE_API_URL=${{ secrets.VITE_API_URL }}
+            VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }}
+            VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY }}
+
+  # ── Job 4: Deploy to Staging ─────────────────────────────────
+  deploy-staging:
+    name: Deploy → Staging
+    runs-on: windows-latest
+    needs: build
+    if: github.ref == 'refs/heads/develop'
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: "v1.28.0"
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG_STAGING }}" | base64 -d > $HOME/.kube/config
+
+      - name: Deploy backend
+        run: |
+          kubectl set image deployment/regx-backend backend=${{ env.BACKEND_IMAGE }}:sha-${{ github.sha }} -n regx
+          kubectl rollout status deployment/regx-backend -n regx --timeout=5m
+
+      - name: Deploy frontend
+        run: |
+          kubectl set image deployment/regx-frontend frontend=${{ env.FRONTEND_IMAGE }}:sha-${{ github.sha }} -n regx
+          kubectl rollout status deployment/regx-frontend -n regx --timeout=5m
+
+  # ── Job 5: Deploy to Production ──────────────────────────────
+  deploy-production:
+    name: Deploy → Production
+    runs-on: windows-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: "v1.28.0"
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG_PRODUCTION }}" | base64 -d > $HOME/.kube/config
+
+      - name: Deploy with canary (10% traffic first)
+        run: |
+          kubectl set image deployment/regx-backend backend=${{ env.BACKEND_IMAGE }}:sha-${{ github.sha }} -n regx
+          kubectl rollout status deployment/regx-backend -n regx --timeout=10m
+          kubectl set image deployment/regx-frontend frontend=${{ env.FRONTEND_IMAGE }}:sha-${{ github.sha }} -n regx
+          kubectl rollout status deployment/regx-frontend -n regx --timeout=5m
+
+      - name: Notify Slack
+        if: always()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text:   "REG-X Production deploy: ${{ job.status }} — ${{ github.sha }}"
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

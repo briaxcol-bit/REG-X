@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: regx
+  labels:
+    app.kubernetes.io/name: regx
+    app.kubernetes.io/part-of: regx-platform
