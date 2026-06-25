@@ -119,6 +119,7 @@ export default function ProductFormPage() {
   const [stock, setStock]         = useState('0')
   const [minStock, setMinStock]   = useState('0')
   const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [imageFile, setImageFile]       = useState<File | null>(null)
   const [categories, setCategories] = useState<CategoryRow[]>([])
   const [marginMode, setMarginMode] = useState<'price' | 'percent'>('price')
   const [saving, setSaving]         = useState(false)
@@ -146,10 +147,10 @@ export default function ProductFormPage() {
         name:          name.trim(),
         sku:           sku.trim(),
         barcode:       barcode.trim() || undefined,
-        category_id:   categoryId || undefined,
+        category_id:   /^[0-9a-f-]{36}$/.test(categoryId) ? categoryId : undefined,
         price:         parseFloat(salePrice) || 0,
         cost_price:    parseFloat(costPrice) || undefined,
-        image_url:     imagePreview || undefined,
+        imageFile:     imageFile || undefined,
         min_stock:     parseFloat(minStock) || 0,
         initialStock:  parseFloat(stock) || 0,
         branchId:      branch?.branchId,
@@ -208,6 +209,7 @@ export default function ProductFormPage() {
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    setImageFile(file)
     const reader = new FileReader()
     reader.onload = () => setImagePreview(reader.result as string)
     reader.readAsDataURL(file)
@@ -275,7 +277,7 @@ export default function ProductFormPage() {
             {imagePreview && (
               <button
                 type="button"
-                onClick={() => { setImagePreview(null); if (fileInputRef.current) fileInputRef.current.value = '' }}
+                onClick={() => { setImagePreview(null); setImageFile(null); if (fileInputRef.current) fileInputRef.current.value = '' }}
                 className="absolute mt-1 ml-1 flex h-5 w-5 items-center justify-center rounded-full bg-grafito-900/70 text-white hover:bg-red-500 transition-colors"
                 style={{ position: 'relative', alignSelf: 'flex-start', marginLeft: '-12px', marginTop: '4px' }}
               >

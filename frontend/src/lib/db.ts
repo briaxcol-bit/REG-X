@@ -289,10 +289,26 @@ export interface CreateProductPayload {
   category_id?: string
   price: number
   cost_price?: number
-  image_url?: string
+  imageFile?: File | null      // archivo real para subir a Storage
+  image_url?: string           // URL ya resuelta (edición)
   min_stock?: number
   initialStock?: number
   branchId?: string
+}
+
+async function uploadProductImage(tenantId: string, file: File): Promise<string | null> {
+  try {
+    const ext  = file.name.split('.').pop() ?? 'jpg'
+    const path = `${tenantId}/${Date.now()}.${ext}`
+    const { error } = await supabase.storage
+      .from('products')
+      .upload(path, file, { upsert: true, contentType: file.type })
+    if (error) return null
+    const { data } = supabase.storage.from('products').getPublicUrl(path)
+    return data.publicUrl
+  } catch {
+    return null
+  }
 }
 
 export async function createProduct(
@@ -300,7 +316,13 @@ export async function createProduct(
   userId: string,
   payload: CreateProductPayload,
 ) {
-  // 1. Insert product
+  // 1. Subir imagen si viene como File
+  let imageUrl: string | null = payload.image_url ?? null
+  if (payload.imageFile) {
+    imageUrl = await uploadProductImage(tenantId, payload.imageFile)
+  }
+
+  // 2. Insert product
   const { data: product, error: prodErr } = await supabase
     .from('products')
     .insert({
@@ -311,7 +333,7 @@ export async function createProduct(
       category_id: payload.category_id || null,
       price:       payload.price,
       cost_price:  payload.cost_price || null,
-      image_url:   payload.image_url || null,
+      image_url:   imageUrl,
       min_stock:   payload.min_stock || 0,
       status:      'ACTIVE',
       created_by:  userId,
