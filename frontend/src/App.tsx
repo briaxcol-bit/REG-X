@@ -18,10 +18,12 @@ function AuthInitializer() {
   useEffect(() => {
     // ── Bootstrap session ──────────────────────────────
     supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session)
-      setUser(session?.user ?? null)
+      const backendToken = localStorage.getItem('regx:access_token')
 
       if (session?.user) {
+        // Sesión Supabase activa
+        setSession(session)
+        setUser(session.user)
         try {
           const ctx = await resolveUserContext(session.user.id)
           if (ctx) {
@@ -56,8 +58,14 @@ function AuthInitializer() {
             }
           }
         } catch {
-          // Si falla (ej. sin conexión), el perfil cacheado del store persiste
+          // Sin conexión — el perfil cacheado del store persiste
         }
+      } else if (backendToken) {
+        // JWT del backend presente — no desloguear, el perfil ya está en el store (persist)
+        setSession(null)
+      } else {
+        // Sin sesión de ningún tipo
+        logout()
       }
 
       setLoading(false)
@@ -69,7 +77,7 @@ function AuthInitializer() {
       async (_event, session) => {
         setSession(session)
         setUser(session?.user ?? null)
-        if (!session) logout()
+        if (!session && !localStorage.getItem('regx:access_token')) logout()
       },
     )
 

@@ -280,6 +280,71 @@ export async function getDashboardStats(
   }
 }
 
+// ── Create Product ─────────────────────────────────────────────
+
+export interface CreateProductPayload {
+  name: string
+  sku: string
+  barcode?: string
+  category_id?: string
+  price: number
+  cost_price?: number
+  image_url?: string
+  min_stock?: number
+  initialStock?: number
+  branchId?: string
+}
+
+export async function createProduct(
+  tenantId: string,
+  userId: string,
+  payload: CreateProductPayload,
+) {
+  // 1. Insert product
+  const { data: product, error: prodErr } = await supabase
+    .from('products')
+    .insert({
+      tenant_id:   tenantId,
+      name:        payload.name,
+      sku:         payload.sku || `SKU-${Date.now()}`,
+      barcode:     payload.barcode || null,
+      category_id: payload.category_id || null,
+      price:       payload.price,
+      cost_price:  payload.cost_price || null,
+      image_url:   payload.image_url || null,
+      min_stock:   payload.min_stock || 0,
+      status:      'ACTIVE',
+      created_by:  userId,
+    })
+    .select()
+    .single()
+
+  if (prodErr) throw prodErr
+
+  // 2. If initial stock > 0 and branchId provided, find default warehouse and insert inventory row
+  if (payload.initialStock && payload.initialStock > 0 && payload.branchId) {
+    const { data: warehouse } = await supabase
+      .from('warehouses')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('branch_id', payload.branchId)
+      .limit(1)
+      .single()
+
+    if (warehouse) {
+      await supabase.from('inventory').insert({
+        tenant_id:    tenantId,
+        branch_id:    payload.branchId,
+        warehouse_id: warehouse.id,
+        product_id:   product.id,
+        quantity:     payload.initialStock,
+      })
+    }
+  }
+
+  return product
+}
+
 // ── Products ───────────────────────────────────────────────────
 
 export async function getProducts(

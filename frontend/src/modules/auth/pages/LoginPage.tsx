@@ -239,10 +239,20 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [acceptedPolicy, setAcceptedPolicy] = useState(false)
+  const [acceptedPolicy, setAcceptedPolicy] = useState(
+    () => localStorage.getItem('regx:policy_accepted') === '1'
+  )
   const [showPolicy, setShowPolicy] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const handleEmailChange = (val: string) => setEmail(val)
+
+  const handlePolicyChange = (checked: boolean) => {
+    setAcceptedPolicy(checked)
+    if (checked) localStorage.setItem('regx:policy_accepted', '1')
+    else localStorage.removeItem('regx:policy_accepted')
+  }
 
   const { setUser, setProfile, setSession, setTenant, setBranch } = useAuthStore()
   // setTenant / setBranch se usan en el fallback Supabase cuando el backend no está disponible
@@ -457,7 +467,7 @@ export default function LoginPage() {
             <input
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => handleEmailChange(e.target.value)}
               placeholder="Correo electrónico"
               autoComplete="email"
               className="flex-1 min-w-0 text-sm text-grafito-900 dark:text-white placeholder:text-grafito-400 dark:placeholder:text-white/30 outline-none"
@@ -494,7 +504,7 @@ export default function LoginPage() {
                 <input
                   type="checkbox"
                   checked={acceptedPolicy}
-                  onChange={(e) => setAcceptedPolicy(e.target.checked)}
+                  onChange={(e) => handlePolicyChange(e.target.checked)}
                   className="peer sr-only"
                 />
                 <div className="h-4 w-4 rounded-[5px] border border-grafito-300 dark:border-white/15 bg-white dark:bg-white/5 peer-checked:bg-brand-500 peer-checked:border-brand-500 transition-all flex items-center justify-center shadow-sm">
