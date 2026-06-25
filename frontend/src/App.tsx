@@ -7,18 +7,59 @@ import { useEffect } from 'react'
 import { router } from '@/router'
 import { queryClient } from '@lib/query-client'
 import { supabase } from '@lib/supabase'
+import { resolveUserContext } from '@lib/db'
 import { useAuthStore } from '@store/auth.store'
 import { usePOSStore } from '@store/pos.store'
 
 function AuthInitializer() {
-  const { setUser, setSession, setLoading, setInitialized, logout } = useAuthStore()
+  const { setUser, setSession, setProfile, setTenant, setBranch, setLoading, setInitialized, logout } = useAuthStore()
   const { setOffline } = usePOSStore()
 
   useEffect(() => {
     // ── Bootstrap session ──────────────────────────────
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session)
       setUser(session?.user ?? null)
+
+      if (session?.user) {
+        try {
+          const ctx = await resolveUserContext(session.user.id)
+          if (ctx) {
+            setProfile({
+              id:           session.user.id,
+              email:        session.user.email!,
+              fullName:     ctx.profile?.full_name ?? session.user.user_metadata?.['full_name'] ?? session.user.email!.split('@')[0],
+              avatarUrl:    ctx.profile?.avatar_url ?? undefined,
+              platformRole: ctx.profile?.platform_role as any ?? undefined,
+              businessRole: ctx.role?.role as any ?? undefined,
+              permissions:  ctx.profile?.platform_role === 'SUPER_ADMIN' ? ['*'] : [],
+            })
+            if (ctx.tenant) {
+              setTenant({
+                tenantId:     ctx.tenant.id,
+                tenantName:   ctx.tenant.name,
+                tenantSlug:   ctx.tenant.slug,
+                plan:         ctx.tenant.plan,
+                businessType: ctx.tenant.business_type,
+                logoUrl:      ctx.tenant.logo_url ?? undefined,
+              })
+            }
+            if (ctx.branch) {
+              setBranch({
+                branchId:   ctx.branch.id,
+                branchName: ctx.branch.name,
+                branchCode: ctx.branch.code,
+                currency:   ctx.branch.currency ?? ctx.tenant?.currency ?? 'COP',
+                timezone:   ctx.branch.timezone ?? ctx.tenant?.timezone ?? 'America/Bogota',
+                country:    ctx.tenant?.country ?? 'CO',
+              })
+            }
+          }
+        } catch {
+          // Si falla (ej. sin conexión), el perfil cacheado del store persiste
+        }
+      }
+
       setLoading(false)
       setInitialized(true)
     })
@@ -44,7 +85,7 @@ function AuthInitializer() {
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
     }
-  }, [setUser, setSession, setLoading, setInitialized, logout, setOffline])
+  }, [setUser, setSession, setProfile, setTenant, setBranch, setLoading, setInitialized, logout, setOffline])
 
   return null
 }

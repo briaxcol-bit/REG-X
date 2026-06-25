@@ -333,6 +333,11 @@ export default function LoginPage() {
           // Llamar el endpoint de tokens directamente (evita problemas con PKCE del cliente)
           const SUPABASE_URL  = import.meta.env['VITE_SUPABASE_URL'] as string
           const SUPABASE_ANON = import.meta.env['VITE_SUPABASE_ANON_KEY'] as string
+
+          if (!SUPABASE_URL || !SUPABASE_ANON) {
+            throw new Error('El servidor no está disponible y las credenciales de Supabase no están configuradas.')
+          }
+
           const tokenRes = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
             method:  'POST',
             headers: {
@@ -342,7 +347,8 @@ export default function LoginPage() {
             },
             body: JSON.stringify({ email, password }),
           })
-          const tokenData = await tokenRes.json()
+          const raw = await tokenRes.text()
+          const tokenData = raw ? JSON.parse(raw) : {}
           if (!tokenRes.ok || !tokenData.access_token) {
             throw new Error(tokenData.error_description ?? tokenData.message ?? 'Credenciales incorrectas')
           }

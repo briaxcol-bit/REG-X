@@ -149,8 +149,10 @@ export const useAuthStore = create<AuthStore>()(
       name: 'regx:auth',
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
+        profile: state.profile,
         tenant: state.tenant,
         branch: state.branch,
+        isAuthenticated: state.isAuthenticated,
       }),
     },
   ),

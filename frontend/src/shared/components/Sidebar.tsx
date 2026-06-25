@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   LayoutDashboard, Package, Boxes,
   Users, BarChart3, Settings, ChefHat, CreditCard,
-  Store, Puzzle, ChevronLeft, ChevronRight,
+  Store, Puzzle, ChevronLeft,
   Zap,
 } from 'lucide-react'
 import { cn } from '@shared/utils/cn'
@@ -52,41 +52,44 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       className="fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-grafito-200 dark:border-white/5 bg-white dark:bg-grafito-900 shadow-sm dark:shadow-2xl transition-colors duration-200"
     >
       {/* ── Logo ─────────────────────────────────────────── */}
-      <div className="flex h-16 items-center justify-between px-4 border-b border-grafito-200 dark:border-white/5">
-        <AnimatePresence mode="wait">
-          {!collapsed && (
-            <motion.div
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -10 }}
-              className="flex items-center gap-2"
-            >
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-500">
+      <div className="flex h-16 items-center border-b border-grafito-200 dark:border-white/5 px-3">
+        {collapsed ? (
+          /* Colapsado: icono centrado, flecha debajo en el nav */
+          <button
+            onClick={onToggle}
+            className="mx-auto flex h-8 w-8 items-center justify-center rounded-lg bg-brand-500 hover:bg-brand-600 transition-colors"
+          >
+            <ChevronLeft
+              className="h-4 w-4 text-white transition-transform duration-250"
+              style={{ transform: 'rotate(180deg)' }}
+            />
+          </button>
+        ) : (
+          /* Expandido: logo + nombre + flecha */
+          <>
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-500">
                 <Store className="h-4 w-4 text-white" />
               </div>
-              <div className="flex flex-col">
+              <motion.div
+                initial={{ opacity: 0, x: -8 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.18 }}
+                className="flex flex-col min-w-0"
+              >
                 <span className="text-sm font-bold text-grafito-900 dark:text-white">REG-X</span>
                 <span className="text-[10px] text-grafito-500 dark:text-grafito-400 truncate max-w-[140px]">
                   {tenant?.tenantName ?? 'ERP/POS'}
                 </span>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {collapsed && (
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-500 mx-auto">
-            <Store className="h-4 w-4 text-white" />
-          </div>
-        )}
-
-        {!collapsed && (
-          <button
-            onClick={onToggle}
-            className="rounded-md p-1 text-grafito-400 hover:bg-grafito-100 dark:hover:bg-white/5 hover:text-grafito-700 dark:hover:text-white transition-colors"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
+              </motion.div>
+            </div>
+            <button
+              onClick={onToggle}
+              className="shrink-0 rounded-md p-1 text-grafito-400 hover:bg-grafito-100 dark:hover:bg-white/5 hover:text-grafito-700 dark:hover:text-white transition-colors"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+          </>
         )}
       </div>
 
@@ -147,15 +150,6 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         ))}
       </nav>
 
-      {/* ── Bottom ───────────────────────────────────────── */}
-      {collapsed && (
-        <button
-          onClick={onToggle}
-          className="flex items-center justify-center p-4 text-grafito-400 hover:text-grafito-600 dark:hover:text-white border-t border-grafito-200 dark:border-white/5 transition-colors"
-        >
-          <ChevronRight className="h-4 w-4" />
-        </button>
-      )}
     </motion.aside>
   )
 }
