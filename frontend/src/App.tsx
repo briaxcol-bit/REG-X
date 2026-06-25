@@ -34,12 +34,14 @@ function AuthInitializer() {
 
         if (ctx?.tenant) {
           setTenant({
-            tenantId:     ctx.tenant.id,
-            tenantName:   ctx.tenant.name,
-            tenantSlug:   ctx.tenant.slug,
-            plan:         ctx.tenant.plan as any,
-            businessType: ctx.tenant.business_type,
-            logoUrl:      ctx.tenant.logo_url ?? undefined,
+            tenantId:       ctx.tenant.id,
+            tenantName:     ctx.tenant.name,
+            tenantSlug:     ctx.tenant.slug,
+            plan:           ctx.tenant.plan as any,
+            businessType:   ctx.tenant.business_type,
+            logoUrl:        ctx.tenant.logo_url ?? undefined,
+            primaryColor:   ctx.tenant.primary_color ?? undefined,
+            secondaryColor: ctx.tenant.secondary_color ?? undefined,
           })
         } else {
           // SUPER_ADMIN de plataforma puede no tener tenant activo

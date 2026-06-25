@@ -70,7 +70,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           /* Colapsado: logo centrado clickeable para expandir */
           <button
             onClick={onToggle}
-            className="mx-auto flex h-8 w-8 items-center justify-center rounded-lg bg-brand-500 hover:bg-brand-600 transition-colors"
+            className="mx-auto flex h-8 w-8 items-center justify-center rounded-lg bg-primary hover:opacity-90 transition-opacity"
             title="Expandir sidebar"
           >
             {isSuperAdmin ? (
@@ -83,7 +83,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           /* Expandido: logo + nombre + flecha */
           <>
             <div className="flex items-center gap-2 min-w-0 flex-1">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-500">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary">
                 {isSuperAdmin ? (
                   <ShieldCheck className="h-4 w-4 text-white" />
                 ) : (
@@ -135,17 +135,17 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                     className={cn(
                       'relative flex items-center gap-3 rounded-lg mx-2 px-3 py-2 text-sm font-medium transition-all duration-150',
                       isActive
-                        ? 'bg-brand-500/10 dark:bg-brand-500/15 text-brand-600 dark:text-brand-400'
+                        ? 'bg-primary/10 dark:bg-primary/15 text-primary'
                         : 'text-grafito-600 dark:text-grafito-300 hover:bg-grafito-100 dark:hover:bg-white/5 hover:text-grafito-900 dark:hover:text-white',
                     )}
                   >
                     {isActive && (
                       <motion.span
                         layoutId="sidebar-active"
-                        className="absolute left-0 h-full w-0.5 rounded-full bg-brand-500"
+                        className="absolute left-0 h-full w-0.5 rounded-full bg-primary"
                       />
                     )}
-                    <Icon className={cn('h-4 w-4 shrink-0', isActive ? 'text-brand-500 dark:text-brand-400' : '')} />
+                    <Icon className={cn('h-4 w-4 shrink-0', isActive ? 'text-primary' : '')} />
                     <span
                       style={{ opacity: collapsed ? 0 : 1, transition: 'opacity 0.2s', width: collapsed ? 0 : undefined, overflow: 'hidden', whiteSpace: 'nowrap' }}
                     >
@@ -154,7 +154,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                     {item.badge && (
                       <span
                         style={{ opacity: collapsed ? 0 : 1, transition: 'opacity 0.2s' }}
-                        className="ml-auto rounded-full bg-brand-500 px-1.5 py-0.5 text-[10px] font-bold text-white"
+                        className="ml-auto rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-white"
                       >
                         {item.badge}
                       </span>

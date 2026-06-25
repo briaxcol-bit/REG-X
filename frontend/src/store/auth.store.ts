@@ -17,6 +17,8 @@ export interface TenantContext {
   plan: 'FREE' | 'BASIC' | 'PROFESSIONAL' | 'ENTERPRISE'
   businessType: string
   logoUrl?: string
+  primaryColor?: string
+  secondaryColor?: string
 }
 
 export interface BranchContext {

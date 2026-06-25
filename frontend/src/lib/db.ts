@@ -146,7 +146,7 @@ export async function resolveUserContext(userId: string) {
   // 3. Tenant
   const { data: tenant } = await supabase
     .from('tenants')
-    .select('id, name, slug, plan, business_type, logo_url, primary_color, currency, country, timezone')
+    .select('id, name, slug, plan, business_type, logo_url, primary_color, secondary_color, currency, country, timezone')
     .eq('id', role.tenant_id)
     .single()
 
@@ -735,6 +735,9 @@ export interface PlatformTenantRow {
   is_active: boolean
   country: string
   created_at: string
+  logo_url: string | null
+  primary_color: string
+  secondary_color: string
   subscriptions: { status: string; plan: string; price: number; currency: string; current_period_end: string | null }[]
 }
 
@@ -749,11 +752,15 @@ export interface PlatformUserRow {
 export async function getPlatformStats(): Promise<PlatformStats> {
   const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
 
-  const [{ data: tenants }, { data: subs }, { data: users }] = await Promise.all([
+  const [{ data: tenants, error: errT }, { data: subs, error: errS }, { data: users, error: errU }] = await Promise.all([
     supabase.from('tenants').select('id, plan, is_active, created_at'),
     supabase.from('subscriptions').select('id, status, plan, price, currency'),
     supabase.from('user_profiles').select('id'),
   ])
+
+  if (errT) console.error("Error fetching tenants for stats:", errT)
+  if (errS) console.error("Error fetching subs for stats:", errS)
+  if (errU) console.error("Error fetching users for stats:", errU)
 
   const tList = tenants ?? []
   const sList = subs ?? []
@@ -777,21 +784,47 @@ export async function getPlatformStats(): Promise<PlatformStats> {
 export async function getAllTenants(): Promise<PlatformTenantRow[]> {
   const { data, error } = await supabase
     .from('tenants')
-    .select('id, name, slug, plan, business_type, is_active, country, created_at, subscriptions (status, plan, price, currency, current_period_end)')
+    .select('id, name, slug, plan, business_type, is_active, country, created_at, logo_url, primary_color, secondary_color, subscriptions (status, plan, price, currency, current_period_end)')
     .order('created_at', { ascending: false })
 
-  if (error) throw error
+  if (error) {
+    console.error("SUPABASE ERROR IN getAllTenants:", error)
+    throw error
+  }
   return (data ?? []) as PlatformTenantRow[]
 }
 
 export async function getAllPlatformUsers(): Promise<PlatformUserRow[]> {
-  const { data, error } = await supabase
-    .from('user_profiles')
-    .select('id, full_name, platform_role, created_at, user_tenant_roles (role, is_active, tenants (name))')
-    .order('created_at', { ascending: false })
+  // user_profiles y user_tenant_roles no tienen FK directa entre sí (ambas
+  // referencian auth.users), por eso no se puede embeber una en la otra.
+  // Se consultan por separado y se unen en memoria.
+  const [profilesRes, rolesRes] = await Promise.all([
+    supabase
+      .from('user_profiles')
+      .select('id, full_name, platform_role, created_at')
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('user_tenant_roles')
+      .select('user_id, role, is_active, tenants (name)'),
+  ])
 
-  if (error) throw error
-  return (data ?? []) as unknown as PlatformUserRow[]
+  if (profilesRes.error) throw profilesRes.error
+  if (rolesRes.error) throw rolesRes.error
+
+  const rolesByUser = new Map<string, any[]>()
+  for (const r of (rolesRes.data ?? []) as any[]) {
+    const arr = rolesByUser.get(r.user_id) ?? []
+    arr.push({ role: r.role, is_active: r.is_active, tenants: r.tenants })
+    rolesByUser.set(r.user_id, arr)
+  }
+
+  return ((profilesRes.data ?? []) as any[]).map((p) => ({
+    id:            p.id,
+    full_name:     p.full_name,
+    platform_role: p.platform_role,
+    created_at:    p.created_at,
+    user_tenant_roles: rolesByUser.get(p.id) ?? [],
+  })) as unknown as PlatformUserRow[]
 }
 
 // -- Platform mutations (SUPER_ADMIN only, via RPC) ------------
@@ -800,7 +833,7 @@ export interface CreateTenantInput {
   name:           string
   slug:           string
   business_type:  string
-  plan:           'FREE' | 'BASIC' | 'PROFESSIONAL' | 'ENTERPRISE'
+  plan:           string
   country:        string
   currency:       string
   owner_email:    string
@@ -808,6 +841,20 @@ export interface CreateTenantInput {
   owner_password: string
   timezone?:      string
   locale?:        string
+  logo_url?:       string
+  primary_color?:  string
+  secondary_color?: string
+}
+
+export interface UpdateTenantInput {
+  name?:            string
+  slug?:            string
+  business_type?:   string
+  logo_url?:        string
+  primary_color?:   string
+  secondary_color?: string
+  country?:         string
+  currency?:        string
 }
 
 export interface CreateTenantResult {
@@ -817,25 +864,73 @@ export interface CreateTenantResult {
   owner_email: string
 }
 
+/** Sube el logo del tenant a Supabase Storage y retorna la URL pública */
+export async function uploadTenantLogo(file: File): Promise<string> {
+  const ext = file.name.split('.').pop()
+  const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${ext}`
+  
+  const { data, error } = await supabase.storage
+    .from('tenant-assets')
+    .upload(`logos/${fileName}`, file, { cacheControl: '3600', upsert: false })
+
+  if (error) throw error
+
+  const { data: publicUrlData } = supabase.storage
+    .from('tenant-assets')
+    .getPublicUrl(`logos/${fileName}`)
+
+  return publicUrlData.publicUrl
+}
+
 /** Crea un tenant + su sucursal/bodega/suscripcion + roles de negocio + usuario OWNER. */
 export async function createTenantWithOwner(
   input: CreateTenantInput,
 ): Promise<CreateTenantResult> {
   const { data, error } = await (supabase.rpc as any)('create_tenant_with_owner', {
-    p_name:           input.name,
-    p_slug:           input.slug,
-    p_business_type:  input.business_type,
-    p_plan:           input.plan,
-    p_country:        input.country,
-    p_currency:       input.currency,
-    p_owner_email:    input.owner_email,
-    p_owner_name:     input.owner_name,
-    p_owner_password: input.owner_password,
-    p_timezone:       input.timezone ?? 'America/Bogota',
-    p_locale:         input.locale ?? 'es-CO',
+    p_name:            input.name,
+    p_slug:            input.slug,
+    p_business_type:   input.business_type,
+    p_plan:            input.plan,
+    p_country:         input.country,
+    p_currency:        input.currency,
+    p_owner_email:     input.owner_email,
+    p_owner_name:      input.owner_name,
+    p_owner_password:  input.owner_password,
+    p_timezone:        input.timezone ?? 'America/Bogota',
+    p_locale:          input.locale ?? 'es-CO',
+    p_logo_url:        input.logo_url ?? null,
+    p_primary_color:   input.primary_color ?? '#F20D18',
+    p_secondary_color: input.secondary_color ?? '#111827',
   })
   if (error) throw error
   return data as CreateTenantResult
+}
+
+/** Actualiza el branding y datos editables de un tenant. */
+export async function updateTenant(
+  tenantId: string,
+  input: UpdateTenantInput,
+): Promise<void> {
+  const { error } = await (supabase.rpc as any)('update_tenant_branding', {
+    p_tenant_id:       tenantId,
+    p_name:            input.name            ?? null,
+    p_slug:            input.slug            ?? null,
+    p_business_type:   input.business_type   ?? null,
+    p_logo_url:        input.logo_url        ?? null,
+    p_primary_color:   input.primary_color   ?? null,
+    p_secondary_color: input.secondary_color ?? null,
+    p_country:         input.country         ?? null,
+    p_currency:        input.currency        ?? null,
+  })
+  if (error) throw error
+}
+
+/** Elimina permanentemente un tenant y todo su contenido (CASCADE). */
+export async function deleteTenant(tenantId: string): Promise<void> {
+  const { error } = await (supabase.rpc as any)('delete_tenant', {
+    p_tenant_id: tenantId,
+  })
+  if (error) throw error
 }
 
 /** Cambia el plan de un tenant (sincroniza la suscripcion). */
@@ -855,6 +950,147 @@ export async function setTenantActive(tenantId: string, active: boolean): Promis
   const { error } = await (supabase.rpc as any)('set_tenant_active', {
     p_tenant_id: tenantId,
     p_active: active,
+  })
+  if (error) throw error
+}
+
+// -- Subscriptions / Plans (SUPER_ADMIN) ----------------------
+
+export type PlanCode = 'FREE' | 'BASIC' | 'PROFESSIONAL' | 'ENTERPRISE'
+
+export interface PlanRow {
+  code:        PlanCode
+  name:        string
+  description: string | null
+  price:       number
+  currency:    string
+  features:    string[]
+  is_active:   boolean
+  sort_order:  number
+}
+
+export interface TenantSubscriptionRow {
+  id:            string
+  name:          string
+  slug:          string
+  plan:          string
+  is_active:     boolean
+  subscriptions: {
+    id:                   string
+    plan:                 string
+    status:               string
+    price:                number
+    currency:             string
+    current_period_start: string | null
+    current_period_end:   string | null
+  }[]
+}
+
+/** Catálogo de planes (precios editables). */
+export async function getPlans(): Promise<PlanRow[]> {
+  const { data, error } = await supabase
+    .from('plans')
+    .select('code, name, description, price, currency, features, is_active, sort_order')
+    .order('sort_order')
+  if (error) throw error
+  return (data ?? []) as unknown as PlanRow[]
+}
+
+/** Cambia el precio (y opcionalmente moneda) de un plan del catálogo. */
+export async function setPlanPrice(code: PlanCode, price: number, currency?: string): Promise<void> {
+  const { error } = await (supabase.rpc as any)('set_plan_price', {
+    p_code: code,
+    p_price: price,
+    p_currency: currency ?? null,
+  })
+  if (error) throw error
+}
+
+/** Actualiza los features de un plan del catálogo. */
+export async function setPlanFeatures(code: PlanCode, features: string[]): Promise<void> {
+  const { error } = await supabase
+    .from('plans')
+    .update({ features })
+    .eq('code', code)
+  if (error) throw error
+}
+
+/** Activa o desactiva un plan del catálogo (is_active). */
+export async function setPlanActive(code: string, isActive: boolean): Promise<void> {
+  const { error } = await supabase
+    .from('plans')
+    .update({ is_active: isActive })
+    .eq('code', code)
+  if (error) throw error
+}
+
+/** Crea un plan nuevo en el catálogo (requiere migración 008). */
+export async function createPlan(input: {
+  code: string
+  name: string
+  description?: string
+  price: number
+  currency: string
+  features: string[]
+  sort_order?: number
+}): Promise<void> {
+  const { error } = await (supabase.rpc as any)('create_plan', {
+    p_code:        input.code.toUpperCase().trim(),
+    p_name:        input.name,
+    p_description: input.description ?? null,
+    p_price:       input.price,
+    p_currency:    input.currency,
+    p_features:    input.features,
+    p_sort_order:  input.sort_order ?? 99,
+  })
+  if (error) throw error
+}
+
+/** Elimina un plan del catálogo (falla si hay tenants activos con ese plan). */
+export async function deletePlan(code: string): Promise<void> {
+  const { error } = await (supabase.rpc as any)('delete_plan', { p_code: code })
+  if (error) throw error
+}
+
+/** Tenants con su suscripción (para el panel de suscripciones). */
+export async function getTenantSubscriptions(): Promise<TenantSubscriptionRow[]> {
+  const { data, error } = await supabase
+    .from('tenants')
+    .select('id, name, slug, plan, is_active, subscriptions (id, plan, status, price, currency, current_period_start, current_period_end)')
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return (data ?? []) as unknown as TenantSubscriptionRow[]
+}
+
+/** Activa/cambia la suscripción de un tenant. Dura 1 mes. price opcional = override. */
+export async function activateSubscription(
+  tenantId: string,
+  plan: PlanCode,
+  price?: number,
+  currency?: string,
+): Promise<void> {
+  const { error } = await (supabase.rpc as any)('activate_subscription', {
+    p_tenant_id: tenantId,
+    p_plan: plan,
+    p_price: price ?? null,
+    p_currency: currency ?? null,
+  })
+  if (error) throw error
+}
+
+/** Renueva la suscripción 1 mes más. */
+export async function renewSubscription(tenantId: string): Promise<void> {
+  const { error } = await (supabase.rpc as any)('renew_subscription', {
+    p_tenant_id: tenantId,
+  })
+  if (error) throw error
+}
+
+/** Cancela la suscripción de un tenant. */
+export async function cancelSubscription(tenantId: string, reason?: string): Promise<void> {
+  const { error } = await (supabase.rpc as any)('cancel_subscription', {
+    p_tenant_id: tenantId,
+    p_reason: reason ?? null,
   })
   if (error) throw error
 }
