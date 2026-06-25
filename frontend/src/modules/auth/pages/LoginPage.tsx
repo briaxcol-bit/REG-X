@@ -3,25 +3,9 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence, useAnimation } from 'framer-motion'
 import { LogIn, Key, Mail, ShieldAlert, Eye, EyeOff, X, FileText } from 'lucide-react'
 import { useAuthStore } from '@store/auth.store'
-import { api } from '@lib/api'
 import { supabase } from '@lib/supabase'
 import { resolveUserContext } from '@lib/db'
 import { useTheme } from '@shared/hooks/useTheme'
-
-interface LoginResponse {
-  data: {
-    tokens: {
-      accessToken:  string
-      refreshToken: string
-      expiresIn:    number
-    }
-    user: {
-      id:       string
-      email:    string
-      fullName: string
-    }
-  }
-}
 
 // ── Glass Input wrapper ──────────────────────────────────────────────────────
 
@@ -38,15 +22,12 @@ function GlassInput({ children }: { children: React.ReactNode }) {
   }
 
   const darkStyle = {
-    background: 'rgba(8, 12, 20, 0.75)',
-    border: '1px solid rgba(255,255,255,0.08)',
-    borderTopColor: 'rgba(255,255,255,0.14)',
-    boxShadow: `
-      inset 0 1px 0 rgba(255,255,255,0.08),
-      0 4px 20px rgba(0,0,0,0.35)
-    `,
-    backdropFilter: 'blur(20px)',
-    WebkitBackdropFilter: 'blur(20px)',
+    background: 'rgba(255, 255, 255, 0.07)',
+    border: '1px solid rgba(255, 255, 255, 0.10)',
+    borderTopColor: 'rgba(255, 255, 255, 0.20)',
+    boxShadow: `inset 0 1px 0 rgba(255,255,255,0.12), 0 4px 24px rgba(0,0,0,0.30)`,
+    backdropFilter: 'blur(16px)',
+    WebkitBackdropFilter: 'blur(16px)',
   }
 
   const lightStyle = {
@@ -274,8 +255,8 @@ export default function LoginPage() {
         id: 'usr-demo',
         email: 'demo@regx.com',
         fullName: 'Administrador Demo',
-        platformRole: 'SUPER_ADMIN' as const,
-        permissions: ['*'],
+        businessRole: 'OWNER' as const,
+        permissions: [],
       })
       setTenant({
         tenantId: 'tenant-demo',
@@ -316,109 +297,88 @@ export default function LoginPage() {
     const from = (location.state as any)?.from?.pathname || '/dashboard'
 
     try {
-      // ── Intento 1: backend NestJS ────────────────────────
-      const res = await api.post<LoginResponse>('/auth/login', { email, password })
-      const { tokens, user } = res.data.data
+      // ── Autenticación vía Supabase (el frontend usa el cliente Supabase + RLS) ──
+      const SUPABASE_URL  = import.meta.env['VITE_SUPABASE_URL'] as string
+      const SUPABASE_ANON = import.meta.env['VITE_SUPABASE_ANON_KEY'] as string
 
-      localStorage.setItem('regx:access_token', tokens.accessToken)
-      localStorage.setItem('regx:refresh_token', tokens.refreshToken)
-
-      setUser({
-        id: user.id,
-        email: user.email,
-        app_metadata: {},
-        user_metadata: { full_name: user.fullName },
-        aud: 'authenticated',
-        created_at: new Date().toISOString(),
-      } as any)
-      setProfile({ id: user.id, email: user.email, fullName: user.fullName, permissions: [] })
-      setSession(null)
-      navigate(from, { replace: true })
-
-    } catch (err: any) {
-
-      // ── Intento 2: Supabase directo (backend apagado) ────
-      if (!err.response) {
-        try {
-          // Llamar el endpoint de tokens directamente (evita problemas con PKCE del cliente)
-          const SUPABASE_URL  = import.meta.env['VITE_SUPABASE_URL'] as string
-          const SUPABASE_ANON = import.meta.env['VITE_SUPABASE_ANON_KEY'] as string
-
-          if (!SUPABASE_URL || !SUPABASE_ANON) {
-            throw new Error('El servidor no está disponible y las credenciales de Supabase no están configuradas.')
-          }
-
-          const tokenRes = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
-            method:  'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              apikey:          SUPABASE_ANON,
-              Authorization:  `Bearer ${SUPABASE_ANON}`,
-            },
-            body: JSON.stringify({ email, password }),
-          })
-          const raw = await tokenRes.text()
-          const tokenData = raw ? JSON.parse(raw) : {}
-          if (!tokenRes.ok || !tokenData.access_token) {
-            throw new Error(tokenData.error_description ?? tokenData.message ?? 'Credenciales incorrectas')
-          }
-          // Inyectar sesión en el cliente Supabase
-          const { data, error: sbErr } = await supabase.auth.setSession({
-            access_token:  tokenData.access_token,
-            refresh_token: tokenData.refresh_token,
-          })
-          if (sbErr || !data.user) throw new Error(sbErr?.message ?? 'Credenciales incorrectas')
-
-          setUser(data.user as any)
-          setSession(data.session as any)
-
-          // Resolver tenant/branch/perfil desde la BD
-          const ctx = await resolveUserContext(data.user.id)
-
-          setProfile({
-            id:        data.user.id,
-            email:     data.user.email!,
-            fullName:  ctx?.profile?.full_name
-              ?? (data.user.user_metadata?.['full_name'] as string)
-              ?? email.split('@')[0],
-            permissions:   ['*'],
-            platformRole:  'SUPER_ADMIN' as const,
-            businessRole:  ctx?.role?.role as any,
-          })
-
-          if (ctx?.tenant) {
-            setTenant({
-              tenantId:     ctx.tenant.id,
-              tenantName:   ctx.tenant.name,
-              tenantSlug:   ctx.tenant.slug,
-              plan:         ctx.tenant.plan as any,
-              businessType: ctx.tenant.business_type,
-              logoUrl:      ctx.tenant.logo_url ?? undefined,
-            })
-          }
-
-          if (ctx?.branch) {
-            setBranch({
-              branchId:   ctx.branch.id,
-              branchName: ctx.branch.name,
-              branchCode: ctx.branch.code,
-              currency:   ctx.branch.currency ?? ctx?.tenant?.currency ?? 'USD',
-              timezone:   ctx.branch.timezone ?? ctx?.tenant?.timezone ?? 'America/Bogota',
-              country:    ctx?.tenant?.country ?? 'CO',
-            })
-          }
-
-          navigate(from, { replace: true })
-          return
-        } catch (sbFallbackErr: any) {
-          setError(sbFallbackErr.message ?? 'Credenciales incorrectas')
-          return
-        }
+      if (!SUPABASE_URL || !SUPABASE_ANON) {
+        throw new Error('El servidor no está disponible y las credenciales de Supabase no están configuradas.')
       }
 
-      // ── Error del backend (400/401) ──────────────────────
-      const msg = err?.response?.data?.message
-      setError(Array.isArray(msg) ? msg.join(', ') : (msg ?? 'Credenciales incorrectas'))
+      const tokenRes = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+        method:  'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey:          SUPABASE_ANON,
+          Authorization:  `Bearer ${SUPABASE_ANON}`,
+        },
+        body: JSON.stringify({ email, password }),
+      })
+      
+      const raw = await tokenRes.text()
+      const tokenData = raw ? JSON.parse(raw) : {}
+      
+      if (!tokenRes.ok || !tokenData.access_token) {
+        throw new Error(tokenData.error_description ?? tokenData.msg ?? tokenData.message ?? 'Credenciales incorrectas')
+      }
+
+      // Inyectar la sesión en el cliente Supabase (necesario para que RLS funcione)
+      const { data, error: sbErr } = await supabase.auth.setSession({
+        access_token:  tokenData.access_token,
+        refresh_token: tokenData.refresh_token,
+      })
+      if (sbErr || !data.user) throw new Error(sbErr?.message ?? 'Credenciales incorrectas')
+
+      // Quitar tokens del backend para que el interceptor priorice la sesión Supabase
+      localStorage.removeItem('regx:access_token')
+      localStorage.removeItem('regx:refresh_token')
+
+      setUser(data.user as any)
+      setSession(data.session as any)
+
+      // Resolver perfil/tenant/branch desde la BD (RLS activo)
+      const ctx = await resolveUserContext(data.user.id)
+
+      setProfile({
+        id:        data.user.id,
+        email:     data.user.email!,
+        fullName:  ctx?.profile?.full_name
+          ?? (data.user.user_metadata?.['full_name'] as string)
+          ?? email.split('@')[0],
+        permissions:  ctx?.profile?.platform_role === 'SUPER_ADMIN' ? ['*'] : [],
+        platformRole: (ctx?.profile?.platform_role as any) ?? undefined,
+        businessRole: ctx?.role?.role as any,
+      })
+
+      if (ctx?.tenant) {
+        setTenant({
+          tenantId:     ctx.tenant.id,
+          tenantName:   ctx.tenant.name,
+          tenantSlug:   ctx.tenant.slug,
+          plan:         ctx.tenant.plan as any,
+          businessType: ctx.tenant.business_type,
+          logoUrl:      ctx.tenant.logo_url ?? undefined,
+        })
+      } else {
+        setTenant(null)
+      }
+
+      if (ctx?.branch) {
+        setBranch({
+          branchId:   ctx.branch.id,
+          branchName: ctx.branch.name,
+          branchCode: ctx.branch.code,
+          currency:   ctx.branch.currency ?? ctx?.tenant?.currency ?? 'USD',
+          timezone:   ctx.branch.timezone ?? ctx?.tenant?.timezone ?? 'America/Bogota',
+          country:    ctx?.tenant?.country ?? 'CO',
+        })
+      }
+
+      // SUPER_ADMIN → panel de plataforma; el resto → su destino normal
+      const dest = ctx?.profile?.platform_role === 'SUPER_ADMIN' ? '/admin' : from
+      navigate(dest, { replace: true })
+    } catch (err: any) {
+      setError(err?.message ?? 'Credenciales incorrectas')
     } finally {
       setLoading(false)
     }

@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { getProducts, getCategories, type ProductRow, type CategoryRow } from '@lib/db'
 import { useAuthStore } from '@store/auth.store'
 
-export type { ProductRow as Product, CategoryRow as Category }
+export type { CategoryRow as Category }
 
 // Adapted shape for POS / pages
 export interface Product {

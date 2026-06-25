@@ -1,13 +1,15 @@
-import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom'
-import { lazy, Suspense } from 'react'
+import { createBrowserRouter, Navigate, Outlet, useNavigate } from 'react-router-dom'
+import { lazy, Suspense, useEffect } from 'react'
 import { FullscreenLoader } from '@shared/components/FullscreenLoader'
 import { AuthLayout } from '@shared/layouts/AuthLayout'
 import { AppLayout } from '@shared/layouts/AppLayout'
 import { POSLayout } from '@shared/layouts/POSLayout'
 import { RequireAuth } from '@shared/components/RequireAuth'
 import { RequirePermission } from '@shared/components/RequirePermission'
+import { RequirePlatformRole } from '@shared/components/RequirePlatformRole'
+import { useAuthStore } from '@store/auth.store'
 
-// ── Lazy pages ───────────────────────────────────────────────
+// -- Lazy pages -----------------------------------------------
 
 const LoginPage        = lazy(() => import('@modules/auth/pages/LoginPage'))
 const RegisterPage     = lazy(() => import('@modules/auth/pages/RegisterPage'))
@@ -16,6 +18,12 @@ const MFAPage          = lazy(() => import('@modules/auth/pages/MFAPage'))
 
 const DashboardPage    = lazy(() => import('@modules/dashboard/pages/DashboardPage'))
 const SaaSDashboard    = lazy(() => import('@modules/dashboard/pages/SaaSDashboardPage'))
+
+// Platform (SUPER_ADMIN)
+const PlatformDashboard = lazy(() => import('@modules/platform/pages/PlatformDashboardPage'))
+const PlatformTenants   = lazy(() => import('@modules/platform/pages/TenantsPage'))
+const PlatformUsers     = lazy(() => import('@modules/platform/pages/PlatformUsersPage'))
+const PlatformPlans     = lazy(() => import('@modules/platform/pages/PlatformPlansPage'))
 
 const POSPage          = lazy(() => import('@modules/pos/pages/POSPage'))
 
@@ -43,16 +51,32 @@ const MarketplacePage   = lazy(() => import('@modules/marketplace/pages/Marketpl
 
 const NotFoundPage = lazy(() => import('@shared/pages/NotFoundPage'))
 
-// ── Suspense wrapper ─────────────────────────────────────────
+// -- Suspense wrapper -----------------------------------------
 
 const Page = ({ children }: { children: React.ReactNode }) => (
   <Suspense fallback={<FullscreenLoader />}>{children}</Suspense>
 )
 
-// ── Router ───────────────────────────────────────────────────
+// -- Smart home redirect --------------------------------------
+// SUPER_ADMIN -> /admin  |  todos los demas -> /dashboard
+function SmartHome() {
+  const profile   = useAuthStore((s) => s.profile)
+  const isLoading = useAuthStore((s) => s.isLoading)
+  const navigate  = useNavigate()
+
+  useEffect(() => {
+    if (isLoading) return
+    const dest = profile?.platformRole === 'SUPER_ADMIN' ? '/admin' : '/dashboard'
+    navigate(dest, { replace: true })
+  }, [profile, isLoading, navigate])
+
+  return <FullscreenLoader />
+}
+
+// -- Router ---------------------------------------------------
 
 export const router = createBrowserRouter([
-  // ── Auth (unauthenticated) ─────────────────────────────────
+  // Auth (unauthenticated)
   {
     path: '/auth',
     element: <AuthLayout><Outlet /></AuthLayout>,
@@ -65,7 +89,7 @@ export const router = createBrowserRouter([
     ],
   },
 
-  // ── POS (touch UI — minimal chrome) ────────────────────────
+  // POS (touch UI - minimal chrome)
   {
     path: '/pos',
     element: (
@@ -80,7 +104,7 @@ export const router = createBrowserRouter([
     ],
   },
 
-  // ── Kitchen Display System ──────────────────────────────────
+  // Kitchen Display System
   {
     path: '/kds',
     element: (
@@ -95,7 +119,7 @@ export const router = createBrowserRouter([
     ],
   },
 
-  // ── Main App ────────────────────────────────────────────────
+  // Main App
   {
     path: '/',
     element: (
@@ -104,21 +128,33 @@ export const router = createBrowserRouter([
       </RequireAuth>
     ),
     children: [
-      { index: true, element: <Navigate to="/dashboard" replace /> },
+      { index: true, element: <SmartHome /> },
 
-      // Dashboard
+      // Regular dashboard
       { path: 'dashboard', element: <Page><DashboardPage /></Page> },
       { path: 'saas',      element: <Page><SaaSDashboard /></Page> },
+
+      // Platform Admin (SUPER_ADMIN only)
+      {
+        path: 'admin',
+        element: <RequirePlatformRole role="SUPER_ADMIN"><Outlet /></RequirePlatformRole>,
+        children: [
+          { index: true,      element: <Page><PlatformDashboard /></Page> },
+          { path: 'tenants',  element: <Page><PlatformTenants /></Page> },
+          { path: 'users',    element: <Page><PlatformUsers /></Page> },
+          { path: 'plans',    element: <Page><PlatformPlans /></Page> },
+        ],
+      },
 
       // Products
       {
         path: 'products',
         element: <RequirePermission permission="products.view"><Outlet /></RequirePermission>,
         children: [
-          { index: true,          element: <Page><ProductsPage /></Page> },
-          { path: 'new',          element: <Page><ProductFormPage /></Page> },
-          { path: ':id/edit',     element: <Page><ProductFormPage /></Page> },
-          { path: 'categories',   element: <Page><CategoriesPage /></Page> },
+          { index: true,        element: <Page><ProductsPage /></Page> },
+          { path: 'new',        element: <Page><ProductFormPage /></Page> },
+          { path: ':id/edit',   element: <Page><ProductFormPage /></Page> },
+          { path: 'categories', element: <Page><CategoriesPage /></Page> },
         ],
       },
 
@@ -127,9 +163,9 @@ export const router = createBrowserRouter([
         path: 'inventory',
         element: <RequirePermission permission="inventory.view"><Outlet /></RequirePermission>,
         children: [
-          { index: true,        element: <Page><InventoryPage /></Page> },
-          { path: 'movements',  element: <Page><StockMovements /></Page> },
-          { path: 'transfers',  element: <Page><TransfersPage /></Page> },
+          { index: true,       element: <Page><InventoryPage /></Page> },
+          { path: 'movements', element: <Page><StockMovements /></Page> },
+          { path: 'transfers', element: <Page><TransfersPage /></Page> },
         ],
       },
 
@@ -150,8 +186,8 @@ export const router = createBrowserRouter([
         path: 'reports',
         element: <RequirePermission permission="reports.view"><Outlet /></RequirePermission>,
         children: [
-          { index: true,    element: <Page><ReportsPage /></Page> },
-          { path: 'sales',  element: <Page><SalesReport /></Page> },
+          { index: true,   element: <Page><ReportsPage /></Page> },
+          { path: 'sales', element: <Page><SalesReport /></Page> },
         ],
       },
 
@@ -166,6 +202,6 @@ export const router = createBrowserRouter([
     ],
   },
 
-  // ── 404 ────────────────────────────────────────────────────
+  // 404
   { path: '*', element: <Page><NotFoundPage /></Page> },
 ])

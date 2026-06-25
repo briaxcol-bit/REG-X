@@ -47,13 +47,26 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
       addPayment({ method: selectedMethod, amount: selectedMethod === 'CASH' ? cashReceived : total })
 
       await createSale({
-        items,
+        items: items.map((it) => ({
+          product_id:      it.productId,
+          name:            it.name,
+          sku:             it.sku,
+          quantity:        it.quantity,
+          unit_price:      it.price,
+          discount:        it.discount,
+          discount_amount: it.discountAmount,
+          tax:             it.tax,
+          tax_amount:      it.taxAmount,
+          total:           it.total,
+        })),
         payments: [...payments, { method: selectedMethod, amount: selectedMethod === 'CASH' ? cashReceived : total }],
-        discounts,
-        customerId,
-        tableId,
+        customer_id:    customerId,
         notes,
+        subtotal:       items.reduce((s, it) => s + it.price * it.quantity, 0),
+        tax_total:      items.reduce((s, it) => s + it.taxAmount, 0),
+        discount_total: items.reduce((s, it) => s + it.discountAmount, 0),
         total,
+        currency,
       })
 
       setSuccess(true)

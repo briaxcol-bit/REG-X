@@ -139,14 +139,13 @@ export default function POSPage() {
     setCustomer, getSubtotal, getTaxTotal, getDiscountTotal, getTotal,
   } = usePOSStore()
 
-  const { branch, tenant } = useAuthStore()
+  const { branch } = useAuthStore()
   const currency = branch?.currency ?? 'USD'
 
   // Products query
   const { data: products = [], isLoading: loadingProducts } = useProducts({
     search,
     categoryId: selectedCategory ?? undefined,
-    tenantId: tenant?.tenantId,
   })
 
   const handleAddProduct = useCallback((product: typeof products[0]) => {

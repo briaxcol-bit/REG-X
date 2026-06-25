@@ -85,9 +85,9 @@
   .dark input:-webkit-autofill:hover,
   .dark input:-webkit-autofill:focus,
   .dark input:-webkit-autofill:active {
-    -webkit-box-shadow: 0 0 0 1000px #080c14 inset !important;
-    box-shadow: 0 0 0 1000px #080c14 inset !important;
-    /* #080c14 ≈ rgba(8,12,20) — coincide con el fondo del GlassInput en dark mode */
+    -webkit-box-shadow: 0 0 0 1000px #141823 inset !important;
+    box-shadow: 0 0 0 1000px #141823 inset !important;
+    /* #141823 ≈ #030712 (grafito-950) + rgba(255,255,255,0.07) — coincide con el glass en dark mode */
     -webkit-text-fill-color: #f9fafb !important;
     caret-color: #f9fafb;
     transition: background-color 9999s ease-in-out 0s;

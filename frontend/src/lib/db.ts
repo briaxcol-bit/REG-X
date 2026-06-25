@@ -140,7 +140,8 @@ export async function resolveUserContext(userId: string) {
     .eq('is_active', true)
     .single()
 
-  if (!role) return null
+  // No retornar null si no hay rol de tenant: el usuario puede ser SUPER_ADMIN de plataforma
+  if (!role) return { profile, role: null, tenant: null, branch: null }
 
   // 3. Tenant
   const { data: tenant } = await supabase
@@ -363,7 +364,7 @@ export async function getProducts(
     .is('deleted_at', null)
     .order('name')
 
-  if (params?.status) q = q.eq('status', params.status)
+  if (params?.status) q = q.eq('status', params.status as any)
   else q = q.eq('status', 'ACTIVE')
 
   if (params?.categoryId) q = q.eq('category_id', params.categoryId)
@@ -386,7 +387,7 @@ export async function getCategories(tenantId: string): Promise<CategoryRow[]> {
     .is('deleted_at', null)
     .order('sort_order')
   if (error) throw error
-  return data ?? []
+  return (data ?? []) as unknown as CategoryRow[]
 }
 
 // ── Customers ──────────────────────────────────────────────────
@@ -448,7 +449,7 @@ export async function getSales(
     .eq('branch_id', branchId)
     .order('created_at', { ascending: false })
 
-  if (params?.status) q = q.eq('status', params.status)
+  if (params?.status) q = q.eq('status', params.status as any)
   if (params?.limit)  q = q.limit(params.limit)
 
   const { data, error } = await q
@@ -537,7 +538,7 @@ export async function createSale(
   const { error: payErr } = await supabase.from('sale_payments').insert(
     payload.payments.map((p) => ({
       sale_id:   sale.id,
-      method:    p.method,
+      method:    p.method as any,
       amount:    p.amount,
       reference: p.reference ?? null,
     })),
@@ -565,4 +566,295 @@ export async function getInventory(
 
   if (error) throw error
   return (data ?? []) as unknown as InventoryRow[]
+}
+
+// ── Tables (restaurant) ────────────────────────────────────────
+
+export interface TableRow {
+  id: string
+  number: string
+  name: string | null
+  capacity: number
+  status: 'AVAILABLE' | 'OCCUPIED' | 'RESERVED' | 'MAINTENANCE'
+  area_id: string | null
+  dining_areas?: { name: string } | null
+}
+
+export async function getTables(tenantId: string, branchId: string): Promise<TableRow[]> {
+  const { data, error } = await supabase
+    .from('tables')
+    .select('id, number, name, capacity, status, area_id, dining_areas(name)')
+    .eq('tenant_id', tenantId)
+    .eq('branch_id', branchId)
+    .eq('is_active', true)
+    .order('number')
+  if (error) throw error
+  return (data ?? []) as unknown as TableRow[]
+}
+
+export async function updateTableStatus(tableId: string, status: TableRow['status']) {
+  const { error } = await supabase
+    .from('tables')
+    .update({ status })
+    .eq('id', tableId)
+  if (error) throw error
+}
+
+// ── Orders / KDS ───────────────────────────────────────────────
+
+export interface OrderRow {
+  id: string
+  order_number: string
+  status: string
+  notes: string | null
+  created_at: string
+  tables?: { number: string; name: string | null } | null
+  order_items?: {
+    id: string
+    quantity: number
+    status: string
+    destination: string
+    products?: { name: string } | null
+  }[]
+}
+
+export async function getOrders(
+  tenantId: string,
+  branchId: string,
+  status?: string,
+): Promise<OrderRow[]> {
+  let q = supabase
+    .from('orders')
+    .select(`
+      id, order_number, status, notes, created_at,
+      tables(number, name),
+      order_items(id, quantity, status, destination, products(name))
+    `)
+    .eq('tenant_id', tenantId)
+    .eq('branch_id', branchId)
+    .order('created_at', { ascending: true })
+
+  if (status) q = q.eq('status', status as any)
+
+  const { data, error } = await q
+  if (error) throw error
+  return (data ?? []) as unknown as OrderRow[]
+}
+
+export async function updateOrderItemStatus(itemId: string, status: string) {
+  const { error } = await supabase
+    .from('order_items')
+    .update({ status: status as any, ...(status === 'READY' ? { ready_at: new Date().toISOString() } : {}) })
+    .eq('id', itemId)
+  if (error) throw error
+}
+
+// ── Sales Report ───────────────────────────────────────────────
+
+export interface SalesReportData {
+  totalRevenue:    number
+  totalCount:      number
+  avgTicket:       number
+  byPaymentMethod: { method: string; amount: number; percent: number }[]
+  recentSales:     SaleRow[]
+}
+
+export async function getSalesReport(
+  tenantId: string,
+  branchId: string,
+  from?: string,
+  to?: string,
+): Promise<SalesReportData> {
+  let q = supabase
+    .from('sales')
+    .select(`
+      id, order_number, total, status, currency, created_at,
+      customers(full_name),
+      sale_payments(method, amount)
+    `)
+    .eq('tenant_id', tenantId)
+    .eq('branch_id', branchId)
+    .eq('status', 'COMPLETED')
+    .order('created_at', { ascending: false })
+
+  if (from) q = q.gte('created_at', from)
+  if (to)   q = q.lte('created_at', to)
+
+  const { data, error } = await q
+  if (error) throw error
+
+  const rows = (data ?? []) as any[]
+  const totalRevenue = rows.reduce((s, r) => s + Number(r.total), 0)
+  const totalCount   = rows.length
+  const avgTicket    = totalCount > 0 ? totalRevenue / totalCount : 0
+
+  // Agrupar por método de pago
+  const methodTotals: Record<string, number> = {}
+  for (const row of rows) {
+    for (const p of (row.sale_payments ?? [])) {
+      methodTotals[p.method] = (methodTotals[p.method] ?? 0) + Number(p.amount)
+    }
+  }
+  const methodNames: Record<string, string> = {
+    CASH: 'Efectivo', CARD: 'Tarjeta', TRANSFER: 'Transferencia',
+    QR: 'QR / Código', GIFT_CARD: 'Tarjeta Regalo', MIXED: 'Mixto',
+  }
+  const byPaymentMethod = Object.entries(methodTotals).map(([method, amount]) => ({
+    method:  methodNames[method] ?? method,
+    amount,
+    percent: totalRevenue > 0 ? Math.round((amount / totalRevenue) * 1000) / 10 : 0,
+  })).sort((a, b) => b.amount - a.amount)
+
+  return {
+    totalRevenue,
+    totalCount,
+    avgTicket,
+    byPaymentMethod,
+    recentSales: rows.slice(0, 20) as SaleRow[],
+  }
+}
+
+// -- Platform-level queries (SUPER_ADMIN only) ----------------
+
+export interface PlatformStats {
+  totalTenants: number
+  activeTenants: number
+  activeSubscriptions: number
+  mrr: number
+  totalUsers: number
+  newThisMonth: number
+  planBreakdown: { plan: string; count: number }[]
+}
+
+export interface PlatformTenantRow {
+  id: string
+  name: string
+  slug: string
+  plan: string
+  business_type: string
+  is_active: boolean
+  country: string
+  created_at: string
+  subscriptions: { status: string; plan: string; price: number; currency: string; current_period_end: string | null }[]
+}
+
+export interface PlatformUserRow {
+  id: string
+  full_name: string | null
+  platform_role: string | null
+  created_at: string
+  user_tenant_roles: { role: string; is_active: boolean; tenants: { name: string } | null }[]
+}
+
+export async function getPlatformStats(): Promise<PlatformStats> {
+  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
+
+  const [{ data: tenants }, { data: subs }, { data: users }] = await Promise.all([
+    supabase.from('tenants').select('id, plan, is_active, created_at'),
+    supabase.from('subscriptions').select('id, status, plan, price, currency'),
+    supabase.from('user_profiles').select('id'),
+  ])
+
+  const tList = tenants ?? []
+  const sList = subs ?? []
+
+  const planBreakdownMap: Record<string, number> = {}
+  for (const t of tList) {
+    planBreakdownMap[t.plan] = (planBreakdownMap[t.plan] ?? 0) + 1
+  }
+
+  return {
+    totalTenants:        tList.length,
+    activeTenants:       tList.filter((t) => t.is_active).length,
+    activeSubscriptions: sList.filter((s) => s.status === 'ACTIVE').length,
+    mrr:                 sList.filter((s) => s.status === 'ACTIVE').reduce((sum, s) => sum + (s.price ?? 0), 0),
+    totalUsers:          (users ?? []).length,
+    newThisMonth:        tList.filter((t) => t.created_at >= monthStart).length,
+    planBreakdown:       Object.entries(planBreakdownMap).map(([plan, count]) => ({ plan, count })),
+  }
+}
+
+export async function getAllTenants(): Promise<PlatformTenantRow[]> {
+  const { data, error } = await supabase
+    .from('tenants')
+    .select('id, name, slug, plan, business_type, is_active, country, created_at, subscriptions (status, plan, price, currency, current_period_end)')
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return (data ?? []) as PlatformTenantRow[]
+}
+
+export async function getAllPlatformUsers(): Promise<PlatformUserRow[]> {
+  const { data, error } = await supabase
+    .from('user_profiles')
+    .select('id, full_name, platform_role, created_at, user_tenant_roles (role, is_active, tenants (name))')
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return (data ?? []) as unknown as PlatformUserRow[]
+}
+
+// -- Platform mutations (SUPER_ADMIN only, via RPC) ------------
+
+export interface CreateTenantInput {
+  name:           string
+  slug:           string
+  business_type:  string
+  plan:           'FREE' | 'BASIC' | 'PROFESSIONAL' | 'ENTERPRISE'
+  country:        string
+  currency:       string
+  owner_email:    string
+  owner_name:     string
+  owner_password: string
+  timezone?:      string
+  locale?:        string
+}
+
+export interface CreateTenantResult {
+  tenant_id:   string
+  branch_id:   string
+  owner_id:    string
+  owner_email: string
+}
+
+/** Crea un tenant + su sucursal/bodega/suscripcion + roles de negocio + usuario OWNER. */
+export async function createTenantWithOwner(
+  input: CreateTenantInput,
+): Promise<CreateTenantResult> {
+  const { data, error } = await (supabase.rpc as any)('create_tenant_with_owner', {
+    p_name:           input.name,
+    p_slug:           input.slug,
+    p_business_type:  input.business_type,
+    p_plan:           input.plan,
+    p_country:        input.country,
+    p_currency:       input.currency,
+    p_owner_email:    input.owner_email,
+    p_owner_name:     input.owner_name,
+    p_owner_password: input.owner_password,
+    p_timezone:       input.timezone ?? 'America/Bogota',
+    p_locale:         input.locale ?? 'es-CO',
+  })
+  if (error) throw error
+  return data as CreateTenantResult
+}
+
+/** Cambia el plan de un tenant (sincroniza la suscripcion). */
+export async function setTenantPlan(
+  tenantId: string,
+  plan: 'FREE' | 'BASIC' | 'PROFESSIONAL' | 'ENTERPRISE',
+): Promise<void> {
+  const { error } = await (supabase.rpc as any)('set_tenant_plan', {
+    p_tenant_id: tenantId,
+    p_plan: plan,
+  })
+  if (error) throw error
+}
+
+/** Activa o desactiva un tenant (y su suscripcion). */
+export async function setTenantActive(tenantId: string, active: boolean): Promise<void> {
+  const { error } = await (supabase.rpc as any)('set_tenant_active', {
+    p_tenant_id: tenantId,
+    p_active: active,
+  })
+  if (error) throw error
 }

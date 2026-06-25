@@ -3,8 +3,8 @@ import { motion } from 'framer-motion'
 import {
   LayoutDashboard, Package, Boxes,
   Users, BarChart3, Settings, ChefHat, CreditCard,
-  Store, Puzzle, ChevronLeft,
-  Zap,
+  Store, Puzzle, ChevronLeft, ChevronRight,
+  Zap, Building2, ShieldCheck,
 } from 'lucide-react'
 import { cn } from '@shared/utils/cn'
 import { useAuthStore } from '@store/auth.store'
@@ -18,17 +18,27 @@ interface NavItem {
   group?: string
 }
 
+// Menu de negocio - admins, cajeros, etc.
 const NAV_ITEMS: NavItem[] = [
   { to: '/dashboard',     icon: LayoutDashboard, label: 'Dashboard',   group: 'Principal' },
   { to: '/pos',           icon: Zap,             label: 'POS',         permission: 'sales.create', group: 'Principal' },
-  { to: '/products',      icon: Package,         label: 'Productos',   permission: 'products.view', group: 'Catálogo' },
-  { to: '/inventory',     icon: Boxes,           label: 'Inventario',  permission: 'inventory.view', group: 'Catálogo' },
-  { to: '/customers',     icon: Users,           label: 'Clientes',    group: 'Catálogo' },
+  { to: '/products',      icon: Package,         label: 'Productos',   permission: 'products.view', group: 'Catalogo' },
+  { to: '/inventory',     icon: Boxes,           label: 'Inventario',  permission: 'inventory.view', group: 'Catalogo' },
+  { to: '/customers',     icon: Users,           label: 'Clientes',    group: 'Catalogo' },
   { to: '/restaurant',    icon: ChefHat,         label: 'Restaurante', group: 'Servicio' },
-  { to: '/reports',       icon: BarChart3,       label: 'Reportes',    permission: 'reports.view', group: 'Análisis' },
-  { to: '/subscriptions', icon: CreditCard,      label: 'Suscripción', group: 'Sistema' },
+  { to: '/reports',       icon: BarChart3,       label: 'Reportes',    permission: 'reports.view', group: 'Analisis' },
+  { to: '/subscriptions', icon: CreditCard,      label: 'Suscripcion', group: 'Sistema' },
   { to: '/marketplace',   icon: Puzzle,          label: 'Marketplace', group: 'Sistema' },
   { to: '/settings',      icon: Settings,        label: 'Ajustes',     group: 'Sistema' },
+]
+
+// Menu de plataforma - solo SUPER_ADMIN
+const PLATFORM_NAV_ITEMS: NavItem[] = [
+  { to: '/admin',         icon: LayoutDashboard, label: 'Panel General', group: 'Plataforma' },
+  { to: '/admin/tenants', icon: Building2,       label: 'Tenants',       group: 'Plataforma' },
+  { to: '/admin/users',   icon: Users,           label: 'Usuarios',      group: 'Plataforma' },
+  { to: '/admin/plans',   icon: CreditCard,      label: 'Suscripciones', group: 'Plataforma' },
+  { to: '/settings',      icon: Settings,        label: 'Ajustes',       group: 'Sistema' },
 ]
 
 interface SidebarProps {
@@ -38,11 +48,14 @@ interface SidebarProps {
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const location = useLocation()
-  const { hasPermission, tenant } = useAuthStore()
+  const { hasPermission, tenant, profile } = useAuthStore()
 
-  const visibleItems = NAV_ITEMS.filter(
-    (item) => !item.permission || hasPermission(item.permission),
-  )
+  const isSuperAdmin = profile?.platformRole === 'SUPER_ADMIN'
+
+  const visibleItems = isSuperAdmin
+    ? PLATFORM_NAV_ITEMS
+    : NAV_ITEMS.filter((item) => !item.permission || hasPermission(item.permission))
+
   const groups = [...new Set(visibleItems.map((i) => i.group))]
 
   return (
@@ -54,22 +67,28 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       {/* ── Logo ─────────────────────────────────────────── */}
       <div className="flex h-16 items-center border-b border-grafito-200 dark:border-white/5 px-3">
         {collapsed ? (
-          /* Colapsado: icono centrado, flecha debajo en el nav */
+          /* Colapsado: logo centrado clickeable para expandir */
           <button
             onClick={onToggle}
             className="mx-auto flex h-8 w-8 items-center justify-center rounded-lg bg-brand-500 hover:bg-brand-600 transition-colors"
+            title="Expandir sidebar"
           >
-            <ChevronLeft
-              className="h-4 w-4 text-white transition-transform duration-250"
-              style={{ transform: 'rotate(180deg)' }}
-            />
+            {isSuperAdmin ? (
+              <ShieldCheck className="h-4 w-4 text-white" />
+            ) : (
+              <Store className="h-4 w-4 text-white" />
+            )}
           </button>
         ) : (
           /* Expandido: logo + nombre + flecha */
           <>
             <div className="flex items-center gap-2 min-w-0 flex-1">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-500">
-                <Store className="h-4 w-4 text-white" />
+                {isSuperAdmin ? (
+                  <ShieldCheck className="h-4 w-4 text-white" />
+                ) : (
+                  <Store className="h-4 w-4 text-white" />
+                )}
               </div>
               <motion.div
                 initial={{ opacity: 0, x: -8 }}
@@ -79,7 +98,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               >
                 <span className="text-sm font-bold text-grafito-900 dark:text-white">REG-X</span>
                 <span className="text-[10px] text-grafito-500 dark:text-grafito-400 truncate max-w-[140px]">
-                  {tenant?.tenantName ?? 'ERP/POS'}
+                  {isSuperAdmin ? 'Super Admin' : (tenant?.tenantName ?? 'ERP/POS')}
                 </span>
               </motion.div>
             </div>
@@ -146,6 +165,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           </div>
         ))}
       </nav>
+
 
     </motion.aside>
   )

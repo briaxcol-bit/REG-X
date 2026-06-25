@@ -3,7 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { immer } from 'zustand/middleware/immer'
 import type { User, Session } from '@supabase/supabase-js'
 
-// ── Types ────────────────────────────────────────────────────
+// -- Types ----------------------------------------------------
 
 export type PlatformRole = 'SUPER_ADMIN' | 'SUPPORT' | 'SALES_MANAGER'
 export type BusinessRole =
@@ -38,6 +38,23 @@ export interface UserProfile {
   permissions: string[]
 }
 
+// -- Role -> permission map -----------------------------------
+// Define que puede hacer cada rol de negocio.
+// '*' significa acceso total al negocio.
+
+const ROLE_PERMISSIONS: Record<string, string[]> = {
+  OWNER:             ['*'],
+  ADMIN:             ['sales.create', 'products.view', 'inventory.view', 'reports.view', 'kitchen.view'],
+  CASHIER:           ['sales.create', 'products.view'],
+  WAITER:            ['sales.create', 'kitchen.view'],
+  CHEF:              ['kitchen.view'],
+  BARTENDER:         ['sales.create', 'kitchen.view'],
+  ACCOUNTANT:        ['reports.view', 'inventory.view'],
+  INVENTORY_MANAGER: ['inventory.view', 'products.view'],
+}
+
+// -- Store types ----------------------------------------------
+
 interface AuthState {
   user: User | null
   session: Session | null
@@ -64,7 +81,7 @@ interface AuthActions {
 
 type AuthStore = AuthState & AuthActions
 
-// ── Store ────────────────────────────────────────────────────
+// -- Store ----------------------------------------------------
 
 export const useAuthStore = create<AuthStore>()(
   persist(
@@ -130,12 +147,20 @@ export const useAuthStore = create<AuthStore>()(
           state.isAuthenticated = false
           localStorage.removeItem('regx:tenant_id')
           localStorage.removeItem('regx:branch_id')
+          localStorage.removeItem('regx:access_token')
+          localStorage.removeItem('regx:refresh_token')
         }),
 
       hasPermission: (permission: string) => {
         const { profile } = get()
         if (!profile) return false
+        // SUPER_ADMIN tiene acceso total a todo
         if (profile.platformRole === 'SUPER_ADMIN') return true
+        // Permisos por rol de negocio
+        const rolePerms = ROLE_PERMISSIONS[profile.businessRole ?? ''] ?? []
+        if (rolePerms.includes('*')) return true
+        if (rolePerms.includes(permission)) return true
+        // Permisos adicionales explícitos
         return profile.permissions.includes(permission)
       },
 
