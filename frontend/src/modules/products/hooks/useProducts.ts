@@ -96,9 +96,9 @@ const MOCK_PRODUCTS: Product[] = [
 ]
 
 interface UseProductsParams {
-  search?: string
-  categoryId?: string
-  tenantId?: string
+  search?: string | undefined
+  categoryId?: string | undefined
+  tenantId?: string | undefined
 }
 
 export function useProducts(params?: UseProductsParams) {

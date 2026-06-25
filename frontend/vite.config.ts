@@ -42,7 +42,6 @@ export default defineConfig({
         ],
         protocol_handlers: [],
         file_handlers: [],
-        share_target: undefined,
         related_applications: [],
         prefer_related_applications: false,
       },

@@ -48,9 +48,9 @@ interface POSState {
   items: CartItem[]
   discounts: CartDiscount[]
   payments: PaymentLine[]
-  customerId?: string
-  tableId?: string
-  orderId?: string
+  customerId?: string | undefined
+  tableId?: string | undefined
+  orderId?: string | undefined
   notes: string
   isOffline: boolean
   session: POSSession | null

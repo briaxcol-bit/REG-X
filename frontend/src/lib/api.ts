@@ -1,7 +1,7 @@
 import axios, { type AxiosInstance, type AxiosRequestConfig, type InternalAxiosRequestConfig } from 'axios'
 import { supabase } from './supabase'
 
-const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000'
+const BASE_URL = import.meta.env['VITE_API_URL'] ?? 'http://localhost:3000'
 
 const createApiClient = (): AxiosInstance => {
   const client = axios.create({
@@ -53,7 +53,7 @@ const createApiClient = (): AxiosInstance => {
         }
 
         if (originalRequest.headers) {
-          (originalRequest.headers as Record<string, string>).Authorization =
+          (originalRequest.headers as Record<string, string>)['Authorization'] =
             `Bearer ${data.session.access_token}`
         }
 
