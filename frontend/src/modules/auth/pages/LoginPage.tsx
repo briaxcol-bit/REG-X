@@ -330,9 +330,27 @@ export default function LoginPage() {
       // ── Intento 2: Supabase directo (backend apagado) ────
       if (!err.response) {
         try {
-          // Limpiar estado PKCE sucio de intentos anteriores
-          await supabase.auth.signOut({ scope: 'local' })
-          const { data, error: sbErr } = await supabase.auth.signInWithPassword({ email, password })
+          // Llamar el endpoint de tokens directamente (evita problemas con PKCE del cliente)
+          const SUPABASE_URL  = import.meta.env['VITE_SUPABASE_URL'] as string
+          const SUPABASE_ANON = import.meta.env['VITE_SUPABASE_ANON_KEY'] as string
+          const tokenRes = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+            method:  'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              apikey:          SUPABASE_ANON,
+              Authorization:  `Bearer ${SUPABASE_ANON}`,
+            },
+            body: JSON.stringify({ email, password }),
+          })
+          const tokenData = await tokenRes.json()
+          if (!tokenRes.ok || !tokenData.access_token) {
+            throw new Error(tokenData.error_description ?? tokenData.message ?? 'Credenciales incorrectas')
+          }
+          // Inyectar sesión en el cliente Supabase
+          const { data, error: sbErr } = await supabase.auth.setSession({
+            access_token:  tokenData.access_token,
+            refresh_token: tokenData.refresh_token,
+          })
           if (sbErr || !data.user) throw new Error(sbErr?.message ?? 'Credenciales incorrectas')
 
           setUser(data.user as any)
