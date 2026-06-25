@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import {
   LayoutDashboard, Package, Boxes,
   Users, BarChart3, Settings, ChefHat, CreditCard,
@@ -94,14 +94,15 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       </div>
 
       {/* ── Nav ──────────────────────────────────────────── */}
-      <nav className="flex-1 overflow-y-auto py-4 scrollbar-thin scrollbar-thumb-grafito-200 dark:scrollbar-thumb-white/10">
+      <nav className="flex-1 overflow-y-auto py-2 scrollbar-thin scrollbar-thumb-grafito-200 dark:scrollbar-thumb-white/10">
         {groups.map((group) => (
-          <div key={group} className="mb-4">
-            {!collapsed && (
-              <p className="mb-1 px-4 text-[10px] font-semibold uppercase tracking-widest text-grafito-400 dark:text-grafito-500">
-                {group}
-              </p>
-            )}
+          <div key={group} className="mb-1">
+            <p
+              style={{ opacity: collapsed ? 0 : 1, transition: 'opacity 0.2s' }}
+              className="mb-0.5 h-4 px-4 text-[10px] font-semibold uppercase tracking-widest text-grafito-400 dark:text-grafito-500"
+            >
+              {group}
+            </p>
             {visibleItems
               .filter((i) => i.group === group)
               .map((item) => {
@@ -113,7 +114,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                     to={item.to}
                     title={collapsed ? item.label : undefined}
                     className={cn(
-                      'relative flex items-center gap-3 rounded-lg mx-2 px-3 py-2.5 text-sm font-medium transition-all duration-150',
+                      'relative flex items-center gap-3 rounded-lg mx-2 px-3 py-2 text-sm font-medium transition-all duration-150',
                       isActive
                         ? 'bg-brand-500/10 dark:bg-brand-500/15 text-brand-600 dark:text-brand-400'
                         : 'text-grafito-600 dark:text-grafito-300 hover:bg-grafito-100 dark:hover:bg-white/5 hover:text-grafito-900 dark:hover:text-white',
@@ -126,20 +127,16 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                       />
                     )}
                     <Icon className={cn('h-4 w-4 shrink-0', isActive ? 'text-brand-500 dark:text-brand-400' : '')} />
-                    <AnimatePresence>
-                      {!collapsed && (
-                        <motion.span
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          className="truncate"
-                        >
-                          {item.label}
-                        </motion.span>
-                      )}
-                    </AnimatePresence>
-                    {item.badge && !collapsed && (
-                      <span className="ml-auto rounded-full bg-brand-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                    <span
+                      style={{ opacity: collapsed ? 0 : 1, transition: 'opacity 0.2s', width: collapsed ? 0 : undefined, overflow: 'hidden', whiteSpace: 'nowrap' }}
+                    >
+                      {item.label}
+                    </span>
+                    {item.badge && (
+                      <span
+                        style={{ opacity: collapsed ? 0 : 1, transition: 'opacity 0.2s' }}
+                        className="ml-auto rounded-full bg-brand-500 px-1.5 py-0.5 text-[10px] font-bold text-white"
+                      >
                         {item.badge}
                       </span>
                     )}
