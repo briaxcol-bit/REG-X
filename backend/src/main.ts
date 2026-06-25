@@ -31,11 +31,12 @@ async function bootstrap() {
   app.enableCors({
     origin: [
       config.get('FRONTEND_URL', 'http://localhost:5173'),
+      'http://localhost:5174',
       /\.regx\.app$/,
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-tenant-id', 'x-branch-id', 'x-api-key'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-tenant-id', 'x-branch-id', 'x-api-key', 'x-app-version'],
   })
 
   // ── Compression ─────────────────────────────────────────

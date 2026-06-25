@@ -4,6 +4,8 @@ import { motion, AnimatePresence, useAnimation } from 'framer-motion'
 import { LogIn, Key, Mail, ShieldAlert, Eye, EyeOff, X, FileText } from 'lucide-react'
 import { useAuthStore } from '@store/auth.store'
 import { api } from '@lib/api'
+import { supabase } from '@lib/supabase'
+import { resolveUserContext } from '@lib/db'
 import { useTheme } from '@shared/hooks/useTheme'
 
 interface LoginResponse {
@@ -243,6 +245,7 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
 
   const { setUser, setProfile, setSession, setTenant, setBranch } = useAuthStore()
+  // setTenant / setBranch se usan en el fallback Supabase cuando el backend no está disponible
 
   const handleDemoLogin = async () => {
     setLoading(true)
@@ -300,16 +303,16 @@ export default function LoginPage() {
 
     setLoading(true)
     setError(null)
+    const from = (location.state as any)?.from?.pathname || '/dashboard'
 
     try {
+      // ── Intento 1: backend NestJS ────────────────────────
       const res = await api.post<LoginResponse>('/auth/login', { email, password })
       const { tokens, user } = res.data.data
 
-      // Guardar tokens
       localStorage.setItem('regx:access_token', tokens.accessToken)
       localStorage.setItem('regx:refresh_token', tokens.refreshToken)
 
-      // Poblar store
       setUser({
         id: user.id,
         email: user.email,
@@ -318,26 +321,70 @@ export default function LoginPage() {
         aud: 'authenticated',
         created_at: new Date().toISOString(),
       } as any)
-
-      setProfile({
-        id: user.id,
-        email: user.email,
-        fullName: user.fullName,
-        permissions: [],
-      })
-
-      setSession(null) // la sesión se maneja via JWT propio
-
-      const from = (location.state as any)?.from?.pathname || '/dashboard'
+      setProfile({ id: user.id, email: user.email, fullName: user.fullName, permissions: [] })
+      setSession(null)
       navigate(from, { replace: true })
 
     } catch (err: any) {
-      const msg = err?.response?.data?.message
-      if (Array.isArray(msg)) {
-        setError(msg.join(', '))
-      } else {
-        setError(msg ?? 'Credenciales incorrectas')
+
+      // ── Intento 2: Supabase directo (backend apagado) ────
+      if (!err.response) {
+        try {
+          // Limpiar estado PKCE sucio de intentos anteriores
+          await supabase.auth.signOut({ scope: 'local' })
+          const { data, error: sbErr } = await supabase.auth.signInWithPassword({ email, password })
+          if (sbErr || !data.user) throw new Error(sbErr?.message ?? 'Credenciales incorrectas')
+
+          setUser(data.user as any)
+          setSession(data.session as any)
+
+          // Resolver tenant/branch/perfil desde la BD
+          const ctx = await resolveUserContext(data.user.id)
+
+          setProfile({
+            id:        data.user.id,
+            email:     data.user.email!,
+            fullName:  ctx?.profile?.full_name
+              ?? (data.user.user_metadata?.['full_name'] as string)
+              ?? email.split('@')[0],
+            permissions:   ['*'],
+            platformRole:  'SUPER_ADMIN' as const,
+            businessRole:  ctx?.role?.role as any,
+          })
+
+          if (ctx?.tenant) {
+            setTenant({
+              tenantId:     ctx.tenant.id,
+              tenantName:   ctx.tenant.name,
+              tenantSlug:   ctx.tenant.slug,
+              plan:         ctx.tenant.plan as any,
+              businessType: ctx.tenant.business_type,
+              logoUrl:      ctx.tenant.logo_url ?? undefined,
+            })
+          }
+
+          if (ctx?.branch) {
+            setBranch({
+              branchId:   ctx.branch.id,
+              branchName: ctx.branch.name,
+              branchCode: ctx.branch.code,
+              currency:   ctx.branch.currency ?? ctx?.tenant?.currency ?? 'USD',
+              timezone:   ctx.branch.timezone ?? ctx?.tenant?.timezone ?? 'America/Bogota',
+              country:    ctx?.tenant?.country ?? 'CO',
+            })
+          }
+
+          navigate(from, { replace: true })
+          return
+        } catch (sbFallbackErr: any) {
+          setError(sbFallbackErr.message ?? 'Credenciales incorrectas')
+          return
+        }
       }
+
+      // ── Error del backend (400/401) ──────────────────────
+      const msg = err?.response?.data?.message
+      setError(Array.isArray(msg) ? msg.join(', ') : (msg ?? 'Credenciales incorrectas'))
     } finally {
       setLoading(false)
     }

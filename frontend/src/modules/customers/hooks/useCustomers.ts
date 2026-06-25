@@ -1,37 +1,59 @@
-import { useQuery } from '@tanstack/react-query'
-import { get } from '@/lib/api'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { getCustomers, createCustomer, type CustomerRow } from '@lib/db'
+import { useAuthStore } from '@store/auth.store'
 
 export interface Customer {
-  id: string
-  fullName: string
-  email?: string
-  phone?: string
+  id:           string
+  fullName:     string
+  email?:       string
+  phone?:       string
+  taxId?:       string
+  loyaltyPoints: number
+  createdAt:    string
+}
+
+function toCustomer(row: CustomerRow): Customer {
+  return {
+    id:            row.id,
+    fullName:      row.full_name,
+    email:         row.email ?? undefined,
+    phone:         row.phone ?? undefined,
+    taxId:         row.tax_id ?? undefined,
+    loyaltyPoints: row.loyalty_points,
+    createdAt:     row.created_at,
+  }
 }
 
 interface UseCustomersParams {
   search?: string
-  limit?: number
+  limit?:  number
 }
 
-const MOCK_CUSTOMERS: Customer[] = [
-  { id: 'c1', fullName: 'Juan Pérez', email: 'juan.perez@example.com', phone: '3001234567' },
-  { id: 'c2', fullName: 'Maria Rodriguez', email: 'maria.r@example.com', phone: '3109876543' },
-  { id: 'c3', fullName: 'Carlos Gómez', email: 'carlos.g@example.com', phone: '3201112233' },
-  { id: 'c4', fullName: 'Ana Maria', email: 'ana.maria@example.com', phone: '3157778899' },
-]
-
 export function useCustomers(params: UseCustomersParams = {}) {
+  const tenantId = useAuthStore((s) => s.tenant?.tenantId)
+
   return useQuery({
-    queryKey: ['customers', params],
-    queryFn: async () => {
-      // Return mock data filtered by search
-      const searchLower = params.search?.toLowerCase() || ''
-      if (!searchLower) return MOCK_CUSTOMERS
-      return MOCK_CUSTOMERS.filter(
-        c => c.fullName.toLowerCase().includes(searchLower) ||
-             c.email?.toLowerCase().includes(searchLower) ||
-             c.phone?.includes(searchLower)
-      )
+    queryKey: ['customers', tenantId, params],
+    enabled:  !!tenantId,
+    queryFn:  async () => {
+      const rows = await getCustomers(tenantId!, params)
+      return rows.map(toCustomer)
+    },
+    placeholderData: [],
+    staleTime: 30_000,
+  })
+}
+
+export function useCreateCustomer() {
+  const qc       = useQueryClient()
+  const tenantId = useAuthStore((s) => s.tenant?.tenantId)
+  const branchId = useAuthStore((s) => s.branch?.branchId)
+
+  return useMutation({
+    mutationFn: (data: { full_name: string; email?: string; phone?: string; tax_id?: string }) =>
+      createCustomer(tenantId!, branchId!, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['customers', tenantId] })
     },
   })
 }

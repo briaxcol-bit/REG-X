@@ -10,30 +10,29 @@ import { CacheService } from './cache.service'
       provide: 'REDIS_CLIENT',
       inject: [ConfigService],
       useFactory: async (config: ConfigService) => {
-        const { default: Redis } = await import('ioredis')
-        return new Redis({
-          host:     config.get('REDIS_HOST', 'localhost'),
-          port:     config.get<number>('REDIS_PORT', 6379),
-          password: config.get('REDIS_PASSWORD') || undefined,
-          db:       config.get<number>('REDIS_DB', 0),
-          lazyConnect: true,
-          maxRetriesPerRequest: 3,
-          retryStrategy: (times) => Math.min(times * 100, 3000),
-        })
+        // Mock de Redis para desarrollo local sin Docker
+        return new Proxy({}, {
+          get(target, prop) {
+            if (prop === 'multi') return () => ({ incr: () => {}, expire: () => {}, exec: async () => [] });
+            if (prop === 'status') return 'ready';
+            if (prop === 'on') return () => {};
+            return async () => null;
+          }
+        }) as any;
       },
     },
     {
       provide: 'REDIS_STREAM_CLIENT',
       inject: [ConfigService],
       useFactory: async (config: ConfigService) => {
-        const { default: Redis } = await import('ioredis')
-        return new Redis({
-          host:     config.get('REDIS_HOST', 'localhost'),
-          port:     config.get<number>('REDIS_PORT', 6379),
-          password: config.get('REDIS_PASSWORD') || undefined,
-          db:       config.get<number>('REDIS_STREAM_DB', 1),
-          lazyConnect: true,
-        })
+        // Mock de Redis para desarrollo local sin Docker
+        return new Proxy({}, {
+          get(target, prop) {
+            if (prop === 'status') return 'ready';
+            if (prop === 'on') return () => {};
+            return async () => null;
+          }
+        }) as any;
       },
     },
     RedisService,

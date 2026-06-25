@@ -1,5 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
+import { getProducts, getCategories, type ProductRow, type CategoryRow } from '@lib/db'
+import { useAuthStore } from '@store/auth.store'
 
+export type { ProductRow as Product, CategoryRow as Category }
+
+// Adapted shape for POS / pages
 export interface Product {
   id: string
   name: string
@@ -8,123 +13,58 @@ export interface Product {
   sku: string
   stock: number
   categoryColor?: string
+  categoryName?: string
   tax: number
   categoryId?: string
+  status: string
 }
 
-const MOCK_PRODUCTS: Product[] = [
-  {
-    id: 'p1',
-    name: 'Hamburguesa Triple REG-X',
-    price: 12.99,
-    sku: 'PROD-001',
-    stock: 25,
-    categoryColor: '#EF4444',
-    tax: 0.19,
-    categoryId: 'cat-food',
-  },
-  {
-    id: 'p2',
-    name: 'Papas Fritas Crujientes L',
-    price: 4.50,
-    sku: 'PROD-002',
-    stock: 50,
-    categoryColor: '#F59E0B',
-    tax: 0.19,
-    categoryId: 'cat-sides',
-  },
-  {
-    id: 'p3',
-    name: 'Refresco Cola Zero 500ml',
-    price: 2.50,
-    sku: 'PROD-003',
-    stock: 120,
-    categoryColor: '#3B82F6',
-    tax: 0.19,
-    categoryId: 'cat-drinks',
-  },
-  {
-    id: 'p4',
-    name: 'Pizza Pepperoni Familiar',
-    price: 18.90,
-    sku: 'PROD-004',
-    stock: 12,
-    categoryColor: '#EF4444',
-    tax: 0.19,
-    categoryId: 'cat-food',
-  },
-  {
-    id: 'p5',
-    name: 'Ensalada César Premium',
-    price: 8.99,
-    sku: 'PROD-005',
-    stock: 5, // low stock!
-    categoryColor: '#10B981',
-    tax: 0.19,
-    categoryId: 'cat-food',
-  },
-  {
-    id: 'p6',
-    name: 'Cerveza Artesanal REG-X IPD',
-    price: 6.00,
-    sku: 'PROD-006',
-    stock: 45,
-    categoryColor: '#3B82F6',
-    tax: 0.19,
-    categoryId: 'cat-drinks',
-  },
-  {
-    id: 'p7',
-    name: 'Helado de Vainilla y Chips',
-    price: 3.99,
-    sku: 'PROD-007',
-    stock: 0, // out of stock!
-    categoryColor: '#EC4899',
-    tax: 0.19,
-    categoryId: 'cat-desserts',
-  },
-  {
-    id: 'p8',
-    name: 'Café Cappuccino Grande',
-    price: 3.50,
-    sku: 'PROD-008',
-    stock: 60,
-    categoryColor: '#3B82F6',
-    tax: 0.19,
-    categoryId: 'cat-drinks',
+function toProduct(row: ProductRow): Product {
+  const stock = (row.inventory ?? []).reduce((s, i) => s + Number(i.quantity), 0)
+  const cat   = row.categories as any
+  return {
+    id:            row.id,
+    name:          row.name,
+    price:         Number(row.price),
+    imageUrl:      row.image_url ?? undefined,
+    sku:           row.sku,
+    stock,
+    categoryColor: cat?.color ?? '#374151',
+    categoryName:  cat?.name  ?? undefined,
+    tax:           Number(row.tax),
+    categoryId:    row.category_id ?? undefined,
+    status:        row.status,
   }
-]
+}
 
 interface UseProductsParams {
-  search?: string | undefined
+  search?:     string | undefined
   categoryId?: string | undefined
-  tenantId?: string | undefined
+  status?:     string | undefined
 }
 
 export function useProducts(params?: UseProductsParams) {
+  const tenantId = useAuthStore((s) => s.tenant?.tenantId)
+
   return useQuery({
-    queryKey: ['products', params],
-    queryFn: async () => {
-      // Simulate API latency
-      await new Promise((resolve) => setTimeout(resolve, 300))
-
-      let filtered = [...MOCK_PRODUCTS]
-
-      if (params?.search) {
-        const query = params.search.toLowerCase()
-        filtered = filtered.filter(
-          (p) =>
-            p.name.toLowerCase().includes(query) ||
-            p.sku.toLowerCase().includes(query)
-        )
-      }
-
-      if (params?.categoryId) {
-        filtered = filtered.filter((p) => p.categoryId === params.categoryId)
-      }
-
-      return filtered
+    queryKey: ['products', tenantId, params],
+    enabled:  !!tenantId,
+    queryFn:  async () => {
+      const rows = await getProducts(tenantId!, params)
+      return rows.map(toProduct)
     },
     placeholderData: [],
+    staleTime: 30_000,
+  })
+}
+
+export function useCategories() {
+  const tenantId = useAuthStore((s) => s.tenant?.tenantId)
+
+  return useQuery({
+    queryKey: ['categories', tenantId],
+    enabled:  !!tenantId,
+    queryFn:  () => getCategories(tenantId!),
+    staleTime: 60_000,
   })
 }
