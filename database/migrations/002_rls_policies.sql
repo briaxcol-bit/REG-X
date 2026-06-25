@@ -127,12 +127,26 @@ CREATE POLICY "products_delete" ON products
 
 -- categories, brands, suppliers — same pattern as products
 CREATE POLICY "categories_select" ON categories FOR SELECT USING (user_belongs_to_tenant(tenant_id));
+CREATE POLICY "categories_insert" ON categories FOR INSERT WITH CHECK (
+  user_belongs_to_tenant(tenant_id) AND
+  user_role_in_tenant(tenant_id) IN ('OWNER', 'ADMIN')
+);
+CREATE POLICY "categories_update" ON categories FOR UPDATE USING (
+  user_belongs_to_tenant(tenant_id) AND
+  user_role_in_tenant(tenant_id) IN ('OWNER', 'ADMIN')
+);
 CREATE POLICY "brands_select"     ON brands     FOR SELECT USING (user_belongs_to_tenant(tenant_id));
 CREATE POLICY "suppliers_select"  ON suppliers  FOR SELECT USING (user_belongs_to_tenant(tenant_id));
 
 -- inventory
 CREATE POLICY "inventory_select" ON inventory
   FOR SELECT USING (user_belongs_to_tenant(tenant_id));
+
+CREATE POLICY "inventory_insert" ON inventory
+  FOR INSERT WITH CHECK (
+    user_belongs_to_tenant(tenant_id) AND
+    user_role_in_tenant(tenant_id) IN ('OWNER', 'ADMIN', 'INVENTORY_MANAGER')
+  );
 
 CREATE POLICY "inventory_update" ON inventory
   FOR UPDATE USING (

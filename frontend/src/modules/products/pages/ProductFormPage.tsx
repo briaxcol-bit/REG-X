@@ -3,9 +3,10 @@ import { createPortal } from 'react-dom'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft, Save, ImagePlus, Barcode, Tag,
-  DollarSign, TrendingUp, Package, X, ScanLine, ChevronDown, Check,
+  DollarSign, TrendingUp, Package, X, ScanLine, ChevronDown, Check, Loader2,
+  Trash2, AlertTriangle,
 } from 'lucide-react'
-import { getCategories, createProduct } from '@lib/db'
+import { getCategories, createProduct, getProduct, updateProduct, deleteProduct } from '@lib/db'
 import { useAuthStore } from '@store/auth.store'
 import { cn } from '@shared/utils/cn'
 import type { CategoryRow } from '@lib/db'
@@ -109,23 +110,58 @@ export default function ProductFormPage() {
   const { tenant, branch, profile, user } = useAuthStore()
 
   // ── State ─────────────────────────────────────────────────
-  const [name, setName]           = useState('')
-  const [sku, setSku]             = useState('')
-  const [barcode, setBarcode]     = useState('')
-  const [categoryId, setCategoryId] = useState('')
-  const [costPrice, setCostPrice] = useState('')
-  const [salePrice, setSalePrice] = useState('')
-  const [margin, setMargin]       = useState('')
-  const [stock, setStock]         = useState('0')
-  const [minStock, setMinStock]   = useState('0')
+  const [name, setName]               = useState('')
+  const [sku, setSku]                 = useState('')
+  const [barcode, setBarcode]         = useState('')
+  const [categoryId, setCategoryId]   = useState('')
+  const [costPrice, setCostPrice]     = useState('')
+  const [salePrice, setSalePrice]     = useState('')
+  const [margin, setMargin]           = useState('')
+  const [stock, setStock]             = useState('0')
+  const [minStock, setMinStock]       = useState('0')
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [imageFile, setImageFile]       = useState<File | null>(null)
-  const [categories, setCategories] = useState<CategoryRow[]>([])
-  const [marginMode, setMarginMode] = useState<'price' | 'percent'>('price')
-  const [saving, setSaving]         = useState(false)
-  const [saveError, setSaveError]   = useState<string | null>(null)
+  const [categories, setCategories]   = useState<CategoryRow[]>([])
+  const [marginMode, setMarginMode]   = useState<'price' | 'percent'>('price')
+  const [saving, setSaving]           = useState(false)
+  const [loadingProduct, setLoadingProduct] = useState(isEdit)
+  const [saveError, setSaveError]     = useState<string | null>(null)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleting, setDeleting]       = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // ── Load categories ───────────────────────────────────────
+  useEffect(() => {
+    if (tenant?.tenantId) {
+      getCategories(tenant.tenantId).then(setCategories).catch(() => {})
+    }
+  }, [tenant?.tenantId])
+
+  // ── Load product data on edit ─────────────────────────────
+  useEffect(() => {
+    if (!isEdit || !id || !tenant?.tenantId) return
+    setLoadingProduct(true)
+    getProduct(tenant.tenantId, id)
+      .then(p => {
+        if (!p) return
+        setName(p.name ?? '')
+        setSku(p.sku ?? '')
+        setBarcode(p.barcode ?? '')
+        setCategoryId(p.category_id ?? '')
+        setCostPrice(p.cost_price != null ? String(p.cost_price) : '')
+        setSalePrice(p.price != null ? String(p.price) : '')
+        if (p.cost_price && p.price && p.price > p.cost_price) {
+          setMargin((((p.price - p.cost_price) / p.cost_price) * 100).toFixed(1))
+        }
+        setMinStock(String(p.min_stock ?? 0))
+        if (p.image_url) setImagePreview(p.image_url)
+        const totalQty = (p.inventory ?? []).reduce((s, i) => s + Number(i.quantity), 0)
+        setStock(String(totalQty))
+      })
+      .catch(() => {})
+      .finally(() => setLoadingProduct(false))
+  }, [isEdit, id, tenant?.tenantId])
 
   // ── Submit ────────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
@@ -141,20 +177,28 @@ export default function ProductFormPage() {
       return
     }
 
+    const payload = {
+      name:         name.trim(),
+      sku:          sku.trim(),
+      barcode:      barcode.trim() || undefined,
+      category_id:  /^[0-9a-f-]{36}$/.test(categoryId) ? categoryId : undefined,
+      price:        parseFloat(salePrice) || 0,
+      cost_price:   parseFloat(costPrice) || undefined,
+      imageFile:    imageFile || undefined,
+      // Si no hay imagen nueva pero hay preview tipo URL (no base64), usarla
+      image_url:    !imageFile && imagePreview?.startsWith('http') ? imagePreview : undefined,
+      min_stock:    parseFloat(minStock) || 0,
+      initialStock: parseFloat(stock) || 0,
+      branchId:     branch?.branchId,
+    }
+
     setSaving(true)
     try {
-      await createProduct(tenantId, userId, {
-        name:          name.trim(),
-        sku:           sku.trim(),
-        barcode:       barcode.trim() || undefined,
-        category_id:   /^[0-9a-f-]{36}$/.test(categoryId) ? categoryId : undefined,
-        price:         parseFloat(salePrice) || 0,
-        cost_price:    parseFloat(costPrice) || undefined,
-        imageFile:     imageFile || undefined,
-        min_stock:     parseFloat(minStock) || 0,
-        initialStock:  parseFloat(stock) || 0,
-        branchId:      branch?.branchId,
-      })
+      if (isEdit && id) {
+        await updateProduct(tenantId, id, payload)
+      } else {
+        await createProduct(tenantId, userId, payload)
+      }
       navigate('/products')
     } catch (err: any) {
       setSaveError(err?.message ?? 'Error al guardar el producto.')
@@ -162,13 +206,6 @@ export default function ProductFormPage() {
       setSaving(false)
     }
   }
-
-  // ── Load categories ───────────────────────────────────────
-  useEffect(() => {
-    if (tenant?.tenantId) {
-      getCategories(tenant.tenantId).then(setCategories).catch(() => {})
-    }
-  }, [tenant?.tenantId])
 
   // ── Price / margin sync ───────────────────────────────────
   const handleCostChange = (val: string) => {
@@ -222,24 +259,108 @@ export default function ProductFormPage() {
     return null
   })()
 
+  // ── Delete ────────────────────────────────────────────────
+  const handleDelete = async () => {
+    const tenantId = tenant?.tenantId
+    if (!id || !tenantId) return
+    setDeleting(true)
+    try {
+      await deleteProduct(tenantId, id)
+      navigate('/products')
+    } catch (err: any) {
+      setSaveError(err?.message ?? 'Error al eliminar el producto.')
+      setShowDeleteConfirm(false)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  // ── Loading skeleton ──────────────────────────────────────
+  if (loadingProduct) {
+    return (
+      <div className="p-6 max-w-3xl flex items-center justify-center py-32 gap-3 text-grafito-400">
+        <Loader2 className="h-5 w-5 animate-spin" />
+        <span className="text-sm">Cargando producto...</span>
+      </div>
+    )
+  }
+
   return (
     <div className="p-6 max-w-3xl space-y-6">
-      {/* ── Header ─────────────────────────────────────────── */}
-      <div className="flex items-center gap-3">
-        <button
-          onClick={() => navigate('/products')}
-          className="flex h-10 w-10 items-center justify-center rounded-xl border border-grafito-200 dark:border-white/5 bg-grafito-100 dark:bg-grafito-800 text-grafito-600 dark:text-grafito-300 hover:bg-grafito-200 dark:hover:bg-grafito-700 transition-colors"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </button>
-        <div>
-          <h1 className="text-2xl font-bold text-grafito-900 dark:text-white tracking-tight">
-            {isEdit ? 'Editar Producto' : 'Crear Producto'}
-          </h1>
-          <p className="text-sm text-grafito-500 dark:text-grafito-400">
-            {isEdit ? 'Modifica los detalles del producto.' : 'Registra un nuevo producto en tu catálogo.'}
-          </p>
+
+      {/* ── Modal eliminar ─────────────────────────────────── */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowDeleteConfirm(false)} />
+          <div className="relative w-full max-w-sm rounded-2xl border border-grafito-200 dark:border-white/10 bg-white dark:bg-grafito-900 shadow-2xl p-6 space-y-4">
+            <button
+              onClick={() => setShowDeleteConfirm(false)}
+              className="absolute top-4 right-4 flex h-7 w-7 items-center justify-center rounded-lg text-grafito-400 hover:bg-grafito-100 dark:hover:bg-white/10 transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <div className="flex flex-col items-center gap-3 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/10 border border-red-500/20">
+                <AlertTriangle className="h-7 w-7 text-red-500" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-grafito-900 dark:text-white">Eliminar producto</h3>
+                <p className="mt-1 text-sm text-grafito-500 dark:text-grafito-400">
+                  ¿Estás seguro de que quieres eliminar{' '}
+                  <span className="font-semibold text-grafito-700 dark:text-grafito-200">{name}</span>?
+                  Esta acción no se puede deshacer.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleting}
+                className="flex-1 rounded-xl border border-grafito-200 dark:border-white/10 py-2.5 text-sm font-semibold text-grafito-600 dark:text-grafito-300 hover:bg-grafito-100 dark:hover:bg-white/5 transition-all disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600 active:scale-[0.98] transition-all disabled:opacity-60"
+              >
+                {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                {deleting ? 'Eliminando...' : 'Eliminar'}
+              </button>
+            </div>
+          </div>
         </div>
+      )}
+
+      {/* ── Header ─────────────────────────────────────────── */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate('/products')}
+            className="flex h-10 w-10 items-center justify-center rounded-xl border border-grafito-200 dark:border-white/5 bg-grafito-100 dark:bg-grafito-800 text-grafito-600 dark:text-grafito-300 hover:bg-grafito-200 dark:hover:bg-grafito-700 transition-colors"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+          <div>
+            <h1 className="text-2xl font-bold text-grafito-900 dark:text-white tracking-tight">
+              {isEdit ? 'Editar Producto' : 'Crear Producto'}
+            </h1>
+            <p className="text-sm text-grafito-500 dark:text-grafito-400">
+              {isEdit ? 'Modifica los detalles del producto.' : 'Registra un nuevo producto en tu catálogo.'}
+            </p>
+          </div>
+        </div>
+        {isEdit && (
+          <button
+            type="button"
+            onClick={() => setShowDeleteConfirm(true)}
+            className="flex items-center gap-1.5 rounded-xl border border-red-500/30 bg-red-500/10 px-3.5 py-2 text-sm font-semibold text-red-500 hover:bg-red-500/20 transition-all"
+          >
+            <Trash2 className="h-4 w-4" />
+            Eliminar
+          </button>
+        )}
       </div>
 
       <form className="space-y-6" onSubmit={handleSubmit}>
@@ -250,40 +371,45 @@ export default function ProductFormPage() {
 
           <div className="flex gap-4">
             {/* Imagen */}
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className={cn(
-                'relative flex-shrink-0 h-28 w-28 rounded-2xl border-2 border-dashed transition-all overflow-hidden',
-                imagePreview
-                  ? 'border-brand-500/40'
-                  : 'border-grafito-200 dark:border-white/10 hover:border-brand-500/50 hover:bg-brand-500/5',
-              )}
-            >
-              {imagePreview ? (
-                <>
-                  <img src={imagePreview} alt="preview" className="h-full w-full object-cover" />
-                  <div className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
-                    <ImagePlus className="h-5 w-5 text-white" />
-                  </div>
-                </>
-              ) : (
-                <div className="flex flex-col items-center justify-center h-full gap-1 text-grafito-400 dark:text-grafito-500">
-                  <ImagePlus className="h-6 w-6" />
-                  <span className="text-[10px] font-medium text-center px-1">Subir imagen</span>
-                </div>
-              )}
-            </button>
-            {imagePreview && (
+            <div className="relative flex-shrink-0">
               <button
                 type="button"
-                onClick={() => { setImagePreview(null); setImageFile(null); if (fileInputRef.current) fileInputRef.current.value = '' }}
-                className="absolute mt-1 ml-1 flex h-5 w-5 items-center justify-center rounded-full bg-grafito-900/70 text-white hover:bg-red-500 transition-colors"
-                style={{ position: 'relative', alignSelf: 'flex-start', marginLeft: '-12px', marginTop: '4px' }}
+                onClick={() => fileInputRef.current?.click()}
+                className={cn(
+                  'relative flex-shrink-0 h-28 w-28 rounded-2xl border-2 border-dashed transition-all overflow-hidden',
+                  imagePreview
+                    ? 'border-brand-500/40'
+                    : 'border-grafito-200 dark:border-white/10 hover:border-brand-500/50 hover:bg-brand-500/5',
+                )}
               >
-                <X className="h-3 w-3" />
+                {imagePreview ? (
+                  <>
+                    <img src={imagePreview} alt="preview" className="h-full w-full object-cover" />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <ImagePlus className="h-5 w-5 text-white" />
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full gap-1 text-grafito-400 dark:text-grafito-500">
+                    <ImagePlus className="h-6 w-6" />
+                    <span className="text-[10px] font-medium text-center px-1">Subir imagen</span>
+                  </div>
+                )}
               </button>
-            )}
+              {imagePreview && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setImagePreview(null)
+                    setImageFile(null)
+                    if (fileInputRef.current) fileInputRef.current.value = ''
+                  }}
+                  className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-grafito-900/80 text-white hover:bg-red-500 transition-colors z-10"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
 
             {/* Nombre + Categoría */}
@@ -305,15 +431,7 @@ export default function ProductFormPage() {
                   placeholder="— Sin categoría —"
                   options={[
                     { value: '', label: '— Sin categoría —' },
-                    ...(categories.length > 0
-                      ? categories.map(c => ({ value: c.id, label: c.name, color: c.color }))
-                      : [
-                          { value: 'alimentos', label: 'Alimentos', color: '#ef4444' },
-                          { value: 'bebidas',   label: 'Bebidas',   color: '#3b82f6' },
-                          { value: 'postres',   label: 'Postres',   color: '#ec4899' },
-                          { value: 'acomp',     label: 'Acompañamientos', color: '#eab308' },
-                        ]
-                    ),
+                    ...categories.map(c => ({ value: c.id, label: c.name, color: c.color })),
                   ]}
                 />
               </div>
@@ -444,7 +562,7 @@ export default function ProductFormPage() {
           <SectionTitle icon={Package} title="Inventario" />
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <label className={labelClass}>Stock inicial</label>
+              <label className={labelClass}>{isEdit ? 'Stock actual' : 'Stock inicial'}</label>
               <input
                 type="number"
                 min="0"
@@ -453,6 +571,9 @@ export default function ProductFormPage() {
                 placeholder="0"
                 className={inputClass}
               />
+              {isEdit && (
+                <p className="text-[11px] text-grafito-400">Cambia este valor para ajustar el stock en bodega.</p>
+              )}
             </div>
             <div className="space-y-1.5">
               <label className={labelClass}>Stock mínimo (alerta)</label>

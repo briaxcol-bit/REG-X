@@ -42,6 +42,7 @@ export interface ProductRow {
   tenant_id: string
   name: string
   sku: string
+  barcode?: string | null
   price: number
   cost_price: number | null
   tax: number
@@ -49,8 +50,9 @@ export interface ProductRow {
   status: string
   track_inventory: boolean
   category_id: string | null
+  min_stock?: number
   categories?: { name: string; color: string } | null
-  inventory?: { quantity: number }[]
+  inventory?: { quantity: number; warehouse_id: string }[]
 }
 
 export interface CategoryRow {
@@ -312,6 +314,135 @@ async function uploadProductImage(tenantId: string, file: File): Promise<string 
   }
 }
 
+export async function deleteProduct(tenantId: string, productId: string): Promise<void> {
+  const { error } = await supabase
+    .from('products')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', productId)
+    .eq('tenant_id', tenantId)
+  if (error) throw error
+}
+
+export async function getProduct(
+  tenantId: string,
+  productId: string,
+): Promise<ProductRow | null> {
+  const { data, error } = await supabase
+    .from('products')
+    .select(`
+      id, tenant_id, name, sku, barcode, price, cost_price, tax, image_url,
+      status, track_inventory, category_id, min_stock,
+      categories(name, color),
+      inventory(quantity, warehouse_id)
+    `)
+    .eq('tenant_id', tenantId)
+    .eq('id', productId)
+    .is('deleted_at', null)
+    .single()
+  if (error) return null
+  return data as unknown as ProductRow
+}
+
+export async function updateProduct(
+  tenantId: string,
+  productId: string,
+  payload: CreateProductPayload,
+) {
+  // 1. Subir nueva imagen si se seleccionó una
+  let imageUrl: string | null = payload.image_url ?? null
+  if (payload.imageFile) {
+    imageUrl = await uploadProductImage(tenantId, payload.imageFile)
+  }
+
+  // 2. Actualizar producto
+  const { data: product, error: prodErr } = await supabase
+    .from('products')
+    .update({
+      name:        payload.name,
+      sku:         payload.sku || undefined,
+      barcode:     payload.barcode || null,
+      category_id: payload.category_id || null,
+      price:       payload.price,
+      cost_price:  payload.cost_price || null,
+      image_url:   imageUrl,
+      min_stock:   payload.min_stock || 0,
+    })
+    .eq('id', productId)
+    .eq('tenant_id', tenantId)
+    .select()
+    .single()
+
+  if (prodErr) throw prodErr
+
+  // 3. Upsert inventario si se indicó stock y sucursal
+  if (payload.initialStock !== undefined && payload.branchId) {
+    let { data: warehouse, error: whErr } = await supabase
+      .from('warehouses')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('branch_id', payload.branchId)
+      .limit(1)
+      .single()
+
+    // Auto-create warehouse if none exists
+    if (!warehouse || whErr) {
+      const { data: newWh, error: newWhErr } = await supabase
+        .from('warehouses')
+        .insert({
+          tenant_id:  tenantId,
+          branch_id:  payload.branchId,
+          name:       'Bodega Principal',
+          code:       'MAIN',
+          is_default: true,
+          is_active:  true,
+        })
+        .select('id')
+        .single()
+
+      if (newWhErr) {
+        console.error('[updateProduct] Error creating warehouse:', newWhErr)
+      } else {
+        warehouse = newWh
+      }
+    }
+
+    if (warehouse) {
+      // Check if inventory row already exists
+      const { data: existing } = await supabase
+        .from('inventory')
+        .select('id')
+        .eq('warehouse_id', warehouse.id)
+        .eq('product_id', productId)
+        .is('variant_id', null)
+        .limit(1)
+        .single()
+
+      if (existing) {
+        // Update existing row
+        const { error: updErr } = await supabase
+          .from('inventory')
+          .update({ quantity: payload.initialStock })
+          .eq('id', existing.id)
+        if (updErr) console.error('[updateProduct] Error updating inventory:', updErr)
+      } else {
+        // Insert new row
+        const { error: insErr } = await supabase
+          .from('inventory')
+          .insert({
+            tenant_id:    tenantId,
+            branch_id:    payload.branchId,
+            warehouse_id: warehouse.id,
+            product_id:   productId,
+            quantity:     payload.initialStock,
+          })
+        if (insErr) console.error('[updateProduct] Error inserting inventory:', insErr)
+      }
+    }
+  }
+
+  return product
+}
+
 export async function createProduct(
   tenantId: string,
   userId: string,
@@ -344,9 +475,9 @@ export async function createProduct(
 
   if (prodErr) throw prodErr
 
-  // 2. If initial stock > 0 and branchId provided, find default warehouse and insert inventory row
+  // 3. If initial stock > 0 and branchId provided, find/create warehouse and insert inventory
   if (payload.initialStock && payload.initialStock > 0 && payload.branchId) {
-    const { data: warehouse } = await supabase
+    let { data: warehouse, error: whErr } = await supabase
       .from('warehouses')
       .select('id')
       .eq('tenant_id', tenantId)
@@ -354,14 +485,37 @@ export async function createProduct(
       .limit(1)
       .single()
 
+    // Auto-create warehouse if none exists
+    if (!warehouse || whErr) {
+      const { data: newWh, error: newWhErr } = await supabase
+        .from('warehouses')
+        .insert({
+          tenant_id:  tenantId,
+          branch_id:  payload.branchId,
+          name:       'Bodega Principal',
+          code:       'MAIN',
+          is_default: true,
+          is_active:  true,
+        })
+        .select('id')
+        .single()
+
+      if (newWhErr) {
+        console.error('[createProduct] Error creating warehouse:', newWhErr)
+      } else {
+        warehouse = newWh
+      }
+    }
+
     if (warehouse) {
-      await supabase.from('inventory').insert({
+      const { error: invErr } = await supabase.from('inventory').insert({
         tenant_id:    tenantId,
         branch_id:    payload.branchId,
         warehouse_id: warehouse.id,
         product_id:   product.id,
         quantity:     payload.initialStock,
       })
+      if (invErr) console.error('[createProduct] Error inserting inventory:', invErr)
     }
   }
 

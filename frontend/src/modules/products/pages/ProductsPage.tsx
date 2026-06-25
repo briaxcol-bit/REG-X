@@ -1,27 +1,143 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, Search, Tag, Eye, Package, Loader2 } from 'lucide-react'
-import { getProducts } from '@lib/db'
+import { Plus, Search, Tag, Eye, Package, Loader2, Trash2, AlertTriangle, X } from 'lucide-react'
+import { getProducts, deleteProduct } from '@lib/db'
 import { useAuthStore } from '@store/auth.store'
 import type { ProductRow } from '@lib/db'
 
+// ── Confirmation Modal ────────────────────────────────────────
+function DeleteModal({
+  product,
+  onConfirm,
+  onCancel,
+  loading,
+  error,
+}: {
+  product: ProductRow
+  onConfirm: () => void
+  onCancel: () => void
+  loading: boolean
+  error?: string | null
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        onClick={onCancel}
+      />
+      {/* Modal */}
+      <div className="relative w-full max-w-sm rounded-2xl border border-grafito-200 dark:border-white/10 bg-white dark:bg-grafito-900 shadow-2xl p-6 space-y-4">
+        {/* Close */}
+        <button
+          onClick={onCancel}
+          className="absolute top-4 right-4 flex h-7 w-7 items-center justify-center rounded-lg text-grafito-400 hover:bg-grafito-100 dark:hover:bg-white/10 transition-colors"
+        >
+          <X className="h-4 w-4" />
+        </button>
+
+        {/* Icon + title */}
+        <div className="flex flex-col items-center gap-3 text-center">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/10 border border-red-500/20">
+            <AlertTriangle className="h-7 w-7 text-red-500" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-grafito-900 dark:text-white">
+              Eliminar producto
+            </h3>
+            <p className="mt-1 text-sm text-grafito-500 dark:text-grafito-400">
+              ¿Estás seguro de que quieres eliminar{' '}
+              <span className="font-semibold text-grafito-700 dark:text-grafito-200">
+                {product.name}
+              </span>
+              ? Esta acción no se puede deshacer.
+            </p>
+          </div>
+        </div>
+
+        {/* Error message */}
+        {error && (
+          <p className="text-center text-xs text-red-500 bg-red-50 dark:bg-red-500/10 rounded-lg px-3 py-2">
+            {error}
+          </p>
+        )}
+
+        {/* Actions */}
+        <div className="flex gap-2 pt-1">
+          <button
+            onClick={onCancel}
+            disabled={loading}
+            className="flex-1 rounded-xl border border-grafito-200 dark:border-white/10 py-2.5 text-sm font-semibold text-grafito-600 dark:text-grafito-300 hover:bg-grafito-100 dark:hover:bg-white/5 transition-all disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={loading}
+            className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600 active:scale-[0.98] transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Trash2 className="h-4 w-4" />
+            )}
+            {loading ? 'Eliminando...' : 'Eliminar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Page ──────────────────────────────────────────────────────
 export default function ProductsPage() {
   const { tenant } = useAuthStore()
-  const [products, setProducts] = useState<ProductRow[]>([])
-  const [loading, setLoading]   = useState(true)
-  const [search, setSearch]     = useState('')
+  const [products, setProducts]     = useState<ProductRow[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [search, setSearch]         = useState('')
+  const [toDelete, setToDelete]     = useState<ProductRow | null>(null)
+  const [deleting, setDeleting]     = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
-  useEffect(() => {
+  const loadProducts = () => {
     if (!tenant?.tenantId) return
     setLoading(true)
     getProducts(tenant.tenantId, { search: search || undefined })
       .then(setProducts)
       .catch(() => setProducts([]))
       .finally(() => setLoading(false))
-  }, [tenant?.tenantId, search])
+  }
+
+  useEffect(() => { loadProducts() }, [tenant?.tenantId, search])
+
+  const handleDelete = async () => {
+    if (!toDelete || !tenant?.tenantId) return
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      await deleteProduct(tenant.tenantId, toDelete.id)
+      setToDelete(null)
+      loadProducts()
+    } catch (err: any) {
+      setDeleteError(err?.message ?? 'Error al eliminar el producto.')
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   return (
     <div className="space-y-6 p-6">
+      {/* Modal confirmación */}
+      {toDelete && (
+        <DeleteModal
+          product={toDelete}
+          onConfirm={handleDelete}
+          onCancel={() => { setToDelete(null); setDeleteError(null) }}
+          loading={deleting}
+          error={deleteError}
+        />
+      )}
+
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-grafito-900 dark:text-white tracking-tight">Productos</h1>
@@ -84,7 +200,7 @@ export default function ProductsPage() {
                 <th className="pb-3 pt-5">Categoría</th>
                 <th className="pb-3 pt-5">Precio</th>
                 <th className="pb-3 pt-5">Stock</th>
-                <th className="pb-3 pt-5 text-right pr-6">Acción</th>
+                <th className="pb-3 pt-5 text-right pr-6">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-grafito-100 dark:divide-white/5">
@@ -107,7 +223,7 @@ export default function ProductsPage() {
                     </td>
                     <td className="py-3.5 font-mono text-xs">{p.sku}</td>
                     <td className="py-3.5">
-                      {cat ? (
+                      {cat?.name ? (
                         <span className="flex items-center gap-1.5 text-xs">
                           <span className="h-2 w-2 rounded-full" style={{ background: cat.color }} />
                           {cat.name}
@@ -116,7 +232,7 @@ export default function ProductsPage() {
                         <span className="text-xs text-grafito-400">—</span>
                       )}
                     </td>
-                    <td className="py-3.5 font-bold text-brand-500">${Number(p.price).toFixed(2)}</td>
+                    <td className="py-3.5 font-bold text-brand-500">${Number(p.price).toLocaleString('es-CO')}</td>
                     <td className="py-3.5">
                       <span className={
                         stock === 0 ? 'text-red-400 font-semibold' :
@@ -125,14 +241,23 @@ export default function ProductsPage() {
                         {stock} uds
                       </span>
                     </td>
-                    <td className="py-3.5 text-right pr-6">
-                      <Link
-                        to={`/products/${p.id}/edit`}
-                        className="inline-flex items-center gap-1 text-xs text-brand-400 hover:underline"
-                      >
-                        <Eye className="h-3.5 w-3.5" />
-                        Editar
-                      </Link>
+                    <td className="py-3.5 pr-6">
+                      <div className="flex items-center justify-end gap-3">
+                        <Link
+                          to={`/products/${p.id}/edit`}
+                          className="inline-flex items-center gap-1 text-xs text-brand-400 hover:text-brand-500 hover:underline transition-colors"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          Editar
+                        </Link>
+                        <button
+                          onClick={() => setToDelete(p)}
+                          className="inline-flex items-center gap-1 text-xs text-grafito-400 hover:text-red-500 transition-colors"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Eliminar
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 )

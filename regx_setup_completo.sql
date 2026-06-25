@@ -1665,22 +1665,54 @@ VALUES (
     allowed_mime_types = ARRAY['image/jpeg','image/jpg','image/png','image/webp','image/gif'];
 
 -- 2. RLS — cualquier usuario autenticado puede subir/ver imágenes de su tenant
-CREATE POLICY "Authenticated users can upload product images"
-ON storage.objects FOR INSERT
+DROP POLICY IF EXISTS "Authenticated users can upload product images" ON storage.objects;
+CREATE POLICY "Authenticated users can upload product images" ON storage.objects FOR INSERT
 TO authenticated
 WITH CHECK (bucket_id = 'products');
 
-CREATE POLICY "Product images are publicly readable"
-ON storage.objects FOR SELECT
+DROP POLICY IF EXISTS "Product images are publicly readable" ON storage.objects;
+CREATE POLICY "Product images are publicly readable" ON storage.objects FOR SELECT
 TO public
 USING (bucket_id = 'products');
 
-CREATE POLICY "Users can update their own product images"
-ON storage.objects FOR UPDATE
+DROP POLICY IF EXISTS "Users can update their own product images" ON storage.objects;
+CREATE POLICY "Users can update their own product images" ON storage.objects FOR UPDATE
 TO authenticated
 USING (bucket_id = 'products');
 
-CREATE POLICY "Users can delete their own product images"
-ON storage.objects FOR DELETE
+DROP POLICY IF EXISTS "Users can delete their own product images" ON storage.objects;
+CREATE POLICY "Users can delete their own product images" ON storage.objects FOR DELETE
 TO authenticated
 USING (bucket_id = 'products');
+
+-- ════════════════════════════════════════════════════════════════
+-- PARCHE: Políticas RLS faltantes (inventory INSERT, categories)
+-- Ejecutar en Supabase si ya corriste el SQL anterior
+-- ════════════════════════════════════════════════════════════════
+
+DROP POLICY IF EXISTS "inventory_insert" ON inventory;
+CREATE POLICY "inventory_insert" ON inventory
+  FOR INSERT WITH CHECK (
+    user_belongs_to_tenant(tenant_id) AND
+    user_role_in_tenant(tenant_id) IN ('OWNER', 'ADMIN', 'INVENTORY_MANAGER')
+  );
+
+DROP POLICY IF EXISTS "categories_insert" ON categories;
+CREATE POLICY "categories_insert" ON categories
+  FOR INSERT WITH CHECK (
+    user_belongs_to_tenant(tenant_id) AND
+    user_role_in_tenant(tenant_id) IN ('OWNER', 'ADMIN')
+  );
+
+DROP POLICY IF EXISTS "categories_update" ON categories;
+CREATE POLICY "categories_update" ON categories
+  FOR UPDATE USING (
+    user_belongs_to_tenant(tenant_id) AND
+    user_role_in_tenant(tenant_id) IN ('OWNER', 'ADMIN')
+  );
+
+DROP POLICY IF EXISTS "sale_payments_insert" ON sale_payments;
+CREATE POLICY "sale_payments_insert" ON sale_payments
+  FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM sales WHERE sales.id = sale_payments.sale_id AND user_belongs_to_tenant(sales.tenant_id))
+  );
