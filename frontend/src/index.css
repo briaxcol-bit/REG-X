@@ -64,6 +64,30 @@
     text-rendering: optimizeLegibility;
   }
 
+  /* ── Inputs: elimina TODA apariencia nativa del browser ── */
+  input, textarea, select {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-color: transparent !important;
+    background-image: none !important;
+    color-scheme: dark;
+    border: none;
+    outline: none;
+  }
+
+  /* ── Autofill: fondo invisible, texto blanco ── */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 1000px transparent inset !important;
+    box-shadow: 0 0 0 1000px transparent inset !important;
+    -webkit-text-fill-color: #f9fafb !important;
+    caret-color: #f9fafb;
+    transition: background-color 9999s ease-in-out 0s;
+  }
+
   body {
     @apply bg-background text-foreground font-sans;
     overscroll-behavior: none;
