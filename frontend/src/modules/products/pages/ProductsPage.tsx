@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Plus, Search, Tag, Eye, Package, Loader2, Trash2, AlertTriangle, X } from 'lucide-react'
 import { getProducts, deleteProduct } from '@lib/db'
 import { useAuthStore } from '@store/auth.store'
 import type { ProductRow } from '@lib/db'
+import { cn } from '@shared/utils/cn'
 
 // ── Confirmation Modal ────────────────────────────────────────
 function DeleteModal({
@@ -99,16 +100,19 @@ export default function ProductsPage() {
   const [deleting, setDeleting]     = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
+  const [searchParams, setSearchParams] = useSearchParams()
+  const categoryId = searchParams.get('category')
+
   const loadProducts = () => {
     if (!tenant?.tenantId) return
     setLoading(true)
-    getProducts(tenant.tenantId, { search: search || undefined })
+    getProducts(tenant.tenantId, { search: search || undefined, categoryId: categoryId || undefined })
       .then(setProducts)
       .catch(() => setProducts([]))
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { loadProducts() }, [tenant?.tenantId, search])
+  useEffect(() => { loadProducts() }, [tenant?.tenantId, search, categoryId])
 
   const handleDelete = async () => {
     if (!toDelete || !tenant?.tenantId) return
@@ -162,6 +166,19 @@ export default function ProductsPage() {
             placeholder="Buscar por nombre, SKU o código de barra..."
             className="flex-1 bg-transparent text-sm placeholder:text-grafito-400 dark:placeholder:text-grafito-600 outline-none text-grafito-900 dark:text-white"
           />
+          {categoryId && (
+            <button
+              onClick={() => {
+                const newParams = new URLSearchParams(searchParams)
+                newParams.delete('category')
+                setSearchParams(newParams)
+              }}
+              className="flex items-center gap-1 rounded-md bg-brand-500/10 px-2 py-1 text-xs font-medium text-brand-500 hover:bg-brand-500/20 transition-colors"
+              title="Quitar filtro de categoría"
+            >
+              Categoría <X className="h-3 w-3" />
+            </button>
+          )}
         </div>
         <Link
           to="/products/categories"
@@ -172,100 +189,90 @@ export default function ProductsPage() {
         </Link>
       </div>
 
-      {/* Tabla */}
-      <div className="rounded-2xl border border-grafito-200 dark:border-white/5 bg-white dark:bg-grafito-900/60 backdrop-blur-md overflow-hidden">
-        {loading ? (
-          <div className="flex items-center justify-center gap-2 py-16 text-grafito-400">
-            <Loader2 className="h-5 w-5 animate-spin" />
-            <span className="text-sm">Cargando productos...</span>
-          </div>
-        ) : products.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-16 text-grafito-400">
-            <Package className="h-10 w-10 opacity-30" />
-            <p className="text-sm">No hay productos registrados.</p>
-            <Link
-              to="/products/new"
-              className="flex items-center gap-1.5 rounded-lg bg-brand-500 px-3.5 py-2 text-xs font-semibold text-white hover:bg-brand-600 transition-all"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Crear primer producto
-            </Link>
-          </div>
-        ) : (
-          <table className="w-full text-left text-sm text-grafito-600 dark:text-grafito-300">
-            <thead>
-              <tr className="text-xs font-semibold text-grafito-500 uppercase border-b border-grafito-200 dark:border-white/5">
-                <th className="px-6 pb-3 pt-5">Producto</th>
-                <th className="pb-3 pt-5">SKU</th>
-                <th className="pb-3 pt-5">Categoría</th>
-                <th className="pb-3 pt-5">Precio</th>
-                <th className="pb-3 pt-5">Stock</th>
-                <th className="pb-3 pt-5 text-right pr-6">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-grafito-100 dark:divide-white/5">
-              {products.map((p) => {
-                const stock = (p.inventory ?? []).reduce((s, i) => s + Number(i.quantity), 0)
-                const cat = p.categories as any
-                return (
-                  <tr key={p.id} className="hover:bg-grafito-50 dark:hover:bg-white/5 transition-colors">
-                    <td className="px-6 py-3.5">
-                      <div className="flex items-center gap-3">
-                        {p.image_url ? (
-                          <img src={p.image_url} alt={p.name} className="h-9 w-9 rounded-lg object-cover shrink-0" />
-                        ) : (
-                          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-grafito-100 dark:bg-grafito-800 shrink-0">
-                            <Package className="h-4 w-4 text-grafito-400" />
-                          </div>
-                        )}
-                        <span className="font-semibold text-grafito-900 dark:text-white">{p.name}</span>
-                      </div>
-                    </td>
-                    <td className="py-3.5 font-mono text-xs">{p.sku}</td>
-                    <td className="py-3.5">
-                      {cat?.name ? (
-                        <span className="flex items-center gap-1.5 text-xs">
-                          <span className="h-2 w-2 rounded-full" style={{ background: cat.color }} />
-                          {cat.name}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-grafito-400">—</span>
-                      )}
-                    </td>
-                    <td className="py-3.5 font-bold text-brand-500">${Number(p.price).toLocaleString('es-CO')}</td>
-                    <td className="py-3.5">
-                      <span className={
-                        stock === 0 ? 'text-red-400 font-semibold' :
-                        stock <= 5  ? 'text-yellow-400 font-semibold' : ''
-                      }>
-                        {stock} uds
-                      </span>
-                    </td>
-                    <td className="py-3.5 pr-6">
-                      <div className="flex items-center justify-end gap-3">
-                        <Link
-                          to={`/products/${p.id}/edit`}
-                          className="inline-flex items-center gap-1 text-xs text-brand-400 hover:text-brand-500 hover:underline transition-colors"
-                        >
-                          <Eye className="h-3.5 w-3.5" />
-                          Editar
-                        </Link>
-                        <button
-                          onClick={() => setToDelete(p)}
-                          className="inline-flex items-center gap-1 text-xs text-grafito-400 hover:text-red-500 transition-colors"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          Eliminar
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
+      {/* Listado */}
+      {loading ? (
+        <div className="flex items-center justify-center gap-2 py-16 text-grafito-400 bg-white dark:bg-grafito-900/60 rounded-2xl border border-grafito-200 dark:border-white/5">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          <span className="text-sm">Cargando productos...</span>
+        </div>
+      ) : products.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-3 py-16 text-grafito-400 bg-white dark:bg-grafito-900/60 rounded-2xl border border-grafito-200 dark:border-white/5">
+          <Package className="h-10 w-10 opacity-30" />
+          <p className="text-sm">No hay productos registrados.</p>
+          <Link
+            to="/products/new"
+            className="flex items-center gap-1.5 rounded-lg bg-brand-500 px-3.5 py-2 text-xs font-semibold text-white hover:bg-brand-600 transition-all"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Crear primer producto
+          </Link>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6">
+          {products.map((p) => {
+            const stock = (p.inventory ?? []).reduce((s, i) => s + Number(i.quantity), 0)
+            const cat = p.categories as any
+            return (
+              <div key={p.id} className="group flex flex-col rounded-2xl bg-white dark:bg-grafito-900/80 border border-grafito-200 dark:border-white/5 overflow-hidden hover:shadow-xl hover:shadow-brand-500/5 hover:-translate-y-1 hover:border-brand-500/30 transition-all duration-300">
+                
+                {/* Imagen & Badges */}
+                <div className="aspect-[4/3] bg-grafito-100 dark:bg-grafito-800/50 flex items-center justify-center relative overflow-hidden">
+                  {p.image_url ? (
+                    <img src={p.image_url} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                  ) : (
+                    <Package className="h-10 w-10 text-grafito-300 dark:text-grafito-600 group-hover:scale-110 transition-transform duration-500" />
+                  )}
+                  
+                  {/* Category Badge */}
+                  {cat?.name && (
+                    <span className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/95 dark:bg-grafito-900/95 backdrop-blur-sm text-[10px] font-bold shadow-sm border border-black/5 dark:border-white/10">
+                      <span className="h-2 w-2 rounded-full" style={{ background: cat.color }} />
+                      <span className="text-grafito-700 dark:text-grafito-200">{cat.name}</span>
+                    </span>
+                  )}
+                  
+                  {/* Stock Badge */}
+                  <span className={cn(
+                    "absolute top-3 right-3 px-2.5 py-1 rounded-full text-[10px] font-bold shadow-sm backdrop-blur-sm border",
+                    stock === 0 ? 'bg-red-500/95 text-white border-red-600/20' :
+                    stock <= 5  ? 'bg-yellow-400/95 text-yellow-900 border-yellow-500/20' : 
+                                  'bg-white/95 dark:bg-grafito-900/95 text-grafito-700 dark:text-grafito-200 border-black/5 dark:border-white/10'
+                  )}>
+                    {stock} uds
+                  </span>
+                </div>
+
+                {/* Info & Acciones */}
+                <div className="p-5 flex flex-col flex-1">
+                  <h3 className="font-bold text-base text-grafito-900 dark:text-white line-clamp-1" title={p.name}>{p.name}</h3>
+                  <p className="font-mono text-xs text-grafito-500 dark:text-grafito-400 mt-1">{p.sku || 'Sin SKU'}</p>
+                  
+                  <div className="mt-4 pt-4 border-t border-grafito-100 dark:border-white/5 flex items-center justify-between">
+                    <span className="text-lg font-black text-brand-500">${Number(p.price).toLocaleString('es-CO')}</span>
+                    <div className="flex items-center gap-1.5">
+                      <Link
+                        to={`/products/${p.id}/edit`}
+                        className="flex h-8 w-8 items-center justify-center rounded-lg bg-grafito-50 dark:bg-white/5 text-grafito-500 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 transition-colors"
+                        title="Editar"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Link>
+                      <button
+                        onClick={() => setToDelete(p)}
+                        className="flex h-8 w-8 items-center justify-center rounded-lg bg-grafito-50 dark:bg-white/5 text-grafito-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                        title="Eliminar"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

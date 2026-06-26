@@ -13,6 +13,7 @@ export interface CartItem {
   name: string
   price: number
   quantity: number
+  stock: number
   discount: number          // percentage 0-100
   discountAmount: number    // absolute
   tax: number               // percentage
@@ -114,12 +115,14 @@ export const usePOSStore = create<POSState & POSActions>()(
             (i) => i.productId === item.productId && i.variantId === item.variantId,
           )
           if (existing) {
+            if (existing.quantity >= existing.stock) return
             existing.quantity += item.quantity
             const calc = calcItemTotal(existing)
             existing.total = calc.total
             existing.taxAmount = calc.taxAmount
             existing.discountAmount = calc.discountAmount
           } else {
+            if (item.quantity > item.stock) return
             const calc = calcItemTotal(item)
             state.items.push({ ...item, id: nanoid(), ...calc })
           }
@@ -133,6 +136,7 @@ export const usePOSStore = create<POSState & POSActions>()(
             state.items = state.items.filter((i) => i.id !== id)
             return
           }
+          if (quantity > item.stock) return
           item.quantity = quantity
           const calc = calcItemTotal(item)
           item.total = calc.total

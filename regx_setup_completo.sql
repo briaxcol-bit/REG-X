@@ -3,11 +3,13 @@
 -- Ejecutar TODO este archivo en: Supabase → SQL Editor → Run
 -- ============================================================
 
--- ── 1. EXTENSIONES ───────────────────────────────────────────
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 CREATE EXTENSION IF NOT EXISTS "unaccent";
 CREATE EXTENSION IF NOT EXISTS "btree_gist";
+
+
+-- ══ 001_initial_schema.sql ══
 -- ============================================================
 -- REG-X ERP/POS SaaS Enterprise — Migration 001
 -- Initial Schema: Tenants, Users, RBAC, Products,
@@ -793,6 +795,8 @@ BEGIN
 END;
 $$;
 
+
+-- ══ 002_rls_policies.sql ══
 -- ============================================================
 -- REG-X — Migration 002: Row Level Security Policies
 -- ============================================================
@@ -936,6 +940,16 @@ CREATE POLICY "products_delete" ON products
 -- categories, brands, suppliers — same pattern as products
 DROP POLICY IF EXISTS "categories_select" ON categories;
 CREATE POLICY "categories_select" ON categories FOR SELECT USING (user_belongs_to_tenant(tenant_id));
+DROP POLICY IF EXISTS "categories_insert" ON categories;
+CREATE POLICY "categories_insert" ON categories FOR INSERT WITH CHECK (
+  user_belongs_to_tenant(tenant_id) AND
+  user_role_in_tenant(tenant_id) IN ('OWNER', 'ADMIN')
+);
+DROP POLICY IF EXISTS "categories_update" ON categories;
+CREATE POLICY "categories_update" ON categories FOR UPDATE USING (
+  user_belongs_to_tenant(tenant_id) AND
+  user_role_in_tenant(tenant_id) IN ('OWNER', 'ADMIN')
+);
 DROP POLICY IF EXISTS "brands_select" ON brands;
 CREATE POLICY "brands_select" ON brands     FOR SELECT USING (user_belongs_to_tenant(tenant_id));
 DROP POLICY IF EXISTS "suppliers_select" ON suppliers;
@@ -945,6 +959,13 @@ CREATE POLICY "suppliers_select" ON suppliers  FOR SELECT USING (user_belongs_to
 DROP POLICY IF EXISTS "inventory_select" ON inventory;
 CREATE POLICY "inventory_select" ON inventory
   FOR SELECT USING (user_belongs_to_tenant(tenant_id));
+
+DROP POLICY IF EXISTS "inventory_insert" ON inventory;
+CREATE POLICY "inventory_insert" ON inventory
+  FOR INSERT WITH CHECK (
+    user_belongs_to_tenant(tenant_id) AND
+    user_role_in_tenant(tenant_id) IN ('OWNER', 'ADMIN', 'INVENTORY_MANAGER')
+  );
 
 DROP POLICY IF EXISTS "inventory_update" ON inventory;
 CREATE POLICY "inventory_update" ON inventory
@@ -1055,20 +1076,9 @@ CREATE POLICY "webhook_endpoints_select" ON webhook_endpoints FOR SELECT USING (
 DROP POLICY IF EXISTS "subscriptions_select" ON subscriptions;
 CREATE POLICY "subscriptions_select" ON subscriptions FOR SELECT USING (user_belongs_to_tenant(tenant_id));
 
--- tenant_modules / feature_flags
-DROP POLICY IF EXISTS "tenant_modules_select" ON tenant_modules;
-CREATE POLICY "tenant_modules_select" ON tenant_modules FOR SELECT USING (user_belongs_to_tenant(tenant_id));
-DROP POLICY IF EXISTS "tenant_feature_flags_select" ON tenant_feature_flags;
-CREATE POLICY "tenant_feature_flags_select" ON tenant_feature_flags FOR SELECT USING (user_belongs_to_tenant(tenant_id));
+-- tenant_mod
 
--- promotions
-DROP POLICY IF EXISTS "promotions_select" ON promotions;
-CREATE POLICY "promotions_select" ON promotions FOR SELECT USING (user_belongs_to_tenant(tenant_id));
-DROP POLICY IF EXISTS "promotions_insert" ON promotions;
-CREATE POLICY "promotions_insert" ON promotions FOR INSERT WITH CHECK (
-  user_belongs_to_tenant(tenant_id) AND user_role_in_tenant(tenant_id) IN ('OWNER', 'ADMIN')
-);
-
+-- ══ 003_indexes.sql ══
 -- ============================================================
 -- REG-X — Migration 003: Indexes, Constraints, Full-text Search
 -- ============================================================
@@ -1173,6 +1183,8 @@ CREATE INDEX IF NOT EXISTS idx_webhook_del_endpoint  ON webhook_deliveries (endp
 -- ── Coupons ───────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_coupons_tenant_code   ON coupons (tenant_id, code);
 
+
+-- ══ 004_functions_views.sql ══
 -- ============================================================
 -- REG-X — Migration 004: Functions, Views, Materialized Views
 -- ============================================================
@@ -1418,6 +1430,8 @@ WITH DATA;
 
 CREATE INDEX IF NOT EXISTS idx_mv_product_sales ON mv_product_sales_rank (tenant_id, month DESC, total_revenue DESC);
 
+
+-- ══ 001_permissions.sql ══
 -- ============================================================
 -- REG-X — Seed 001: System Permissions
 -- ============================================================
@@ -1538,6 +1552,8 @@ VALUES
   ('00000000-0000-0000-0000-000000000001', 'Limpieza',    'limpieza',    '#F59E0B', TRUE)
 ON CONFLICT DO NOTHING;
 
+
+-- ══ 002_test_user.sql ══
 -- REG-X: Usuario de prueba
 -- Email: admin@regx.test
 -- Password: Admin123!
@@ -1638,81 +1654,61 @@ BEGIN
 
 END $body$;
 
--- ── WAREHOUSE para tenant demo (requerido por inventario) ────
+
+-- ── WAREHOUSE demo ──────────────────────────────────────────
 INSERT INTO warehouses (id, tenant_id, branch_id, name, code, is_default, is_active)
-VALUES (
-  '00000000-0000-0000-0000-000000000003',
-  '00000000-0000-0000-0000-000000000001',
-  '00000000-0000-0000-0000-000000000002',
-  'Bodega Principal', 'BOD-001', TRUE, TRUE
-) ON CONFLICT DO NOTHING;
+VALUES ('00000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-000000000001',
+        '00000000-0000-0000-0000-000000000002','Bodega Principal','BOD-001',TRUE,TRUE)
+ON CONFLICT DO NOTHING;
+
 
 -- ════════════════════════════════════════════════════════════════
--- SUPABASE STORAGE — Bucket para imágenes de productos
+-- STORAGE — Bucket productos
 -- ════════════════════════════════════════════════════════════════
-
--- 1. Crear bucket público "products"
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-VALUES (
-  'products',
-  'products',
-  TRUE,
-  5242880,   -- 5 MB máximo por imagen
-  ARRAY['image/jpeg','image/jpg','image/png','image/webp','image/gif']
-) ON CONFLICT (id) DO UPDATE SET
-    public            = TRUE,
-    file_size_limit   = 5242880,
-    allowed_mime_types = ARRAY['image/jpeg','image/jpg','image/png','image/webp','image/gif'];
+VALUES ('products','products',TRUE,5242880,
+        ARRAY['image/jpeg','image/jpg','image/png','image/webp','image/gif'])
+ON CONFLICT (id) DO UPDATE SET
+  public=TRUE, file_size_limit=5242880,
+  allowed_mime_types=ARRAY['image/jpeg','image/jpg','image/png','image/webp','image/gif'];
 
--- 2. RLS — cualquier usuario autenticado puede subir/ver imágenes de su tenant
 DROP POLICY IF EXISTS "Authenticated users can upload product images" ON storage.objects;
-CREATE POLICY "Authenticated users can upload product images" ON storage.objects FOR INSERT
-TO authenticated
-WITH CHECK (bucket_id = 'products');
+CREATE POLICY "Authenticated users can upload product images" ON storage.objects
+  FOR INSERT TO authenticated WITH CHECK (bucket_id = 'products');
 
 DROP POLICY IF EXISTS "Product images are publicly readable" ON storage.objects;
-CREATE POLICY "Product images are publicly readable" ON storage.objects FOR SELECT
-TO public
-USING (bucket_id = 'products');
+CREATE POLICY "Product images are publicly readable" ON storage.objects
+  FOR SELECT TO public USING (bucket_id = 'products');
 
 DROP POLICY IF EXISTS "Users can update their own product images" ON storage.objects;
-CREATE POLICY "Users can update their own product images" ON storage.objects FOR UPDATE
-TO authenticated
-USING (bucket_id = 'products');
+CREATE POLICY "Users can update their own product images" ON storage.objects
+  FOR UPDATE TO authenticated USING (bucket_id = 'products');
 
 DROP POLICY IF EXISTS "Users can delete their own product images" ON storage.objects;
-CREATE POLICY "Users can delete their own product images" ON storage.objects FOR DELETE
-TO authenticated
-USING (bucket_id = 'products');
+CREATE POLICY "Users can delete their own product images" ON storage.objects
+  FOR DELETE TO authenticated USING (bucket_id = 'products');
 
--- ════════════════════════════════════════════════════════════════
--- PARCHE: Políticas RLS faltantes (inventory INSERT, categories)
--- Ejecutar en Supabase si ya corriste el SQL anterior
--- ════════════════════════════════════════════════════════════════
 
-DROP POLICY IF EXISTS "inventory_insert" ON inventory;
-CREATE POLICY "inventory_insert" ON inventory
-  FOR INSERT WITH CHECK (
-    user_belongs_to_tenant(tenant_id) AND
-    user_role_in_tenant(tenant_id) IN ('OWNER', 'ADMIN', 'INVENTORY_MANAGER')
-  );
-
-DROP POLICY IF EXISTS "categories_insert" ON categories;
-CREATE POLICY "categories_insert" ON categories
-  FOR INSERT WITH CHECK (
-    user_belongs_to_tenant(tenant_id) AND
-    user_role_in_tenant(tenant_id) IN ('OWNER', 'ADMIN')
-  );
-
-DROP POLICY IF EXISTS "categories_update" ON categories;
-CREATE POLICY "categories_update" ON categories
-  FOR UPDATE USING (
-    user_belongs_to_tenant(tenant_id) AND
-    user_role_in_tenant(tenant_id) IN ('OWNER', 'ADMIN')
-  );
-
+-- ── Política faltante: sale_payments INSERT ──────────────────
+DROP POLICY IF EXISTS "sale_payments_insert" ON sale_payments;
 DROP POLICY IF EXISTS "sale_payments_insert" ON sale_payments;
 CREATE POLICY "sale_payments_insert" ON sale_payments
   FOR INSERT WITH CHECK (
-    EXISTS (SELECT 1 FROM sales WHERE sales.id = sale_payments.sale_id AND user_belongs_to_tenant(sales.tenant_id))
+    EXISTS (SELECT 1 FROM sales
+            WHERE sales.id = sale_payments.sale_id
+              AND user_belongs_to_tenant(sales.tenant_id))
   );
+
+
+-- ════════════════════════════════════════════════════════════════
+-- REAL-TIME para inventario y productos
+-- ════════════════════════════════════════════════════════════════
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE inventory;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE products;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;

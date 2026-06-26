@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getCustomers, createCustomer, type CustomerRow } from '@lib/db'
+import { getCustomers, createCustomer, updateCustomer, type CustomerRow } from '@lib/db'
 import { useAuthStore } from '@store/auth.store'
 
 export interface Customer {
@@ -52,6 +52,19 @@ export function useCreateCustomer() {
   return useMutation({
     mutationFn: (data: { full_name: string; email?: string; phone?: string; tax_id?: string }) =>
       createCustomer(tenantId!, branchId!, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['customers', tenantId] })
+    },
+  })
+}
+
+export function useUpdateCustomer() {
+  const qc       = useQueryClient()
+  const tenantId = useAuthStore((s) => s.tenant?.tenantId)
+
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: { full_name: string; email?: string; phone?: string; tax_id?: string } }) =>
+      updateCustomer(id, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['customers', tenantId] })
     },

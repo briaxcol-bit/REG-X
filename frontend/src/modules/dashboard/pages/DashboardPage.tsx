@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion'
 import { DollarSign, ShoppingCart, Users, Package, TrendingUp, TrendingDown, ArrowUpRight, Plus, Calendar, Loader2 } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { formatCurrency } from '@shared/utils/format'
 import { useDashboardStats } from '../hooks/useDashboardStats'
 import { useAuthStore } from '@store/auth.store'
@@ -15,6 +15,8 @@ export default function DashboardPage() {
     return `${p >= 0 ? '+' : ''}${p.toFixed(1)}%`
   }
 
+  const navigate = useNavigate()
+
   const statsCards = stats
     ? [
         {
@@ -24,6 +26,7 @@ export default function DashboardPage() {
           positive: stats.salesToday >= stats.salesYesterday,
           icon: DollarSign,
           color: 'from-emerald-500/20 to-teal-500/20 text-emerald-400',
+          path: '/reports/sales',
         },
         {
           name: 'Órdenes Activas',
@@ -32,6 +35,7 @@ export default function DashboardPage() {
           positive: true,
           icon: ShoppingCart,
           color: 'from-blue-500/20 to-indigo-500/20 text-blue-400',
+          path: '/pos',
         },
         {
           name: 'Clientes Nuevos',
@@ -40,6 +44,7 @@ export default function DashboardPage() {
           positive: stats.newCustomersToday >= stats.newCustomersYesterday,
           icon: Users,
           color: 'from-purple-500/20 to-pink-500/20 text-purple-400',
+          path: '/customers',
         },
         {
           name: 'Productos en Stock',
@@ -48,6 +53,7 @@ export default function DashboardPage() {
           positive: true,
           icon: Package,
           color: 'from-amber-500/20 to-orange-500/20 text-amber-400',
+          path: '/inventory',
         },
       ]
     : []
@@ -88,13 +94,14 @@ export default function DashboardPage() {
           {statsCards.map((stat, i) => (
             <motion.div
               key={stat.name}
+              onClick={() => navigate(stat.path)}
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.05 }}
-              className="relative overflow-hidden rounded-2xl border border-grafito-200 dark:border-white/5 bg-white dark:bg-grafito-900/60 p-6 backdrop-blur-md"
+              className="relative overflow-hidden rounded-2xl border border-grafito-200 dark:border-white/5 bg-white dark:bg-grafito-900/60 p-6 backdrop-blur-md cursor-pointer hover:border-brand-500/30 hover:scale-[1.02] hover:shadow-xl hover:shadow-brand-500/5 transition-all group"
             >
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-grafito-500 dark:text-grafito-400">{stat.name}</span>
+                <span className="text-sm font-medium text-grafito-500 dark:text-grafito-400 group-hover:text-grafito-900 dark:group-hover:text-white transition-colors">{stat.name}</span>
                 <div className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br ${stat.color}`}>
                   <stat.icon className="h-5 w-5" />
                 </div>

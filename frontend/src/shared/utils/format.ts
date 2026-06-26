@@ -4,14 +4,14 @@
  */
 export function formatCurrency(
   amount: number,
-  currency = 'USD',
+  _currency = 'COP', // parameter kept for backwards compatibility but ignored
   locale = 'es-CO',
 ): string {
   return new Intl.NumberFormat(locale, {
     style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    currency: 'COP',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
   }).format(amount)
 }
 

@@ -35,7 +35,7 @@ export function CustomerPicker({ open, onClose, onSelect }: CustomerPickerProps)
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Buscar cliente…"
+                placeholder="Buscar por nombre, correo, teléfono o cédula/NIT…"
                 className="flex-1 bg-transparent text-sm text-grafito-900 dark:text-white placeholder:text-grafito-400 dark:placeholder:text-grafito-500 outline-none"
                 autoFocus
               />
