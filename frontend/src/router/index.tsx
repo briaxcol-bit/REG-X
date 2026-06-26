@@ -32,6 +32,8 @@ const ProductFormPage  = lazy(() => import('@modules/products/pages/ProductFormP
 const CategoriesPage   = lazy(() => import('@modules/products/pages/CategoriesPage'))
 
 const InventoryPage    = lazy(() => import('@modules/inventory/pages/InventoryPage'))
+const AlertsPage       = lazy(() => import('@modules/inventory/pages/AlertsPage'))
+const ValuationPage    = lazy(() => import('@modules/inventory/pages/ValuationPage'))
 const StockMovements   = lazy(() => import('@modules/inventory/pages/StockMovementsPage'))
 const TransfersPage    = lazy(() => import('@modules/inventory/pages/TransfersPage'))
 
@@ -164,6 +166,8 @@ export const router = createBrowserRouter([
         element: <RequirePermission permission="inventory.view"><Outlet /></RequirePermission>,
         children: [
           { index: true,       element: <Page><InventoryPage /></Page> },
+          { path: 'alerts',    element: <Page><AlertsPage /></Page> },
+          { path: 'valuation', element: <Page><ValuationPage /></Page> },
           { path: 'movements', element: <Page><StockMovements /></Page> },
           { path: 'transfers', element: <Page><TransfersPage /></Page> },
         ],

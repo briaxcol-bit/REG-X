@@ -38,7 +38,7 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
   const { items, discounts, customerId, tableId, notes, clearCart, addPayment, payments } = usePOSStore()
   const { mutateAsync: createSale, isPending } = useCreateSale()
 
-  const cashReceived = parseFloat(cashInput) || 0
+  const cashReceived = parseInt(cashInput.replace(/\D/g, ''), 10) || 0
   const change = Math.max(0, cashReceived - total)
   const canComplete = selectedMethod !== 'CASH' || cashReceived >= total
 
@@ -84,23 +84,22 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
   return (
     <AnimatePresence>
       {open && (
-        <>
-          {/* Backdrop */}
-          <motion.div
-            initial={{ opacity: 0 }}
+        <motion.div
+          initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
             onClick={onClose}
-          />
-
-          {/* Modal */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-grafito-200 dark:border-white/10 bg-white dark:bg-grafito-900 shadow-2xl"
           >
+            {/* Modal */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 8 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+              className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl border border-grafito-200 dark:border-white/10 bg-white dark:bg-grafito-900 shadow-2xl custom-scrollbar"
+              onClick={(e) => e.stopPropagation()}
+            >
             {success ? (
               // ── Success state ──────────────────────────
               <div className="flex flex-col items-center gap-4 p-10">
@@ -168,9 +167,13 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
                     <div className="space-y-3">
                       <label className="text-sm text-grafito-500 dark:text-grafito-400">Efectivo recibido</label>
                       <input
-                        type="number"
+                        type="text"
                         value={cashInput}
-                        onChange={(e) => setCashInput(e.target.value)}
+                        onChange={(e) => {
+                          const raw = e.target.value.replace(/\D/g, '')
+                          if (!raw) return setCashInput('')
+                          setCashInput(new Intl.NumberFormat('es-CO').format(parseInt(raw, 10)))
+                        }}
                         placeholder={formatCurrency(total, currency)}
                         className="w-full rounded-xl bg-grafito-100 dark:bg-grafito-800 border border-grafito-200 dark:border-white/10 px-4 py-3 text-xl font-bold text-grafito-900 dark:text-white placeholder:text-grafito-400 dark:placeholder:text-grafito-600 outline-none focus:border-brand-500"
                         autoFocus
@@ -182,7 +185,7 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
                           .map((amount) => (
                             <button
                               key={amount}
-                              onClick={() => setCashInput(amount.toFixed(2))}
+                              onClick={() => setCashInput(new Intl.NumberFormat('es-CO').format(amount))}
                               className="rounded-lg bg-grafito-100 dark:bg-grafito-800 py-2 text-xs font-medium text-grafito-600 dark:text-grafito-300 hover:bg-grafito-200 dark:hover:bg-grafito-700 transition-colors border border-grafito-200 dark:border-white/5"
                             >
                               {formatCurrency(amount, currency)}
@@ -231,7 +234,7 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
               </>
             )}
           </motion.div>
-        </>
+        </motion.div>
       )}
     </AnimatePresence>
   )

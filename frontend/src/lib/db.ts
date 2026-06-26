@@ -581,7 +581,7 @@ export async function getCustomers(
 
   if (params?.search) {
     q = q.or(
-      `full_name.ilike.%${params.search}%,email.ilike.%${params.search}%,phone.ilike.%${params.search}%`,
+      `full_name.ilike.%${params.search}%,email.ilike.%${params.search}%,phone.ilike.%${params.search}%,tax_id.ilike.%${params.search}%`,
     )
   }
 
@@ -600,6 +600,20 @@ export async function createCustomer(
   const { data: row, error } = await supabase
     .from('customers')
     .insert({ ...data, tenant_id: tenantId, branch_id: branchId })
+    .select()
+    .single()
+  if (error) throw error
+  return row
+}
+
+export async function updateCustomer(
+  customerId: string,
+  data: { full_name: string; email?: string; phone?: string; tax_id?: string },
+) {
+  const { data: row, error } = await supabase
+    .from('customers')
+    .update(data)
+    .eq('id', customerId)
     .select()
     .single()
   if (error) throw error
@@ -734,7 +748,7 @@ export async function getInventory(
     .from('inventory')
     .select(`
       id, product_id, warehouse_id, quantity, reserved,
-      products(name, sku, price, min_stock, status, categories(name, color))
+      products(name, sku, price, cost_price, min_stock, status, image_url, category_id, categories(name, color))
     `)
     .eq('tenant_id', tenantId)
     .eq('branch_id', branchId)

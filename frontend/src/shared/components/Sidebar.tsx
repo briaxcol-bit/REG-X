@@ -1,10 +1,11 @@
+import { useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
   LayoutDashboard, Package, Boxes,
   Users, BarChart3, Settings, ChefHat, CreditCard,
   Store, Puzzle, ChevronLeft, ChevronRight,
-  Zap, Building2, ShieldCheck,
+  Zap, Building2, ShieldCheck, ChevronDown, AlertTriangle, DollarSign,
 } from 'lucide-react'
 import { cn } from '@shared/utils/cn'
 import { useAuthStore } from '@store/auth.store'
@@ -16,6 +17,7 @@ interface NavItem {
   permission?: string
   badge?: string | number
   group?: string
+  subItems?: { to: string; label: string; icon?: React.ElementType; permission?: string }[]
 }
 
 // Menu de negocio - admins, cajeros, etc.
@@ -23,7 +25,17 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/dashboard',     icon: LayoutDashboard, label: 'Dashboard',   group: 'Principal' },
   { to: '/pos',           icon: Zap,             label: 'POS',         permission: 'sales.create', group: 'Principal' },
   { to: '/products',      icon: Package,         label: 'Productos',   permission: 'products.view', group: 'Catalogo' },
-  { to: '/inventory',     icon: Boxes,           label: 'Inventario',  permission: 'inventory.view', group: 'Catalogo' },
+  { 
+    to: '/inventory',     
+    icon: Boxes,           
+    label: 'Inventario',  
+    permission: 'inventory.view', 
+    group: 'Catalogo',
+    subItems: [
+      { to: '/inventory/alerts', label: 'Alertas stock', icon: AlertTriangle },
+      { to: '/inventory/valuation', label: 'Valoración inventario', icon: DollarSign }
+    ]
+  },
   { to: '/customers',     icon: Users,           label: 'Clientes',    group: 'Catalogo' },
   { to: '/restaurant',    icon: ChefHat,         label: 'Restaurante', group: 'Servicio' },
   { to: '/reports',       icon: BarChart3,       label: 'Reportes',    permission: 'reports.view', group: 'Analisis' },
@@ -49,6 +61,7 @@ interface SidebarProps {
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const location = useLocation()
   const { hasPermission, tenant, profile } = useAuthStore()
+  const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({})
 
   const isSuperAdmin = profile?.platformRole === 'SUPER_ADMIN'
 
@@ -126,40 +139,89 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               .filter((i) => i.group === group)
               .map((item) => {
                 const Icon = item.icon
-                const isActive = location.pathname.startsWith(item.to)
+                const isActive = location.pathname === item.to || location.pathname.startsWith(item.to + '/')
+                const hasSubItems = item.subItems && item.subItems.length > 0
+                const isExpanded = expandedMenus[item.to] !== undefined ? expandedMenus[item.to] : isActive
+
                 return (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    title={collapsed ? item.label : undefined}
-                    className={cn(
-                      'relative flex items-center gap-3 rounded-lg mx-2 px-3 py-2 text-sm font-medium transition-all duration-150',
-                      isActive
-                        ? 'bg-primary/10 dark:bg-primary/15 text-primary'
-                        : 'text-grafito-600 dark:text-grafito-300 hover:bg-grafito-100 dark:hover:bg-white/5 hover:text-grafito-900 dark:hover:text-white',
-                    )}
-                  >
-                    {isActive && (
-                      <motion.span
-                        layoutId="sidebar-active"
-                        className="absolute left-0 h-full w-0.5 rounded-full bg-primary"
-                      />
-                    )}
-                    <Icon className={cn('h-4 w-4 shrink-0', isActive ? 'text-primary' : '')} />
-                    <span
-                      style={{ opacity: collapsed ? 0 : 1, transition: 'opacity 0.2s', width: collapsed ? 0 : undefined, overflow: 'hidden', whiteSpace: 'nowrap' }}
+                  <div key={item.to} className="flex flex-col">
+                    <NavLink
+                      to={item.to}
+                      title={collapsed ? item.label : undefined}
+                      className={cn(
+                        'relative flex items-center gap-3 rounded-lg mx-2 px-3 py-2 text-sm font-medium transition-all duration-150',
+                        isActive
+                          ? 'bg-primary/10 dark:bg-primary/15 text-primary'
+                          : 'text-grafito-600 dark:text-grafito-300 hover:bg-grafito-100 dark:hover:bg-white/5 hover:text-grafito-900 dark:hover:text-white',
+                      )}
                     >
-                      {item.label}
-                    </span>
-                    {item.badge && (
+                      {isActive && !hasSubItems && (
+                        <motion.span
+                          layoutId="sidebar-active"
+                          className="absolute left-0 h-full w-0.5 rounded-full bg-primary"
+                        />
+                      )}
+                      <Icon className={cn('h-4 w-4 shrink-0', isActive ? 'text-primary' : '')} />
                       <span
-                        style={{ opacity: collapsed ? 0 : 1, transition: 'opacity 0.2s' }}
-                        className="ml-auto rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-white"
+                        style={{ opacity: collapsed ? 0 : 1, transition: 'opacity 0.2s', width: collapsed ? 0 : undefined, overflow: 'hidden', whiteSpace: 'nowrap' }}
+                        className="flex-1"
                       >
-                        {item.badge}
+                        {item.label}
                       </span>
+                      
+                      {!collapsed && hasSubItems && (
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setExpandedMenus(prev => ({ ...prev, [item.to]: !isExpanded }));
+                          }}
+                          className="p-1 -mr-1 rounded-md hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+                        >
+                          <ChevronDown className={cn("h-4 w-4 transition-transform duration-200", isExpanded ? "rotate-180" : "")} />
+                        </button>
+                      )}
+
+                      {item.badge && !collapsed && (
+                        <span
+                          className="ml-auto rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-white"
+                        >
+                          {item.badge}
+                        </span>
+                      )}
+                    </NavLink>
+
+                    {/* Subitems */}
+                    {!collapsed && hasSubItems && (
+                      <motion.div
+                        initial={false}
+                        animate={{ height: isExpanded ? 'auto' : 0, opacity: isExpanded ? 1 : 0 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="flex flex-col gap-1 py-1 pl-10 pr-2">
+                          {item.subItems!.map(sub => {
+                            const isSubActive = location.pathname === sub.to
+                            const SubIcon = sub.icon
+                            return (
+                              <NavLink
+                                key={sub.to}
+                                to={sub.to}
+                                className={cn(
+                                  'flex items-center gap-2 text-sm px-3 py-1.5 rounded-md transition-colors',
+                                  isSubActive
+                                    ? 'text-primary font-semibold bg-primary/5'
+                                    : 'text-grafito-500 hover:text-grafito-900 dark:text-grafito-400 dark:hover:text-white hover:bg-grafito-50 dark:hover:bg-white/5'
+                                )}
+                              >
+                                {SubIcon && <SubIcon className="h-3.5 w-3.5" />}
+                                {sub.label}
+                              </NavLink>
+                            )
+                          })}
+                        </div>
+                      </motion.div>
                     )}
-                  </NavLink>
+                  </div>
                 )
               })}
           </div>

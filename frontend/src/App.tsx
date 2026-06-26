@@ -53,7 +53,7 @@ function AuthInitializer() {
             branchId:   ctx.branch.id,
             branchName: ctx.branch.name,
             branchCode: ctx.branch.code,
-            currency:   ctx.branch.currency ?? ctx?.tenant?.currency ?? 'USD',
+            currency:   ctx.branch.currency ?? ctx?.tenant?.currency ?? 'COP',
             timezone:   ctx.branch.timezone ?? ctx?.tenant?.timezone ?? 'America/Bogota',
             country:    ctx?.tenant?.country ?? 'CO',
           })

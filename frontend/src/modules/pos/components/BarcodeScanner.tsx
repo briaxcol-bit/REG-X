@@ -31,19 +31,20 @@ export function BarcodeScanner({ open, onClose, onScan }: BarcodeScannerProps) {
   return (
     <AnimatePresence>
       {open && (
-        <>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onClick={onClose}
+        >
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm"
-            onClick={onClose}
-          />
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 20 }}
-            className="fixed bottom-0 left-1/2 z-50 w-full max-w-sm -translate-x-1/2 rounded-t-2xl border border-grafito-200 dark:border-white/10 bg-white dark:bg-grafito-900 p-6 shadow-2xl"
+            initial={{ opacity: 0, scale: 0.95, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 8 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+            className="w-full max-w-sm rounded-2xl border border-grafito-200 dark:border-white/10 bg-white dark:bg-grafito-900 p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-2">
@@ -86,7 +87,7 @@ export function BarcodeScanner({ open, onClose, onScan }: BarcodeScannerProps) {
               </button>
             </form>
           </motion.div>
-        </>
+        </motion.div>
       )}
     </AnimatePresence>
   )

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Search, Barcode, Plus, Minus, Trash2, CreditCard, Banknote, Receipt, X, ChevronDown, Tag, UserCircle } from 'lucide-react'
 import { usePOSStore } from '@store/pos.store'
@@ -9,6 +9,7 @@ import { useProducts } from '@modules/products/hooks/useProducts'
 import { CheckoutModal } from '@modules/pos/components/CheckoutModal'
 import { BarcodeScanner } from '@modules/pos/components/BarcodeScanner'
 import { CustomerPicker } from '@modules/pos/components/CustomerPicker'
+import { toast } from 'sonner'
 
 // ── Product grid item ────────────────────────────────────────
 
@@ -39,12 +40,12 @@ function ProductCard({ product, onAdd }: ProductCardProps) {
       disabled={product.stock === 0}
     >
       {/* Image or placeholder */}
-      <div className="mb-2 h-16 w-full rounded-lg overflow-hidden bg-grafito-700 flex items-center justify-center">
+      <div className="mb-3 aspect-square w-full rounded-lg overflow-hidden bg-grafito-200 dark:bg-grafito-700 flex items-center justify-center relative">
         {product.imageUrl ? (
-          <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" />
+          <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300" />
         ) : (
           <div
-            className="h-full w-full flex items-center justify-center text-2xl font-bold"
+            className="h-full w-full flex items-center justify-center text-4xl font-bold text-white shadow-inner"
             style={{ backgroundColor: product.categoryColor ?? '#374151' }}
           >
             {product.name[0]?.toUpperCase()}
@@ -52,9 +53,9 @@ function ProductCard({ product, onAdd }: ProductCardProps) {
         )}
       </div>
 
-      <div className="w-full text-left">
-        <p className="text-xs font-medium text-grafito-900 dark:text-white line-clamp-2 leading-tight">{product.name}</p>
-        <p className="mt-1 text-sm font-bold text-brand-400">
+      <div className="w-full text-left flex flex-col flex-1">
+        <p className="text-sm font-bold text-grafito-900 dark:text-white line-clamp-2 leading-tight" title={product.name}>{product.name}</p>
+        <p className="mt-auto pt-2 text-base font-black text-brand-500">
           {formatCurrency(product.price)}
         </p>
         {product.stock > 0 && product.stock <= 5 && (
@@ -74,6 +75,11 @@ function ProductCard({ product, onAdd }: ProductCardProps) {
 
 function CartRow({ item }: { item: ReturnType<typeof usePOSStore.getState>['items'][0] }) {
   const { updateQuantity, removeItem, applyItemDiscount } = usePOSStore()
+  const [inputValue, setInputValue] = useState(item.quantity.toString())
+
+  useEffect(() => {
+    setInputValue(item.quantity.toString())
+  }, [item.quantity])
 
   return (
     <motion.div
@@ -92,34 +98,67 @@ function CartRow({ item }: { item: ReturnType<typeof usePOSStore.getState>['item
       </div>
 
       {/* Quantity controls */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 shrink-0">
         <button
           onClick={() => updateQuantity(item.id, item.quantity - 1)}
-          className="flex h-6 w-6 items-center justify-center rounded-md bg-grafito-700 text-grafito-600 dark:text-grafito-300 hover:bg-brand-500/20 hover:text-brand-400 transition-colors"
+          className="flex h-6 w-6 items-center justify-center rounded-md bg-grafito-100 dark:bg-grafito-700 text-grafito-600 dark:text-grafito-300 hover:bg-brand-500/20 hover:text-brand-400 transition-colors"
         >
           <Minus className="h-3 w-3" />
         </button>
-        <span className="w-6 text-center text-sm font-semibold text-grafito-900 dark:text-white">
-          {item.quantity}
-        </span>
+        <input
+          type="number"
+          min={1}
+          max={item.stock}
+          value={inputValue}
+          onChange={(e) => {
+            setInputValue(e.target.value)
+            const val = parseInt(e.target.value)
+            if (!isNaN(val) && val > 0) {
+              if (val > item.stock) {
+                toast.error(`Solo hay ${item.stock} disponibles en inventario.`)
+                updateQuantity(item.id, item.stock)
+              } else {
+                updateQuantity(item.id, val)
+              }
+            }
+          }}
+          onBlur={() => {
+            const val = parseInt(inputValue)
+            if (isNaN(val) || val < 1) {
+              updateQuantity(item.id, 1)
+              setInputValue('1')
+            } else if (val > item.stock) {
+              setInputValue(item.stock.toString())
+            }
+          }}
+          className="w-10 text-center text-sm font-semibold text-grafito-900 dark:text-white bg-transparent outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+        />
         <button
           onClick={() => updateQuantity(item.id, item.quantity + 1)}
-          className="flex h-6 w-6 items-center justify-center rounded-md bg-grafito-700 text-grafito-600 dark:text-grafito-300 hover:bg-brand-500/20 hover:text-brand-400 transition-colors"
+          disabled={item.quantity >= item.stock}
+          className={cn(
+            "flex h-6 w-6 items-center justify-center rounded-md transition-colors",
+            item.quantity >= item.stock
+              ? "bg-grafito-100 dark:bg-grafito-800 text-grafito-400 dark:text-grafito-600 cursor-not-allowed opacity-50"
+              : "bg-grafito-100 dark:bg-grafito-700 text-grafito-600 dark:text-grafito-300 hover:bg-brand-500/20 hover:text-brand-400"
+          )}
         >
           <Plus className="h-3 w-3" />
         </button>
       </div>
 
-      <span className="w-20 text-right text-sm font-bold text-grafito-900 dark:text-white">
-        {formatCurrency(item.total)}
-      </span>
+      <div className="flex items-center justify-end gap-2 shrink-0 ml-auto">
+        <span className="text-right text-sm font-bold text-grafito-900 dark:text-white">
+          {formatCurrency(item.total)}
+        </span>
 
-      <button
-        onClick={() => removeItem(item.id)}
-        className="text-grafito-500 hover:text-red-400 transition-colors"
-      >
-        <Trash2 className="h-4 w-4" />
-      </button>
+        <button
+          onClick={() => removeItem(item.id)}
+          className="text-grafito-400 hover:text-red-500 transition-colors p-1"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
     </motion.div>
   )
 }
@@ -149,16 +188,22 @@ export default function POSPage() {
   })
 
   const handleAddProduct = useCallback((product: typeof products[0]) => {
+    const existing = items.find(i => i.productId === product.id)
+    if (existing && existing.quantity >= product.stock) {
+      toast.error(`Solo hay ${product.stock} disponibles en inventario.`)
+      return
+    }
     addItem({
       productId: product.id,
       sku: product.sku,
       name: product.name,
       price: product.price,
       quantity: 1,
+      stock: product.stock,
       discount: 0,
       tax: product.tax ?? 0,
     })
-  }, [addItem])
+  }, [addItem, items])
 
   const handleBarcodeScanned = useCallback((barcode: string) => {
     setScannerOpen(false)
