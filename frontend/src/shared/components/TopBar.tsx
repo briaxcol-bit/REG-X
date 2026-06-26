@@ -1,11 +1,12 @@
-import { Bell, Search, Sun, Moon, ChevronDown, LogOut, User, Settings, ShieldCheck } from 'lucide-react'
-import { useState } from 'react'
+import { Bell, Search, Sun, Moon, ChevronDown, LogOut, User, Settings, ShieldCheck, AlertTriangle, PackageX } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@store/auth.store'
 import { supabase } from '@lib/supabase'
 import { cn } from '@shared/utils/cn'
 import { useTheme } from '@shared/hooks/useTheme'
+import { useInventory } from '@modules/inventory/hooks/useInventory'
 
 // Role display config
 const ROLE_DISPLAY: Record<string, { label: string; style: string }> = {
@@ -28,7 +29,71 @@ export function TopBar() {
   const { profile, tenant, branch, logout } = useAuthStore()
   const { isDark, toggle } = useTheme()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [notifOpen, setNotifOpen] = useState(false)
   const navigate = useNavigate()
+  const location = useLocation()
+
+  // Load inventory for alerts
+  const { data: inventory = [] } = useInventory()
+
+  const alerts = inventory.filter(row => {
+    const p = row.products as any
+    const qty = Number(row.quantity)
+    const min = Number(p?.min_stock ?? 0)
+    return qty === 0 || (min > 0 && qty <= min)
+  })
+
+  // ── Browser push notifications ───────────────────────────────
+  const pushNotifiedRef = useRef<Set<string>>((() => {
+    try {
+      const stored = localStorage.getItem('regx-push-notified')
+      return stored ? new Set<string>(JSON.parse(stored)) : new Set<string>()
+    } catch { return new Set<string>() }
+  })())
+
+  // Request permission once on mount
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission()
+    }
+  }, [])
+
+  // Fire a browser notification for each NEW alert (independent of dismissed state)
+  useEffect(() => {
+    if (!('Notification' in window)) return
+    if (Notification.permission !== 'granted') return
+    if (alerts.length === 0) return
+
+    alerts.forEach(row => {
+      if (pushNotifiedRef.current.has(row.id)) return
+
+      pushNotifiedRef.current.add(row.id)
+      // Persist so we don't re-notify on page reload
+      localStorage.setItem('regx-push-notified', JSON.stringify([...pushNotifiedRef.current]))
+
+      const p = row.products as any
+      const qty = Number(row.quantity)
+      const isOut = qty === 0
+      const min = Number(p?.min_stock ?? 0)
+
+      new Notification(isOut ? '🚨 Producto agotado — REG-X' : '⚠️ Stock bajo — REG-X', {
+        body: isOut
+          ? `"${p?.name ?? 'Producto'}" se ha agotado en ${branch?.branchName ?? 'tu sucursal'}.`
+          : `"${p?.name ?? 'Producto'}" tiene solo ${qty} ud (mínimo: ${min}) en ${branch?.branchName ?? 'tu sucursal'}.`,
+        icon:   '/favicon.ico',
+        tag:    row.id,
+        silent: false,
+      })
+    })
+
+    // Clean up: remove IDs from pushNotifiedRef that are no longer in alerts
+    // so if the stock recovers and drops again, it will notify again
+    const alertIds = new Set(alerts.map(r => r.id))
+    pushNotifiedRef.current.forEach(id => {
+      if (!alertIds.has(id)) pushNotifiedRef.current.delete(id)
+    })
+    localStorage.setItem('regx-push-notified', JSON.stringify([...pushNotifiedRef.current]))
+  }, [alerts.map(r => r.id).join(',')])
 
   const handleLogout = async () => {
     setUserMenuOpen(false)
@@ -88,10 +153,104 @@ export function TopBar() {
         </motion.button>
 
         {/* Notifications */}
-        <button className="relative rounded-lg p-2 text-grafito-500 dark:text-grafito-400 hover:bg-grafito-100 dark:hover:bg-white/5 hover:text-grafito-900 dark:hover:text-white transition-colors">
-          <Bell className="h-4 w-4" />
-          <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-brand-500" />
-        </button>
+        <div className="relative">
+          <button
+            onClick={() => setNotifOpen((v) => !v)}
+            className="relative rounded-lg p-2 text-grafito-500 dark:text-grafito-400 hover:bg-grafito-100 dark:hover:bg-white/5 hover:text-grafito-900 dark:hover:text-white transition-colors"
+            title="Notificaciones"
+          >
+            <Bell className="h-4 w-4" />
+            {alerts.length > 0 && (
+              <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-grafito-900" />
+            )}
+          </button>
+
+          <AnimatePresence>
+            {notifOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setNotifOpen(false)}
+                />
+                <motion.div
+                  initial={{ opacity: 0, y: -6, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -6, scale: 0.97 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute right-0 top-full z-50 mt-2 w-80 rounded-2xl border border-grafito-200 dark:border-white/10 bg-white dark:bg-grafito-800 shadow-xl dark:shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
+                >
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-grafito-100 dark:border-white/5 shrink-0">
+                    <span className="text-sm font-bold text-grafito-900 dark:text-white">Alertas de Stock</span>
+                    {alerts.length > 0 && (
+                      <span className="text-[10px] font-semibold text-red-500 bg-red-500/10 px-2 py-0.5 rounded-full">
+                        {alerts.length} alerta{alerts.length !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="overflow-y-auto">
+                    {alerts.length === 0 ? (
+                      <div className="p-6 text-center">
+                        <Bell className="h-8 w-8 text-grafito-300 dark:text-grafito-600 mx-auto mb-2 opacity-50" />
+                        <p className="text-sm font-medium text-grafito-900 dark:text-white">Estás al día</p>
+                        <p className="text-xs text-grafito-500 mt-1">No tienes productos con bajo stock o agotados.</p>
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-grafito-100 dark:divide-white/5">
+                        {alerts.map(row => {
+                          const p = row.products as any
+                          const qty = Number(row.quantity)
+                          const min = Number(p?.min_stock ?? 0)
+                          const isOut = qty === 0
+
+                          return (
+                            <div
+                              key={row.id}
+                              className="p-4 flex items-start gap-3 hover:bg-grafito-50 dark:hover:bg-white/5 transition-colors cursor-pointer"
+                              onClick={() => { 
+                                if (location.pathname !== '/inventory/alerts') {
+                                  navigate('/inventory/alerts')
+                                  setNotifOpen(false)
+                                }
+                              }}
+                            >
+                              <div className={cn(
+                                "flex h-8 w-8 shrink-0 items-center justify-center rounded-full mt-0.5",
+                                isOut ? "bg-red-500/10 text-red-500" : "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400"
+                              )}>
+                                {isOut ? <PackageX className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold text-grafito-900 dark:text-white line-clamp-1">{p?.name ?? 'Producto desconocido'}</p>
+                                <p className="text-xs text-grafito-500 dark:text-grafito-400 mt-0.5">
+                                  {isOut 
+                                    ? "Se ha agotado por completo en esta sucursal."
+                                    : `Quedan ${qty} unidades (Mínimo: ${min}).`
+                                  }
+                                </p>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                  
+                  {alerts.length > 0 && (
+                    <div className="p-2 border-t border-grafito-100 dark:border-white/5 shrink-0 bg-grafito-50 dark:bg-grafito-900/50">
+                      <button
+                        onClick={() => { navigate('/inventory/alerts'); setNotifOpen(false) }}
+                        className="w-full py-2 text-xs font-semibold text-brand-500 hover:text-brand-600 transition-colors"
+                      >
+                        Ver todas las alertas
+                      </button>
+                    </div>
+                  )}
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
+        </div>
 
         {/* User menu */}
         <div className="relative">

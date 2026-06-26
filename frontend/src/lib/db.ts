@@ -410,22 +410,23 @@ export async function updateProduct(
       // Check if inventory row already exists
       const { data: existing } = await supabase
         .from('inventory')
-        .select('id')
+        .select('id, quantity')
         .eq('warehouse_id', warehouse.id)
         .eq('product_id', productId)
         .is('variant_id', null)
         .limit(1)
         .single()
 
+      const prevQty = Number(existing?.quantity ?? 0)
+      const newQty  = payload.initialStock!
+
       if (existing) {
-        // Update existing row
         const { error: updErr } = await supabase
           .from('inventory')
-          .update({ quantity: payload.initialStock })
+          .update({ quantity: newQty })
           .eq('id', existing.id)
         if (updErr) console.error('[updateProduct] Error updating inventory:', updErr)
       } else {
-        // Insert new row
         const { error: insErr } = await supabase
           .from('inventory')
           .insert({
@@ -433,9 +434,28 @@ export async function updateProduct(
             branch_id:    payload.branchId,
             warehouse_id: warehouse.id,
             product_id:   productId,
-            quantity:     payload.initialStock,
+            quantity:     newQty,
           })
         if (insErr) console.error('[updateProduct] Error inserting inventory:', insErr)
+      }
+
+      // Registrar movimiento de stock si cambió
+      const delta = newQty - prevQty
+      if (delta !== 0) {
+        const { error: mvErr } = await supabase.from('stock_movements').insert({
+          tenant_id:      tenantId,
+          branch_id:      payload.branchId,
+          warehouse_id:   warehouse.id,
+          product_id:     productId,
+          type:           'ADJUSTMENT',
+          quantity:       Math.abs(delta),
+          unit_cost:      payload.cost_price ?? null,
+          reference_type: 'MANUAL_ADJUSTMENT',
+          notes:          delta > 0
+            ? `Ajuste manual: +${delta} unidades`
+            : `Ajuste manual: ${delta} unidades`,
+        })
+        if (mvErr) console.error('[updateProduct] Error inserting stock_movement:', mvErr)
       }
     }
   }
@@ -516,6 +536,21 @@ export async function createProduct(
         quantity:     payload.initialStock,
       })
       if (invErr) console.error('[createProduct] Error inserting inventory:', invErr)
+
+      // 4. Registrar movimiento de stock inicial
+      const { error: mvErr } = await supabase.from('stock_movements').insert({
+        tenant_id:      tenantId,
+        branch_id:      payload.branchId,
+        warehouse_id:   warehouse.id,
+        product_id:     product.id,
+        type:           'IN',
+        quantity:       payload.initialStock,
+        unit_cost:      payload.cost_price ?? null,
+        reference_type: 'INITIAL_STOCK',
+        notes:          'Stock inicial al crear producto',
+        created_by:     userId,
+      })
+      if (mvErr) console.error('[createProduct] Error inserting stock_movement:', mvErr)
     }
   }
 
@@ -736,6 +771,60 @@ export async function createSale(
   if (payErr) throw payErr
 
   return sale
+}
+
+// ── Stock Movements ────────────────────────────────────────────
+
+export interface StockMovementRow {
+  id: string
+  type: string
+  quantity: number
+  unit_cost: number | null
+  reference_type: string | null
+  notes: string | null
+  created_at: string
+  created_by: string | null
+  products?: { name: string; sku: string; image_url?: string | null } | null
+}
+
+export async function getStockMovements(
+  tenantId: string,
+  branchId: string,
+  params?: {
+    type?: string
+    since?: string
+    limit?: number
+  },
+): Promise<StockMovementRow[]> {
+  const buildQuery = (filterBranch: boolean) => {
+    let q = supabase
+      .from('stock_movements')
+      .select(`
+        id, type, quantity, unit_cost, reference_type, notes, created_at, created_by,
+        products(name, sku, image_url)
+      `)
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false })
+      .limit(params?.limit ?? 200)
+
+    if (filterBranch) q = q.eq('branch_id', branchId)
+    if (params?.type && params.type !== 'ALL') q = q.eq('type', params.type)
+    if (params?.since) q = q.gte('created_at', params.since)
+    return q
+  }
+
+  // Primero intenta con branch_id
+  const { data, error } = await buildQuery(true)
+  if (error) throw error
+
+  // Si no hay resultados, devuelve todos los del tenant (por si no tienen branch_id asignado)
+  if ((data ?? []).length === 0) {
+    const { data: fallback, error: fallbackErr } = await buildQuery(false)
+    if (fallbackErr) throw fallbackErr
+    return (fallback ?? []) as unknown as StockMovementRow[]
+  }
+
+  return (data ?? []) as unknown as StockMovementRow[]
 }
 
 // ── Inventory ──────────────────────────────────────────────────
