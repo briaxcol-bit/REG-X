@@ -96,9 +96,9 @@ export default function InventoryPage() {
                 <div key={row.id} className="group flex flex-col rounded-2xl bg-white dark:bg-grafito-900/80 border border-grafito-200 dark:border-white/5 overflow-hidden hover:shadow-xl hover:shadow-brand-500/5 hover:-translate-y-1 hover:border-brand-500/30 transition-all duration-300">
                   
                   {/* Imagen & Badges */}
-                  <div className="aspect-[4/3] bg-grafito-100 dark:bg-grafito-800/50 flex items-center justify-center relative overflow-hidden">
+                  <div className="h-44 bg-white dark:bg-grafito-800/50 flex items-center justify-center relative overflow-hidden">
                     {p?.image_url ? (
-                      <img src={p.image_url} alt={p?.name ?? 'Producto'} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                      <img src={p.image_url} alt={p?.name ?? 'Producto'} className="w-full h-full object-contain p-2 group-hover:scale-105 transition-transform duration-300" />
                     ) : (
                       <Package className="h-10 w-10 text-grafito-300 dark:text-grafito-600 group-hover:scale-110 transition-transform duration-500" />
                     )}

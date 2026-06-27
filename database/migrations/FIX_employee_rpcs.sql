@@ -3,19 +3,32 @@
 -- Ejecutar COMPLETO en Supabase → SQL Editor
 -- ═══════════════════════════════════════════════════════════════════
 
--- 1. Eliminar TODAS las versiones existentes (especificando firmas para evitar errores de ambigüedad)
-DROP FUNCTION IF EXISTS add_employee_to_tenant(TEXT,TEXT,TEXT,TEXT,UUID,UUID) CASCADE;
-DROP FUNCTION IF EXISTS add_employee_to_tenant(TEXT,TEXT,TEXT,TEXT,UUID,UUID,TEXT,TEXT) CASCADE;
-DROP FUNCTION IF EXISTS update_employee_profile(UUID,TEXT,UUID,TEXT,TEXT,UUID) CASCADE;
-DROP FUNCTION IF EXISTS update_employee_profile(UUID,TEXT,UUID,TEXT,TEXT,UUID,TEXT) CASCADE;
-DROP FUNCTION IF EXISTS update_employee_profile(UUID,TEXT,UUID,TEXT,TEXT,TEXT,UUID,TEXT) CASCADE;
-DROP FUNCTION IF EXISTS update_employee_profile(UUID,TEXT,UUID,TEXT,TEXT,TEXT,TEXT,UUID,TEXT) CASCADE;
-DROP FUNCTION IF EXISTS get_employee_emails(UUID) CASCADE;
-DROP FUNCTION IF EXISTS delete_employee_from_tenant(UUID,UUID) CASCADE;
+-- 1. Eliminar TODAS las versiones (sin importar la firma — resuelve el error "not unique")
+DO $$
+DECLARE r RECORD;
+BEGIN
+  FOR r IN
+    SELECT oid::regprocedure::text AS sig
+    FROM pg_proc
+    WHERE proname IN (
+      'add_employee_to_tenant',
+      'update_employee_profile',
+      'get_employee_emails',
+      'delete_employee_from_tenant'
+    )
+    AND pronamespace = 'public'::regnamespace
+  LOOP
+    EXECUTE 'DROP FUNCTION IF EXISTS ' || r.sig || ' CASCADE';
+  END LOOP;
+END $$;
 
 -- 2. Columnas en user_profiles (idempotente)
 ALTER TABLE user_profiles
-  ADD COLUMN IF NOT EXISTS cedula VARCHAR(50);
+  ADD COLUMN IF NOT EXISTS cedula      VARCHAR(50),
+  ADD COLUMN IF NOT EXISTS custom_role VARCHAR(100);
+
+-- 3. Agregar valor CUSTOM al enum (ignorar si ya existe)
+ALTER TYPE business_role ADD VALUE IF NOT EXISTS 'CUSTOM';
 
 -- ═══════════════════════════════════════════════════════════════════
 -- RPC: get_employee_emails
@@ -49,14 +62,15 @@ GRANT EXECUTE ON FUNCTION get_employee_emails(UUID) TO authenticated;
 -- RPC: add_employee_to_tenant
 -- ═══════════════════════════════════════════════════════════════════
 CREATE FUNCTION add_employee_to_tenant(
-  p_email      TEXT,
-  p_full_name  TEXT,
-  p_password   TEXT,
-  p_role       TEXT,
-  p_tenant_id  UUID,
-  p_branch_id  UUID   DEFAULT NULL,
-  p_phone      TEXT   DEFAULT NULL,
-  p_cedula     TEXT   DEFAULT NULL
+  p_email       TEXT,
+  p_full_name   TEXT,
+  p_password    TEXT,
+  p_role        TEXT,
+  p_tenant_id   UUID,
+  p_branch_id   UUID   DEFAULT NULL,
+  p_phone       TEXT   DEFAULT NULL,
+  p_cedula      TEXT   DEFAULT NULL,
+  p_custom_role TEXT   DEFAULT NULL
 )
 RETURNS UUID
 LANGUAGE plpgsql SECURITY DEFINER
@@ -102,12 +116,13 @@ BEGIN
     );
   END IF;
 
-  INSERT INTO user_profiles (id, full_name, phone, cedula)
-  VALUES (v_user_id, p_full_name, p_phone, p_cedula)
+  INSERT INTO user_profiles (id, full_name, phone, cedula, custom_role)
+  VALUES (v_user_id, p_full_name, p_phone, p_cedula, p_custom_role)
   ON CONFLICT (id) DO UPDATE
-    SET full_name = EXCLUDED.full_name,
-        phone     = COALESCE(EXCLUDED.phone,  user_profiles.phone),
-        cedula    = COALESCE(EXCLUDED.cedula, user_profiles.cedula);
+    SET full_name    = EXCLUDED.full_name,
+        phone        = COALESCE(EXCLUDED.phone,        user_profiles.phone),
+        cedula       = COALESCE(EXCLUDED.cedula,       user_profiles.cedula),
+        custom_role  = COALESCE(EXCLUDED.custom_role,  user_profiles.custom_role);
 
   INSERT INTO user_tenant_roles (user_id, tenant_id, branch_id, role, is_active)
   VALUES (v_user_id, p_tenant_id, p_branch_id, p_role::business_role, true)
@@ -118,21 +133,22 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION add_employee_to_tenant(TEXT,TEXT,TEXT,TEXT,UUID,UUID,TEXT,TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION add_employee_to_tenant(TEXT,TEXT,TEXT,TEXT,UUID,UUID,TEXT,TEXT,TEXT) TO authenticated;
 
 -- ═══════════════════════════════════════════════════════════════════
 -- RPC: update_employee_profile
 -- ═══════════════════════════════════════════════════════════════════
 CREATE FUNCTION update_employee_profile(
-  p_user_id    UUID,
-  p_full_name  TEXT,
-  p_tenant_id  UUID,
-  p_email      TEXT  DEFAULT NULL,
-  p_phone      TEXT  DEFAULT NULL,
-  p_cedula     TEXT  DEFAULT NULL,
-  p_role       TEXT  DEFAULT NULL,
-  p_branch_id  UUID  DEFAULT NULL,
-  p_password   TEXT  DEFAULT NULL
+  p_user_id     UUID,
+  p_full_name   TEXT,
+  p_tenant_id   UUID,
+  p_email       TEXT  DEFAULT NULL,
+  p_phone       TEXT  DEFAULT NULL,
+  p_cedula      TEXT  DEFAULT NULL,
+  p_role        TEXT  DEFAULT NULL,
+  p_branch_id   UUID  DEFAULT NULL,
+  p_password    TEXT  DEFAULT NULL,
+  p_custom_role TEXT  DEFAULT NULL
 )
 RETURNS VOID
 LANGUAGE plpgsql SECURITY DEFINER
@@ -156,9 +172,10 @@ BEGIN
 
   -- Perfil
   UPDATE user_profiles
-    SET full_name = p_full_name,
-        phone     = p_phone,
-        cedula    = p_cedula
+    SET full_name   = p_full_name,
+        phone       = p_phone,
+        cedula      = p_cedula,
+        custom_role = p_custom_role
   WHERE id = p_user_id;
 
   UPDATE auth.users
@@ -202,7 +219,7 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION update_employee_profile(UUID,TEXT,UUID,TEXT,TEXT,TEXT,TEXT,UUID,TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION update_employee_profile(UUID,TEXT,UUID,TEXT,TEXT,TEXT,TEXT,UUID,TEXT,TEXT) TO authenticated;
 
 -- ═══════════════════════════════════════════════════════════════════
 -- RPC: delete_employee_from_tenant

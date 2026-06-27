@@ -19,12 +19,13 @@ import type { EmployeeRow, BusinessRole } from '@lib/db'
 const ROLES = Object.entries(ROLE_CONFIG) as [BusinessRole, typeof ROLE_CONFIG[BusinessRole]][]
 
 // ── Role badge ───────────────────────────────────────────────
-function RoleBadge({ role }: { role: string }) {
+function RoleBadge({ role, customRole }: { role: string; customRole?: string | null }) {
   const cfg = ROLE_CONFIG[role as BusinessRole]
-  if (!cfg) return <span className="text-xs text-grafito-400">{role}</span>
+  const label = role === 'CUSTOM' && customRole ? customRole : cfg?.label ?? role
+  const color = cfg?.color ?? 'bg-grafito-200 text-grafito-600'
   return (
-    <span className={cn('text-[11px] font-bold px-2 py-0.5 rounded-full', cfg.color)}>
-      {cfg.label}
+    <span className={cn('text-[11px] font-bold px-2 py-0.5 rounded-full', color)}>
+      {label}
     </span>
   )
 }
@@ -146,12 +147,13 @@ interface EditModalProps {
 }
 
 function EditEmployeeModal({ employee, tenantId, onClose, onSaved }: EditModalProps) {
-  const [fullName, setFullName]     = useState(employee.fullName ?? '')
-  const [email, setEmail]           = useState(employee.email    ?? '')
-  const [cedula, setCedula]         = useState(employee.cedula   ?? '')
-  const [phone, setPhone]           = useState(employee.phone    ?? '')
-  const [role, setRole]             = useState<BusinessRole>(employee.role as BusinessRole)
-  const [resetPwd, setResetPwd]     = useState(false)
+  const [fullName, setFullName]       = useState(employee.fullName ?? '')
+  const [email, setEmail]             = useState(employee.email    ?? '')
+  const [cedula, setCedula]           = useState(employee.cedula   ?? '')
+  const [phone, setPhone]             = useState(employee.phone    ?? '')
+  const [role, setRole]               = useState<BusinessRole>(employee.role as BusinessRole)
+  const [customRole, setCustomRole]   = useState(employee.customRole ?? '')
+  const [resetPwd, setResetPwd]       = useState(false)
   const [password, setPassword]     = useState('')
   const [confirmPwd, setConfirmPwd] = useState('')
   const [showPwd, setShowPwd]       = useState(false)
@@ -173,21 +175,23 @@ function EditEmployeeModal({ employee, tenantId, onClose, onSaved }: EditModalPr
     setErr(null)
     try {
       await updateEmployeeProfile({
-        userId:   employee.userId,
-        fullName: fullName.trim(),
-        email:    email.trim()   || undefined,
-        cedula:   cedula.trim()  || null,
-        phone:    phone.trim()   || null,
+        userId:     employee.userId,
+        fullName:   fullName.trim(),
+        email:      email.trim()   || undefined,
+        cedula:     cedula.trim()  || null,
+        phone:      phone.trim()   || null,
         tenantId,
         role,
-        password: resetPwd && password.length >= 6 ? password : undefined,
+        customRole: role === 'CUSTOM' ? customRole.trim() || null : null,
+        password:   resetPwd && password.length >= 6 ? password : undefined,
       })
       onSaved({
-        fullName: fullName.trim(),
+        fullName:   fullName.trim(),
         role,
-        email:  email.trim()  || null,
-        cedula: cedula.trim() || null,
-        phone:  phone.trim()  || null,
+        email:      email.trim()      || null,
+        cedula:     cedula.trim()     || null,
+        phone:      phone.trim()      || null,
+        customRole: role === 'CUSTOM' ? customRole.trim() || null : null,
       })
       onClose()
     } catch (ex: any) {
@@ -283,7 +287,15 @@ function EditEmployeeModal({ employee, tenantId, onClose, onSaved }: EditModalPr
               </select>
               <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-grafito-400" />
             </div>
-            {roleCfg && (
+            {role === 'CUSTOM' && (
+              <input
+                value={customRole}
+                onChange={e => setCustomRole(e.target.value)}
+                placeholder="Ej: Supervisor, Domiciliario, DJ…"
+                className={cn(inputCls, 'mt-2')}
+              />
+            )}
+            {roleCfg && role !== 'CUSTOM' && (
               <p className="text-[11px] text-grafito-400 mt-1 flex items-center gap-1.5">
                 <span className={cn('px-1.5 py-0.5 rounded-full text-[10px] font-bold', roleCfg.color)}>{roleCfg.label}</span>
                 {roleCfg.description}
@@ -398,13 +410,14 @@ interface AddModalProps {
 }
 
 function AddEmployeeModal({ tenantId, branchId, onClose, onCreated }: AddModalProps) {
-  const [fullName, setFullName]     = useState('')
-  const [email, setEmail]           = useState('')
-  const [password, setPassword]     = useState('')
-  const [cedula, setCedula]         = useState('')
-  const [phone, setPhone]           = useState('')
-  const [role, setRole]             = useState<BusinessRole>('CASHIER')
-  const [showPwd, setShowPwd]       = useState(false)
+  const [fullName, setFullName]       = useState('')
+  const [email, setEmail]             = useState('')
+  const [password, setPassword]       = useState('')
+  const [cedula, setCedula]           = useState('')
+  const [phone, setPhone]             = useState('')
+  const [role, setRole]               = useState<BusinessRole>('CASHIER')
+  const [customRole, setCustomRole]   = useState('')
+  const [showPwd, setShowPwd]         = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [err, setErr]               = useState<string | null>(null)
   const nameRef = useRef<HTMLInputElement>(null)
@@ -419,8 +432,9 @@ function AddEmployeeModal({ tenantId, branchId, onClose, onCreated }: AddModalPr
     try {
       await addEmployee({
         email, fullName, password, role, tenantId, branchId,
-        cedula: cedula.trim() || null,
-        phone:  phone.trim()  || null,
+        cedula:     cedula.trim()     || null,
+        phone:      phone.trim()      || null,
+        customRole: role === 'CUSTOM' ? customRole.trim() || null : null,
       })
       onCreated()
       onClose()
@@ -526,7 +540,15 @@ function AddEmployeeModal({ tenantId, branchId, onClose, onCreated }: AddModalPr
               </select>
               <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-grafito-400" />
             </div>
-            {roleCfg && (
+            {role === 'CUSTOM' && (
+              <input
+                value={customRole}
+                onChange={e => setCustomRole(e.target.value)}
+                placeholder="Ej: Supervisor, Domiciliario, DJ…"
+                className={cn(inputCls, 'mt-2')}
+              />
+            )}
+            {roleCfg && role !== 'CUSTOM' && (
               <p className="text-[11px] text-grafito-400 mt-1 flex items-center gap-1">
                 <span className={cn('px-1.5 py-0.5 rounded-full text-[10px] font-bold', roleCfg.color)}>{roleCfg.label}</span>
                 {roleCfg.description}
@@ -795,7 +817,9 @@ export default function EmployeesPage() {
 
                       {/* Descripción */}
                       <td className="py-4 pr-4 text-xs text-grafito-500 dark:text-grafito-400 max-w-[180px]">
-                        {roleCfg?.description ?? '—'}
+                        {emp.role === 'CUSTOM'
+                          ? emp.customRole ?? 'Rol personalizado'
+                          : roleCfg?.description ?? '—'}
                       </td>
 
                       {/* Estado */}

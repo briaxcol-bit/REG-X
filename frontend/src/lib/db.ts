@@ -606,6 +606,16 @@ export async function getCategories(tenantId: string): Promise<CategoryRow[]> {
   return (data ?? []) as unknown as CategoryRow[]
 }
 
+export async function createCategory(tenantId: string, name: string, color: string): Promise<CategoryRow> {
+  const { data, error } = await supabase
+    .from('categories')
+    .insert({ tenant_id: tenantId, name: name.trim(), color, is_active: true })
+    .select('id, tenant_id, name, color, icon, is_active')
+    .single()
+  if (error) throw error
+  return data as unknown as CategoryRow
+}
+
 // ── Customers ──────────────────────────────────────────────────
 
 const CUSTOMER_SELECT = 'id, tenant_id, person_type, doc_type, regime, full_name, business_name, email, phone, tax_id, address, loyalty_points, created_at'
@@ -794,6 +804,47 @@ export async function createSale(
     })),
   )
   if (payErr) throw payErr
+
+  // Descontar stock por cada ítem vendido
+  const { data: warehouse } = await supabase
+    .from('warehouses')
+    .select('id')
+    .eq('branch_id', branchId)
+    .limit(1)
+    .single()
+
+  if (warehouse) {
+    for (const item of payload.items) {
+      // Obtener cantidad actual
+      const { data: inv } = await supabase
+        .from('inventory')
+        .select('id, quantity')
+        .eq('product_id', item.product_id)
+        .eq('warehouse_id', warehouse.id)
+        .limit(1)
+        .single()
+
+      if (inv) {
+        const newQty = Math.max(0, Number(inv.quantity) - item.quantity)
+        await supabase
+          .from('inventory')
+          .update({ quantity: newQty })
+          .eq('id', inv.id)
+
+        await supabase.from('stock_movements').insert({
+          tenant_id:      tenantId,
+          branch_id:      branchId,
+          warehouse_id:   warehouse.id,
+          product_id:     item.product_id,
+          type:           'SALE',
+          quantity:       item.quantity,
+          unit_cost:      item.unit_price,
+          reference_type: 'SALE',
+          notes:          `Venta ${sale.order_number}`,
+        })
+      }
+    }
+  }
 
   return sale
 }
@@ -1027,27 +1078,30 @@ export type BusinessRole =
   | 'BARTENDER'
   | 'ACCOUNTANT'
   | 'INVENTORY_MANAGER'
+  | 'CUSTOM'
 
 export const ROLE_CONFIG: Record<BusinessRole, { label: string; color: string; description: string }> = {
-  CASHIER:           { label: 'Cajero',              color: 'bg-blue-500/10 text-blue-500',     description: 'Maneja ventas y POS' },
-  WAITER:            { label: 'Mesero',              color: 'bg-teal-500/10 text-teal-500',     description: 'Atiende mesas y órdenes' },
-  CHEF:              { label: 'Chef / Cocinero',     color: 'bg-orange-500/10 text-orange-500', description: 'Gestiona cocina y producción' },
-  BARTENDER:         { label: 'Bartender',           color: 'bg-purple-500/10 text-purple-500', description: 'Maneja la barra' },
-  ACCOUNTANT:        { label: 'Contador',            color: 'bg-yellow-500/10 text-yellow-500', description: 'Acceso a reportes y finanzas' },
+  CASHIER:           { label: 'Cajero',               color: 'bg-blue-500/10 text-blue-500',     description: 'Maneja ventas y POS' },
+  WAITER:            { label: 'Mesero',               color: 'bg-teal-500/10 text-teal-500',     description: 'Atiende mesas y órdenes' },
+  CHEF:              { label: 'Chef / Cocinero',      color: 'bg-orange-500/10 text-orange-500', description: 'Gestiona cocina y producción' },
+  BARTENDER:         { label: 'Bartender',            color: 'bg-purple-500/10 text-purple-500', description: 'Maneja la barra' },
+  ACCOUNTANT:        { label: 'Contador',             color: 'bg-yellow-500/10 text-yellow-500', description: 'Acceso a reportes y finanzas' },
   INVENTORY_MANAGER: { label: 'Gestor de Inventario', color: 'bg-emerald-500/10 text-emerald-500', description: 'Controla stock y movimientos' },
+  CUSTOM:            { label: 'Personalizado',        color: 'bg-grafito-200 text-grafito-600',  description: 'Rol definido manualmente' },
 }
 
 export interface EmployeeRow {
-  userId:    string
-  role:      string
-  isActive:  boolean
-  branchId:  string | null
-  fullName:  string | null
-  avatarUrl: string | null
-  email:     string | null
-  phone:     string | null
-  cedula:    string | null
-  createdAt: string
+  userId:     string
+  role:       string
+  isActive:   boolean
+  branchId:   string | null
+  fullName:   string | null
+  avatarUrl:  string | null
+  email:      string | null
+  phone:      string | null
+  cedula:     string | null
+  customRole: string | null
+  createdAt:  string
 }
 
 export async function getEmployees(tenantId: string): Promise<EmployeeRow[]> {
@@ -1091,10 +1145,11 @@ export async function getEmployees(tenantId: string): Promise<EmployeeRow[]> {
       branchId:  r.branch_id,
       fullName:  p?.full_name  ?? null,
       avatarUrl: p?.avatar_url ?? null,
-      email:     emailMap.get(r.user_id) ?? null,
-      phone:     p?.phone  ?? null,
-      cedula:    p?.cedula ?? null,
-      createdAt: r.created_at,
+      email:      emailMap.get(r.user_id) ?? null,
+      phone:      p?.phone       ?? null,
+      cedula:     p?.cedula      ?? null,
+      customRole: null, // disponible tras ejecutar FIX_employee_rpcs.sql
+      createdAt:  r.created_at,
     }
   })
 }
@@ -1113,50 +1168,54 @@ export async function updateEmployeeRole(
 }
 
 export async function addEmployee(input: {
-  email:     string
-  fullName:  string
-  password:  string
-  role:      BusinessRole
-  tenantId:  string
-  branchId?: string | null
-  phone?:    string | null
-  cedula?:   string | null
+  email:      string
+  fullName:   string
+  password:   string
+  role:       BusinessRole
+  tenantId:   string
+  branchId?:  string | null
+  phone?:     string | null
+  cedula?:    string | null
+  customRole?: string | null
 }): Promise<string> {
   const { data, error } = await (supabase.rpc as any)('add_employee_to_tenant', {
-    p_email:     input.email,
-    p_full_name: input.fullName,
-    p_password:  input.password,
-    p_role:      input.role,
-    p_tenant_id: input.tenantId,
-    p_branch_id: input.branchId ?? null,
-    p_phone:     input.phone    ?? null,
-    p_cedula:    input.cedula   ?? null,
+    p_email:       input.email,
+    p_full_name:   input.fullName,
+    p_password:    input.password,
+    p_role:        input.role === 'CUSTOM' ? 'CASHIER' : input.role,
+    p_tenant_id:   input.tenantId,
+    p_branch_id:   input.branchId   ?? null,
+    p_phone:       input.phone      ?? null,
+    p_cedula:      input.cedula     ?? null,
+    // p_custom_role: activar tras ejecutar FIX_employee_rpcs.sql
   })
   if (error) throw error
   return data as string
 }
 
 export async function updateEmployeeProfile(input: {
-  userId:    string
-  fullName:  string
-  tenantId:  string
-  email?:    string
-  phone?:    string | null
-  cedula?:   string | null
-  role?:     BusinessRole
-  branchId?: string | null
-  password?: string
+  userId:      string
+  fullName:    string
+  tenantId:    string
+  email?:      string
+  phone?:      string | null
+  cedula?:     string | null
+  role?:       BusinessRole
+  branchId?:   string | null
+  password?:   string
+  customRole?: string | null
 }): Promise<void> {
   const { error } = await (supabase.rpc as any)('update_employee_profile', {
-    p_user_id:   input.userId,
-    p_full_name: input.fullName,
-    p_tenant_id: input.tenantId,
-    p_email:     input.email     ?? null,
-    p_phone:     input.phone     ?? null,
-    p_cedula:    input.cedula    ?? null,
-    p_role:      input.role      ?? null,
-    p_branch_id: input.branchId  ?? null,
-    p_password:  input.password  ?? null,
+    p_user_id:     input.userId,
+    p_full_name:   input.fullName,
+    p_tenant_id:   input.tenantId,
+    p_email:       input.email      ?? null,
+    p_phone:       input.phone      ?? null,
+    p_cedula:      input.cedula     ?? null,
+    p_role:        (input.role === 'CUSTOM' ? null : input.role) ?? null,
+    p_branch_id:   input.branchId   ?? null,
+    p_password:    input.password   ?? null,
+    // p_custom_role: activar tras ejecutar FIX_employee_rpcs.sql
   })
   if (error) throw error
 }
