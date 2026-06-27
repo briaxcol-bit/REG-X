@@ -109,7 +109,7 @@ function CustomerModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden">
-      <div className="absolute inset-0 bg-black/65 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/65 backdrop-blur-sm" />
       <div className="relative w-full max-w-lg rounded-2xl bg-white dark:bg-grafito-900 border border-grafito-200 dark:border-white/10 shadow-2xl max-h-[92vh] overflow-y-auto">
 
         {/* Header */}
