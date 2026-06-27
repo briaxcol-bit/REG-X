@@ -50,6 +50,7 @@ const KDSPage          = lazy(() => import('@modules/restaurant/pages/KDSPage'))
 
 const SubscriptionsPage = lazy(() => import('@modules/subscriptions/pages/SubscriptionsPage'))
 const MarketplacePage   = lazy(() => import('@modules/marketplace/pages/MarketplacePage'))
+const EmployeesPage     = lazy(() => import('@modules/employees/pages/EmployeesPage'))
 
 const NotFoundPage = lazy(() => import('@shared/pages/NotFoundPage'))
 
@@ -175,6 +176,9 @@ export const router = createBrowserRouter([
 
       // Customers
       { path: 'customers', element: <Page><CustomersPage /></Page> },
+
+      // Employees
+      { path: 'employees', element: <Page><EmployeesPage /></Page> },
 
       // Restaurant
       {

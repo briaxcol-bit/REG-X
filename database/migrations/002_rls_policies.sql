@@ -92,9 +92,19 @@ CREATE POLICY "branches_update" ON branches
     user_role_in_tenant(tenant_id) IN ('OWNER', 'ADMIN')
   );
 
--- user_profiles: users see their own profile
+-- user_profiles: own profile OR teammates in same tenant
+DROP POLICY IF EXISTS "user_profiles_select" ON user_profiles;
 CREATE POLICY "user_profiles_select" ON user_profiles
-  FOR SELECT USING (id = auth.uid());
+  FOR SELECT USING (
+    id = auth.uid()
+    OR EXISTS (
+      SELECT 1
+      FROM user_tenant_roles my_role
+      JOIN user_tenant_roles their_role ON their_role.tenant_id = my_role.tenant_id
+      WHERE my_role.user_id   = auth.uid()
+        AND their_role.user_id = user_profiles.id
+    )
+  );
 
 CREATE POLICY "user_profiles_update" ON user_profiles
   FOR UPDATE USING (id = auth.uid());
