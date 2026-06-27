@@ -799,6 +799,47 @@ export async function createSale(
   )
   if (payErr) throw payErr
 
+  // Descontar stock por cada ítem vendido
+  const { data: warehouse } = await supabase
+    .from('warehouses')
+    .select('id')
+    .eq('branch_id', branchId)
+    .limit(1)
+    .single()
+
+  if (warehouse) {
+    for (const item of payload.items) {
+      // Obtener cantidad actual
+      const { data: inv } = await supabase
+        .from('inventory')
+        .select('id, quantity')
+        .eq('product_id', item.product_id)
+        .eq('warehouse_id', warehouse.id)
+        .limit(1)
+        .single()
+
+      if (inv) {
+        const newQty = Math.max(0, Number(inv.quantity) - item.quantity)
+        await supabase
+          .from('inventory')
+          .update({ quantity: newQty })
+          .eq('id', inv.id)
+
+        await supabase.from('stock_movements').insert({
+          tenant_id:      tenantId,
+          branch_id:      branchId,
+          warehouse_id:   warehouse.id,
+          product_id:     item.product_id,
+          type:           'SALE',
+          quantity:       item.quantity,
+          unit_cost:      item.unit_price,
+          reference_type: 'SALE',
+          notes:          `Venta ${sale.order_number}`,
+        })
+      }
+    }
+  }
+
   return sale
 }
 

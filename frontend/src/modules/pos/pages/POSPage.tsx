@@ -197,6 +197,10 @@ export default function POSPage() {
   const { data: categories = [] } = useCategories()
 
   const handleAddProduct = useCallback((product: typeof products[0]) => {
+    if (product.stock === 0) {
+      toast.error('Producto agotado: no hay unidades disponibles en inventario.')
+      return
+    }
     const existing = items.find(i => i.productId === product.id)
     if (existing && existing.quantity >= product.stock) {
       toast.error(`Solo hay ${product.stock} disponibles en inventario.`)
