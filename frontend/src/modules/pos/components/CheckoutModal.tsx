@@ -6,6 +6,7 @@ import { useAuthStore } from '@store/auth.store'
 import { formatCurrency } from '@shared/utils/format'
 import { cn } from '@shared/utils/cn'
 import { useCreateSale } from '@modules/pos/hooks/useCreateSale'
+import { useCashSession } from '@modules/pos/hooks/useCashSession'
 import { ReceiptTemplate, type ReceiptData } from './ReceiptTemplate'
 
 // ── Métodos de pago ────────────────────────────────────────────────────────────
@@ -85,6 +86,7 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
   const { items, discounts, customerId, tableId, notes, clearCart, payments, lastReceipt, setLastReceipt } = usePOSStore()
   const { tenant, branch, profile } = useAuthStore()
   const { mutateAsync: createSale, isPending } = useCreateSale()
+  const { activeRegister } = useCashSession()
 
   const receipt = success ? lastReceipt : null
 
@@ -120,13 +122,14 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
           total:           it.total,
         })),
         payments: [{ method: method === 'NEQUI' || method === 'DAVIPLATA' ? 'QR' : method, amount: paidAmount }],
-        customer_id:    customerId,
+        customer_id:      customerId,
         notes,
-        subtotal:       items.reduce((s, it) => s + it.price * it.quantity, 0),
-        tax_total:      items.reduce((s, it) => s + it.taxAmount, 0),
-        discount_total: items.reduce((s, it) => s + it.discountAmount, 0),
+        subtotal:         items.reduce((s, it) => s + it.price * it.quantity, 0),
+        tax_total:        items.reduce((s, it) => s + it.taxAmount, 0),
+        discount_total:   items.reduce((s, it) => s + it.discountAmount, 0),
         total,
         currency,
+        cash_register_id: activeRegister?.id,
       })
 
       const taxTotalAmt      = items.reduce((s, it) => s + it.taxAmount, 0)

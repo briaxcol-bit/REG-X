@@ -724,6 +724,8 @@ export interface CreateSalePayload {
   discount_total: number
   total: number
   currency: string
+  status?: 'COMPLETED' | 'PENDING'     // default COMPLETED
+  cash_register_id?: string            // vincula la venta a la caja activa
 }
 
 export async function createSale(
@@ -736,24 +738,28 @@ export async function createSale(
   const ts = Date.now().toString(36).toUpperCase()
   const orderNumber = `ORD-${ts}`
 
+  const saleStatus  = payload.status ?? 'COMPLETED'
+  const isCompleted = saleStatus === 'COMPLETED'
+
   // Insert sale
   const { data: sale, error: saleErr } = await supabase
     .from('sales')
     .insert({
-      tenant_id:      tenantId,
-      branch_id:      branchId,
-      order_number:   orderNumber,
-      customer_id:    payload.customer_id ?? null,
-      subtotal:       payload.subtotal,
-      tax_total:      payload.tax_total,
-      discount_total: payload.discount_total,
-      total:          payload.total,
-      currency:       payload.currency,
-      status:         'COMPLETED',
-      completed_at:   new Date().toISOString(),
-      notes:          payload.notes ?? null,
-      created_by:     userId,
-      completed_by:   userId,
+      tenant_id:        tenantId,
+      branch_id:        branchId,
+      order_number:     orderNumber,
+      customer_id:      payload.customer_id ?? null,
+      subtotal:         payload.subtotal,
+      tax_total:        payload.tax_total,
+      discount_total:   payload.discount_total,
+      total:            payload.total,
+      currency:         payload.currency,
+      status:           saleStatus,
+      completed_at:     isCompleted ? new Date().toISOString() : null,
+      notes:            payload.notes ?? null,
+      created_by:       userId,
+      completed_by:     isCompleted ? userId : null,
+      cash_register_id: payload.cash_register_id ?? null,
     })
     .select()
     .single()
@@ -1454,12 +1460,28 @@ export async function getPOSTerminals(
 ): Promise<POSTerminalWithCashier[]> {
   const { data, error } = await supabase
     .from('pos_terminals')
-    .select('*, cashier:cashier_id(full_name, email)')
+    .select('*')
     .eq('tenant_id', tenantId)
     .eq('branch_id', branchId)
     .order('created_at')
   if (error) throw error
-  return (data ?? []) as unknown as POSTerminalWithCashier[]
+  const terminals = (data ?? []) as POSTerminalRow[]
+
+  // Enrich with cashier profile (cashier_id → auth.users, no direct join)
+  const cashierIds = [...new Set(terminals.map(t => t.cashier_id).filter(Boolean))] as string[]
+  let profileMap: Map<string, { full_name: string; email: string }> = new Map()
+  if (cashierIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from('user_profiles')
+      .select('id, full_name')
+      .in('id', cashierIds)
+    ;(profiles ?? []).forEach((p: any) => profileMap.set(p.id, { full_name: p.full_name, email: '' }))
+  }
+
+  return terminals.map(t => ({
+    ...t,
+    cashier: t.cashier_id ? (profileMap.get(t.cashier_id) ?? null) : null,
+  }))
 }
 
 export async function upsertPOSTerminal(

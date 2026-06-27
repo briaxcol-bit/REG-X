@@ -47,7 +47,7 @@ export interface UserProfile {
 const ROLE_PERMISSIONS: Record<string, string[]> = {
   OWNER:             ['*'],
   ADMIN:             ['sales.create', 'products.view', 'inventory.view', 'reports.view', 'kitchen.view'],
-  CASHIER:           ['sales.create', 'products.view'],
+  CASHIER:           ['sales.create', 'products.view', 'inventory.view'],
   WAITER:            ['sales.create', 'kitchen.view'],
   CHEF:              ['kitchen.view'],
   BARTENDER:         ['sales.create', 'kitchen.view'],

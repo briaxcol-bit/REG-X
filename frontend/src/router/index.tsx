@@ -60,6 +60,15 @@ const Page = ({ children }: { children: React.ReactNode }) => (
   <Suspense fallback={<FullscreenLoader />}>{children}</Suspense>
 )
 
+// -- Guard: bloquea acceso de cajeros a rutas de gestión ------
+function NoCashier({ children }: { children: React.ReactNode }) {
+  const profile   = useAuthStore((s) => s.profile)
+  const isLoading = useAuthStore((s) => s.isLoading)
+  if (isLoading) return <FullscreenLoader />
+  if (profile?.businessRole === 'CASHIER') return <Navigate to="/pos" replace />
+  return <>{children}</>
+}
+
 // -- Smart home redirect --------------------------------------
 // SUPER_ADMIN -> /admin  |  todos los demas -> /dashboard
 function SmartHome() {
@@ -69,7 +78,9 @@ function SmartHome() {
 
   useEffect(() => {
     if (isLoading) return
-    const dest = profile?.platformRole === 'SUPER_ADMIN' ? '/admin' : '/dashboard'
+    let dest = '/dashboard'
+    if (profile?.platformRole === 'SUPER_ADMIN') dest = '/admin'
+    else if (profile?.businessRole === 'CASHIER') dest = '/pos'
     navigate(dest, { replace: true })
   }, [profile, isLoading, navigate])
 
@@ -133,8 +144,8 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <SmartHome /> },
 
-      // Regular dashboard
-      { path: 'dashboard', element: <Page><DashboardPage /></Page> },
+      // Regular dashboard — OWNER/ADMIN. Cajero redirige al POS.
+      { path: 'dashboard', element: <NoCashier><Page><DashboardPage /></Page></NoCashier> },
       { path: 'saas',      element: <Page><SaaSDashboard /></Page> },
 
       // Platform Admin (SUPER_ADMIN only)

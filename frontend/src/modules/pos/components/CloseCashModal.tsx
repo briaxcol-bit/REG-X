@@ -1,15 +1,16 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Lock, Loader2, TrendingUp, DollarSign, AlertTriangle, CheckCircle, Clock, X } from 'lucide-react'
+import { Lock, Loader2, TrendingUp, DollarSign, AlertTriangle, CheckCircle, Clock, X, StopCircle, ClipboardList } from 'lucide-react'
 import { useCashSession, type ActiveCashRegister } from '@modules/pos/hooks/useCashSession'
 import { formatCurrency } from '@shared/utils/format'
 import { useAuthStore } from '@store/auth.store'
 import { cn } from '@shared/utils/cn'
 
 interface CloseCashModalProps {
-  open:     boolean
-  onClose:  () => void
-  register: ActiveCashRegister
+  open:            boolean
+  onClose:         () => void
+  register:        ActiveCashRegister
+  isCommandsOnly?: boolean
 }
 
 const DENOMINATIONS = [
@@ -28,7 +29,7 @@ const DENOMINATIONS = [
 
 const inputCls = 'w-full rounded-xl border border-grafito-200 dark:border-white/10 bg-white dark:bg-grafito-800 px-4 py-2.5 text-sm text-grafito-900 dark:text-white placeholder-grafito-400 dark:placeholder-grafito-500 outline-none focus:ring-2 focus:ring-brand-500/40'
 
-export function CloseCashModal({ open, onClose, register }: CloseCashModalProps) {
+export function CloseCashModal({ open, onClose, register, isCommandsOnly = false }: CloseCashModalProps) {
   const { branch } = useAuthStore()
   const currency = branch?.currency ?? 'COP'
   const { close: closeMutation } = useCashSession()
@@ -41,9 +42,11 @@ export function CloseCashModal({ open, onClose, register }: CloseCashModalProps)
   const totalFromDenom = DENOMINATIONS.reduce(
     (acc, d) => acc + d.value * (counts[d.value] ?? 0), 0
   )
-  const countedCash = useDenomin
-    ? totalFromDenom
-    : parseFloat(manualCounted.replace(/[^0-9.]/g, '') || '0')
+  const countedCash = isCommandsOnly
+    ? 0
+    : useDenomin
+      ? totalFromDenom
+      : parseFloat(manualCounted.replace(/[^0-9.]/g, '') || '0')
 
   const expectedCash = register.opening_cash + register.cash_sales
   const difference   = countedCash - expectedCash
@@ -87,11 +90,16 @@ export function CloseCashModal({ open, onClose, register }: CloseCashModalProps)
             {/* Header */}
             <div className="flex items-center justify-between border-b border-grafito-100 dark:border-white/5 px-6 py-4 shrink-0">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/10">
-                  <Lock className="h-5 w-5 text-amber-500" />
+                <div className={cn('flex h-10 w-10 items-center justify-center rounded-xl', isCommandsOnly ? 'bg-red-500/10' : 'bg-amber-500/10')}>
+                  {isCommandsOnly
+                    ? <StopCircle className="h-5 w-5 text-red-500" />
+                    : <Lock className="h-5 w-5 text-amber-500" />
+                  }
                 </div>
                 <div>
-                  <h2 className="font-bold text-grafito-900 dark:text-white">Cierre de Caja · Arqueo</h2>
+                  <h2 className="font-bold text-grafito-900 dark:text-white">
+                    {isCommandsOnly ? 'Cerrar Turno' : 'Cierre de Caja · Arqueo'}
+                  </h2>
                   <p className="text-xs text-grafito-500">{register.name}</p>
                 </div>
               </div>
@@ -104,78 +112,93 @@ export function CloseCashModal({ open, onClose, register }: CloseCashModalProps)
               <form onSubmit={handleClose} className="p-6 space-y-5">
 
                 {/* Stats de sesión */}
-                <div className="grid grid-cols-2 gap-3">
-                  <StatCard icon={Clock}      label="Duración"          value={duration}                                  sub={openedAt.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })} colorCls="text-grafito-700 dark:text-grafito-300" bgCls="bg-grafito-100 dark:bg-grafito-800" />
-                  <StatCard icon={TrendingUp} label="Ventas totales"     value={formatCurrency(register.sales_total, currency)}  sub={`${register.tx_count} transacciones`}                                        colorCls="text-emerald-600 dark:text-emerald-400" bgCls="bg-emerald-50 dark:bg-emerald-500/10" />
-                  <StatCard icon={DollarSign} label="Apertura"           value={formatCurrency(register.opening_cash, currency)} sub="Efectivo inicial"                                                             colorCls="text-grafito-700 dark:text-grafito-300" bgCls="bg-grafito-100 dark:bg-grafito-800" />
-                  <StatCard icon={DollarSign} label="Ventas en efectivo" value={formatCurrency(register.cash_sales, currency)}   sub="Solo pagos en cash"                                                           colorCls="text-brand-600 dark:text-brand-400"     bgCls="bg-brand-50 dark:bg-brand-500/10" />
-                </div>
-
-                {/* Esperado */}
-                <div className="rounded-xl bg-grafito-100 dark:bg-grafito-800 px-5 py-3 flex justify-between items-center">
-                  <span className="text-sm text-grafito-500">Efectivo esperado en caja</span>
-                  <span className="font-bold text-grafito-900 dark:text-white">{formatCurrency(expectedCash, currency)}</span>
-                </div>
-
-                {/* Conteo */}
-                <div>
-                  <div className="flex items-center gap-3 mb-3">
-                    <p className="text-xs font-semibold text-grafito-700 dark:text-grafito-300 flex-1">Efectivo contado</p>
-                    <div className="flex rounded-lg overflow-hidden border border-grafito-200 dark:border-white/10">
-                      {['Directo', 'Denominaciones'].map((label, i) => (
-                        <button key={label} type="button" onClick={() => setUseDenomin(i === 1)}
-                          className={cn('px-3 py-1 text-xs font-semibold transition-colors',
-                            (i === 1) === useDenomin
-                              ? 'bg-brand-500 text-white'
-                              : 'text-grafito-500 dark:text-grafito-400 hover:bg-grafito-100 dark:hover:bg-white/5'
-                          )}>
-                          {label}
-                        </button>
-                      ))}
-                    </div>
+                {isCommandsOnly ? (
+                  /* Modo comanda: duración + comandas enviadas */
+                  <div className="grid grid-cols-2 gap-3">
+                    <StatCard icon={Clock}         label="Duración"           value={duration}                                         sub={openedAt.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })} colorCls="text-grafito-700 dark:text-grafito-300" bgCls="bg-grafito-100 dark:bg-grafito-800" />
+                    <StatCard icon={ClipboardList} label="Comandas enviadas"  value={String(register.tx_count)}                        sub="pedidos del turno"                                                            colorCls="text-amber-600 dark:text-amber-400"     bgCls="bg-amber-50 dark:bg-amber-500/10" />
+                    <StatCard icon={TrendingUp}    label="Total pedidos"      value={formatCurrency(register.sales_total, currency)}   sub="valor acumulado"                                                              colorCls="text-emerald-600 dark:text-emerald-400" bgCls="bg-emerald-50 dark:bg-emerald-500/10" />
                   </div>
+                ) : (
+                  /* Modo normal: caja completa */
+                  <div className="grid grid-cols-2 gap-3">
+                    <StatCard icon={Clock}      label="Duración"          value={duration}                                         sub={openedAt.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })} colorCls="text-grafito-700 dark:text-grafito-300" bgCls="bg-grafito-100 dark:bg-grafito-800" />
+                    <StatCard icon={TrendingUp} label="Ventas totales"    value={formatCurrency(register.sales_total, currency)}  sub={`${register.tx_count} transacciones`}                                        colorCls="text-emerald-600 dark:text-emerald-400" bgCls="bg-emerald-50 dark:bg-emerald-500/10" />
+                    <StatCard icon={DollarSign} label="Apertura"          value={formatCurrency(register.opening_cash, currency)} sub="Efectivo inicial"                                                             colorCls="text-grafito-700 dark:text-grafito-300" bgCls="bg-grafito-100 dark:bg-grafito-800" />
+                    <StatCard icon={DollarSign} label="Ventas en efectivo" value={formatCurrency(register.cash_sales, currency)}  sub="Solo pagos en cash"                                                           colorCls="text-brand-600 dark:text-brand-400"     bgCls="bg-brand-50 dark:bg-brand-500/10" />
+                  </div>
+                )}
 
-                  {!useDenomin ? (
-                    <div className="relative">
-                      <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-grafito-400" />
-                      <input type="number" min={0} step={100} value={manualCounted}
-                        onChange={e => setManualCounted(e.target.value)} placeholder="0"
-                        className={cn(inputCls, 'pl-9')} />
+                {/* Conteo de efectivo — solo modo normal */}
+                {!isCommandsOnly && (
+                  <>
+                    {/* Esperado */}
+                    <div className="rounded-xl bg-grafito-100 dark:bg-grafito-800 px-5 py-3 flex justify-between items-center">
+                      <span className="text-sm text-grafito-500">Efectivo esperado en caja</span>
+                      <span className="font-bold text-grafito-900 dark:text-white">{formatCurrency(expectedCash, currency)}</span>
                     </div>
-                  ) : (
-                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                      {DENOMINATIONS.map(d => (
-                        <div key={d.value} className="flex items-center gap-3">
-                          <span className="w-20 text-xs font-medium text-grafito-500 shrink-0">{d.label}</span>
-                          <input type="number" min={0} value={counts[d.value] ?? ''}
-                            onChange={e => setCount(d.value, e.target.value)} placeholder="0"
-                            className="w-20 rounded-lg border border-grafito-200 dark:border-white/10 bg-white dark:bg-grafito-800 px-3 py-1.5 text-sm text-grafito-900 dark:text-white text-center outline-none focus:ring-2 focus:ring-brand-500/40" />
-                          <span className="text-xs text-grafito-400 flex-1 text-right">
-                            {counts[d.value] ? formatCurrency(d.value * counts[d.value], currency) : '—'}
-                          </span>
+
+                    {/* Conteo */}
+                    <div>
+                      <div className="flex items-center gap-3 mb-3">
+                        <p className="text-xs font-semibold text-grafito-700 dark:text-grafito-300 flex-1">Efectivo contado</p>
+                        <div className="flex rounded-lg overflow-hidden border border-grafito-200 dark:border-white/10">
+                          {['Directo', 'Denominaciones'].map((label, i) => (
+                            <button key={label} type="button" onClick={() => setUseDenomin(i === 1)}
+                              className={cn('px-3 py-1 text-xs font-semibold transition-colors',
+                                (i === 1) === useDenomin
+                                  ? 'bg-brand-500 text-white'
+                                  : 'text-grafito-500 dark:text-grafito-400 hover:bg-grafito-100 dark:hover:bg-white/5'
+                              )}>
+                              {label}
+                            </button>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                      </div>
 
-                {/* Diferencia */}
-                <div className={cn('rounded-xl px-5 py-4 flex items-center justify-between',
-                  diffPositive ? 'bg-emerald-50 dark:bg-emerald-500/10' : 'bg-red-50 dark:bg-red-500/10'
-                )}>
-                  <div className="flex items-center gap-2">
-                    {diffPositive
-                      ? <CheckCircle className="h-4 w-4 text-emerald-500" />
-                      : <AlertTriangle className="h-4 w-4 text-red-500" />
-                    }
-                    <span className={cn('text-sm font-semibold', diffPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400')}>
-                      {diffPositive ? 'Sobrante' : 'Faltante'}
-                    </span>
-                  </div>
-                  <span className={cn('text-xl font-black', diffPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400')}>
-                    {diffPositive ? '+' : ''}{formatCurrency(difference, currency)}
-                  </span>
-                </div>
+                      {!useDenomin ? (
+                        <div className="relative">
+                          <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-grafito-400" />
+                          <input type="number" min={0} step={100} value={manualCounted}
+                            onChange={e => setManualCounted(e.target.value)} placeholder="0"
+                            className={cn(inputCls, 'pl-9')} />
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                          {DENOMINATIONS.map(d => (
+                            <div key={d.value} className="flex items-center gap-3">
+                              <span className="w-20 text-xs font-medium text-grafito-500 shrink-0">{d.label}</span>
+                              <input type="number" min={0} value={counts[d.value] ?? ''}
+                                onChange={e => setCount(d.value, e.target.value)} placeholder="0"
+                                className="w-20 rounded-lg border border-grafito-200 dark:border-white/10 bg-white dark:bg-grafito-800 px-3 py-1.5 text-sm text-grafito-900 dark:text-white text-center outline-none focus:ring-2 focus:ring-brand-500/40" />
+                              <span className="text-xs text-grafito-400 flex-1 text-right">
+                                {counts[d.value] ? formatCurrency(d.value * counts[d.value], currency) : '—'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Diferencia */}
+                    <div className={cn('rounded-xl px-5 py-4 flex items-center justify-between',
+                      diffPositive ? 'bg-emerald-50 dark:bg-emerald-500/10' : 'bg-red-50 dark:bg-red-500/10'
+                    )}>
+                      <div className="flex items-center gap-2">
+                        {diffPositive
+                          ? <CheckCircle className="h-4 w-4 text-emerald-500" />
+                          : <AlertTriangle className="h-4 w-4 text-red-500" />
+                        }
+                        <span className={cn('text-sm font-semibold', diffPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400')}>
+                          {diffPositive ? 'Sobrante' : 'Faltante'}
+                        </span>
+                      </div>
+                      <span className={cn('text-xl font-black', diffPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400')}>
+                        {diffPositive ? '+' : ''}{formatCurrency(difference, currency)}
+                      </span>
+                    </div>
+                  </>
+                )}
 
                 {/* Notas */}
                 <div>
@@ -183,7 +206,7 @@ export function CloseCashModal({ open, onClose, register }: CloseCashModalProps)
                     Observaciones (opcional)
                   </label>
                   <textarea value={notes} onChange={e => setNotes(e.target.value)}
-                    placeholder="Ej: Se encontró billete roto, diferencia justificada…"
+                    placeholder={isCommandsOnly ? 'Ej: Turno sin novedades…' : 'Ej: Se encontró billete roto, diferencia justificada…'}
                     rows={2} className={cn(inputCls, 'resize-none')} />
                 </div>
 
@@ -199,11 +222,17 @@ export function CloseCashModal({ open, onClose, register }: CloseCashModalProps)
                     Cancelar
                   </button>
                   <button type="submit" disabled={closeMutation.isPending}
-                    className="flex-[2] flex items-center justify-center gap-2 rounded-xl bg-amber-500 py-2.5 text-sm font-bold text-white hover:bg-amber-600 disabled:opacity-60 transition-colors">
-                    {closeMutation.isPending
-                      ? <><Loader2 className="h-4 w-4 animate-spin" /> Cerrando…</>
-                      : <><Lock className="h-4 w-4" /> Cerrar Caja</>
-                    }
+                    className={cn(
+                      'flex-[2] flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold text-white disabled:opacity-60 transition-colors',
+                      isCommandsOnly ? 'bg-red-500 hover:bg-red-600' : 'bg-amber-500 hover:bg-amber-600'
+                    )}>
+                    {closeMutation.isPending ? (
+                      <><Loader2 className="h-4 w-4 animate-spin" /> {isCommandsOnly ? 'Cerrando turno…' : 'Cerrando…'}</>
+                    ) : isCommandsOnly ? (
+                      <><StopCircle className="h-4 w-4" /> Cerrar Turno</>
+                    ) : (
+                      <><Lock className="h-4 w-4" /> Cerrar Caja</>
+                    )}
                   </button>
                 </div>
               </form>

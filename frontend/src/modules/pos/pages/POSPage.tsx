@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   Search, Barcode, Plus, Minus, Trash2, CreditCard,
   Receipt, X, UserCircle, Lock, Clock, Tag, Printer,
-  ShoppingCart, Clock as HistoryIcon, Monitor, Send,
+  ShoppingCart, Clock as HistoryIcon, Monitor,
 } from 'lucide-react'
 import { usePOSStore } from '@store/pos.store'
 import { useAuthStore } from '@store/auth.store'
@@ -176,15 +176,15 @@ export default function POSPage() {
   const {
     items, addItem, clearCart, customerId,
     setCustomer, getSubtotal, getTaxTotal, getDiscountTotal, getTotal,
-    lastReceipt,
+    lastReceipt, setLastReceipt,
   } = usePOSStore()
 
-  const { branch, hasRole } = useAuthStore()
+  const { branch, tenant, profile, hasRole } = useAuthStore()
   const currency    = branch?.currency ?? 'COP'
   const isManager   = hasRole('OWNER') || hasRole('ADMIN')
 
   const { activeRegister, isLoading: loadingSession, hasOpenSession } = useCashSession()
-  const { isCommandsOnly, allowedCategories } = usePOSTerminal()
+  const { terminal, isCommandsOnly, allowedCategories } = usePOSTerminal()
   const { mutateAsync: createSaleCmd, isPending: sendingCmd } = useCreateSale()
 
   const { data: allCategories = [] } = useCategories()
@@ -204,11 +204,11 @@ export default function POSPage() {
     ? products.filter(p => !p.categoryId || allowedCategories.includes(p.categoryId))
     : products
 
-  // Enviar comanda (modo COMMANDS_ONLY) — crea venta PENDING sin pago
+  // Enviar comanda (modo COMMANDS_ONLY) — crea venta PENDING e imprime ticket
   const handleSendComanda = async () => {
     if (items.length === 0) return
     try {
-      await createSaleCmd({
+      const sale = await createSaleCmd({
         items: items.map(it => ({
           product_id:      it.productId,
           name:            it.name,
@@ -221,9 +221,10 @@ export default function POSPage() {
           tax_amount:      it.taxAmount,
           total:           it.total,
         })),
-        payments:       [],
-        customer_id:    customerId,
-        notes:          'COMANDA',
+        payments:         [],
+        customer_id:      customerId,
+        notes:            'COMANDA',
+        cash_register_id: activeRegister?.id,
         subtotal:       getSubtotal(),
         tax_total:      getTaxTotal(),
         discount_total: getDiscountTotal(),
@@ -231,6 +232,36 @@ export default function POSPage() {
         currency,
         status:         'PENDING',
       })
+
+      // Construir ticket de comanda e imprimir
+      const receipt = {
+        businessName:  tenant?.tenantName ?? '',
+        branchName:    branch?.branchName ?? '',
+        nit:           '',
+        orderNumber:   sale?.order_number ?? String(Date.now()),
+        cashierName:   profile?.full_name ?? 'Cajero',
+        date:          new Date(),
+        items:         items.map(it => ({
+          name:     it.name,
+          qty:      it.quantity,
+          price:    it.price,
+          total:    it.total,
+          discount: it.discountAmount,
+          tax:      it.tax,
+          taxAmt:   it.taxAmount,
+        })),
+        subtotal:      getSubtotal(),
+        discountTotal: getDiscountTotal(),
+        taxBase:       0,
+        taxTotal:      getTaxTotal(),
+        total:         getTotal(),
+        paymentMethod: '',
+        currency,
+        isComanda:     true,
+      }
+      setLastReceipt(receipt)
+      setTimeout(() => window.print(), 80)
+
       clearCart()
       toast.success('Comanda enviada')
     } catch {
@@ -278,9 +309,18 @@ export default function POSPage() {
       )}
 
       {/* Modales */}
-      <OpenCashModal open={!loadingSession && !hasOpenSession} />
+      <OpenCashModal
+        open={!loadingSession && !hasOpenSession}
+        isCommandsOnly={isCommandsOnly}
+        terminalName={terminal?.name}
+      />
       {activeRegister && (
-        <CloseCashModal open={closeModalOpen} onClose={() => setCloseModalOpen(false)} register={activeRegister} />
+        <CloseCashModal
+          open={closeModalOpen}
+          onClose={() => setCloseModalOpen(false)}
+          register={activeRegister}
+          isCommandsOnly={isCommandsOnly}
+        />
       )}
       <SalesHistoryModal open={historyOpen} onClose={() => setHistoryOpen(false)} activeRegister={activeRegister ?? null} />
       {isManager && <ManageTerminalsModal open={terminalsOpen} onClose={() => setTerminalsOpen(false)} />}
@@ -514,8 +554,8 @@ export default function POSPage() {
                     : 'bg-grafito-100 dark:bg-white/5 text-grafito-400 cursor-not-allowed',
                 )}
               >
-                <Send className="h-5 w-5" />
-                {sendingCmd ? 'Enviando…' : items.length > 0 ? `Enviar comanda (${itemCount})` : 'Enviar comanda'}
+                <Printer className="h-5 w-5" />
+                {sendingCmd ? 'Imprimiendo…' : items.length > 0 ? `Imprimir comanda (${itemCount})` : 'Imprimir comanda'}
               </motion.button>
             ) : (
               <motion.button

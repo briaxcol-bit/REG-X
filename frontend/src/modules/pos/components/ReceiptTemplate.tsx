@@ -47,6 +47,8 @@ export interface ReceiptData {
   cashReceived?:   number
   change?:         number
   currency:        string
+  // Modo comanda (ticket simple, sin datos fiscales)
+  isComanda?:      boolean
 }
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -99,125 +101,165 @@ export function ReceiptTemplate({ data }: { data: ReceiptData }) {
     orderNumber, cashierName, date, customer,
     items, subtotal, discountTotal, taxBase, taxTotal, total,
     paymentMethod, cashReceived, change, currency,
+    isComanda,
   } = data
 
   const dateStr = date.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' })
   const timeStr = date.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 
-  // Agrupar IVA por tarifa
-  const taxGroups: Record<number, { base: number; tax: number }> = {}
-  for (const it of items) {
-    if (it.tax > 0) {
-      if (!taxGroups[it.tax]) taxGroups[it.tax] = { base: 0, tax: 0 }
-      taxGroups[it.tax].base += it.price * it.qty
-      taxGroups[it.tax].tax  += it.taxAmt
-    }
-  }
-
   const rows: string[] = []
   const push = (...ls: string[]) => rows.push(...ls)
   const nl = () => rows.push('')
 
-  // ── ENCABEZADO ────────────────────────────────────────────
-  nl()
-  push(center(businessName.toUpperCase()))
-  push(center(branchName))
-  push(center(`NIT: ${nit}`))
-  if (address) wrapText(address, W).forEach(l => push(center(l)))
-  if (phone)   push(center(`Tel: ${phone}`))
-  nl()
-  push(center('* FACTURA DE VENTA *'))
-  if (dianResolution) {
-    push(center(`Res. DIAN No. ${dianResolution}`))
-    if (dianFrom && dianTo) push(center(`Del ${dianFrom.toLocaleString()} al ${dianTo.toLocaleString()}`))
-  }
-  push(lineChar())
+  if (isComanda) {
+    // ── TICKET COMANDA (simple, sin datos fiscales) ────────
+    nl()
+    push(center(businessName.toUpperCase()))
+    if (branchName) push(center(branchName))
+    nl()
+    push(center('*** PEDIDO / COMANDA ***'))
+    push(lineChar())
+    push(`No.:   ${orderNumber}`)
+    push(`Fecha: ${dateStr}  ${timeStr}`)
+    if (cashierName) push(`Atendió: ${cashierName}`)
+    if (customer) push(`Cliente: ${customer.name}`)
+    push(lineChar())
 
-  // ── DATOS FACTURA ─────────────────────────────────────────
-  push(`No.:    ${orderNumber}`)
-  push(`Fecha:  ${dateStr}  ${timeStr}`)
-  push(`Cajero: ${cashierName.length > 28 ? cashierName.slice(0, 27) + '…' : cashierName}`)
-  push(lineChar())
-
-  // ── CLIENTE ───────────────────────────────────────────────
-  push('CLIENTE:')
-  if (customer) {
-    push(`  ${customer.name}`)
-    if (customer.docId) push(`  CC/NIT: ${customer.docId}`)
-    if (customer.phone) push(`  Tel: ${customer.phone}`)
-  } else {
-    push('  Consumidor final')
-    push('  CC/NIT: 222222222222')
-  }
-  push(lineChar())
-
-  // ── ITEMS ─────────────────────────────────────────────────
-  push(pad('DESCRIPCION', 'TOTAL'))
-  push(lineChar('·'))
-  for (const it of items) {
-    const totalStr = fmt(it.total, currency)
-    const nameLines = wrapText(it.name, W - totalStr.length - 1)
-    push(pad(nameLines[0], totalStr))
-    for (let i = 1; i < nameLines.length; i++) push(nameLines[i])
-
-    const qtyPrice = `  ${it.qty} und x ${fmt(it.price, currency)}`
-    const taxTag   = it.tax > 0 ? `IVA ${it.tax}%` : 'Excl.'
-    push(pad(qtyPrice, taxTag))
-
-    if (it.discount > 0) {
-      push(pad('  Descuento:', `-${fmt(it.discount, currency)}`))
+    // Items — solo nombre, cantidad y total (sin precio unitario)
+    push(pad('CANT  PRODUCTO', 'TOTAL'))
+    push(lineChar('·'))
+    for (const it of items) {
+      const totalStr = fmt(it.total, currency)
+      const prefix   = `${it.qty}x  `
+      const maxName  = W - totalStr.length - prefix.length - 1
+      const nameLines = wrapText(it.name, maxName)
+      push(pad(prefix + nameLines[0], totalStr))
+      for (let i = 1; i < nameLines.length; i++) push('     ' + nameLines[i])
+      if (it.discount > 0) push(pad('     Desc:', `-${fmt(it.discount, currency)}`))
     }
-  }
-  push(lineChar('·'))
+    push(lineChar('·'))
 
-  // ── TOTALES ───────────────────────────────────────────────
-  nl()
-  push(pad('Subtotal (sin IVA):', fmt(subtotal - taxTotal, currency)))
-  if (discountTotal > 0) {
-    push(pad('Descuento:', `-${fmt(discountTotal, currency)}`))
-  }
+    // Total
+    nl()
+    if (discountTotal > 0) push(pad('Descuento:', `-${fmt(discountTotal, currency)}`))
+    push(lineChar())
+    push(pad('TOTAL:', fmt(total, currency)))
+    push(lineChar())
+    nl()
+    push(center('Este ticket NO es factura'))
+    push(center('La factura se entrega al pagar'))
+    nl()
+    push(center('¡Gracias!'))
+    nl()
+    nl()
+    nl()
 
-  const taxEntries = Object.entries(taxGroups)
-  if (taxEntries.length > 0) {
-    push(pad('Base gravable:', fmt(taxBase, currency)))
-    for (const [rate, g] of taxEntries) {
-      push(pad(`  IVA ${rate}%:`, fmt(g.tax, currency)))
-    }
   } else {
-    push(pad('IVA:', fmt(0, currency)))
-    push(pad('  (Operación excluida)', ''))
+    // ── FACTURA DE VENTA completa ──────────────────────────
+    // Agrupar IVA por tarifa
+    const taxGroups: Record<number, { base: number; tax: number }> = {}
+    for (const it of items) {
+      if (it.tax > 0) {
+        if (!taxGroups[it.tax]) taxGroups[it.tax] = { base: 0, tax: 0 }
+        taxGroups[it.tax].base += it.price * it.qty
+        taxGroups[it.tax].tax  += it.taxAmt
+      }
+    }
+
+    // ENCABEZADO
+    nl()
+    push(center(businessName.toUpperCase()))
+    push(center(branchName))
+    push(center(`NIT: ${nit}`))
+    if (address) wrapText(address, W).forEach(l => push(center(l)))
+    if (phone)   push(center(`Tel: ${phone}`))
+    nl()
+    push(center('* FACTURA DE VENTA *'))
+    if (dianResolution) {
+      push(center(`Res. DIAN No. ${dianResolution}`))
+      if (dianFrom && dianTo) push(center(`Del ${dianFrom.toLocaleString()} al ${dianTo.toLocaleString()}`))
+    }
+    push(lineChar())
+
+    // DATOS
+    push(`No.:    ${orderNumber}`)
+    push(`Fecha:  ${dateStr}  ${timeStr}`)
+    push(`Cajero: ${cashierName.length > 28 ? cashierName.slice(0, 27) + '…' : cashierName}`)
+    push(lineChar())
+
+    // CLIENTE
+    push('CLIENTE:')
+    if (customer) {
+      push(`  ${customer.name}`)
+      if (customer.docId) push(`  CC/NIT: ${customer.docId}`)
+      if (customer.phone) push(`  Tel: ${customer.phone}`)
+    } else {
+      push('  Consumidor final')
+      push('  CC/NIT: 222222222222')
+    }
+    push(lineChar())
+
+    // ITEMS
+    push(pad('DESCRIPCION', 'TOTAL'))
+    push(lineChar('·'))
+    for (const it of items) {
+      const totalStr = fmt(it.total, currency)
+      const nameLines = wrapText(it.name, W - totalStr.length - 1)
+      push(pad(nameLines[0], totalStr))
+      for (let i = 1; i < nameLines.length; i++) push(nameLines[i])
+      const taxTag = it.tax > 0 ? `IVA ${it.tax}%` : 'Excl.'
+      push(pad(`  ${it.qty} und x ${fmt(it.price, currency)}`, taxTag))
+      if (it.discount > 0) push(pad('  Descuento:', `-${fmt(it.discount, currency)}`))
+    }
+    push(lineChar('·'))
+
+    // TOTALES
+    nl()
+    push(pad('Subtotal (sin IVA):', fmt(subtotal - taxTotal, currency)))
+    if (discountTotal > 0) push(pad('Descuento:', `-${fmt(discountTotal, currency)}`))
+
+    const taxEntries = Object.entries(taxGroups)
+    if (taxEntries.length > 0) {
+      push(pad('Base gravable:', fmt(taxBase, currency)))
+      for (const [rate, g] of taxEntries) {
+        push(pad(`  IVA ${rate}%:`, fmt(g.tax, currency)))
+      }
+    } else {
+      push(pad('IVA:', fmt(0, currency)))
+      push(pad('  (Operación excluida)', ''))
+    }
+
+    push(lineChar())
+    push(pad('TOTAL A PAGAR:', fmt(total, currency)))
+    push(lineChar())
+    nl()
+
+    // PAGO
+    push('FORMA DE PAGO:')
+    push(pad(`  ${paymentMethod}`, fmt(total, currency)))
+    if (cashReceived !== undefined && cashReceived > 0) {
+      push(pad('  Efectivo recibido:', fmt(cashReceived, currency)))
+      push(pad('  Cambio entregado:', fmt(change ?? 0, currency)))
+    }
+
+    nl()
+    push(lineChar('·'))
+    nl()
+
+    // PIE LEGAL
+    push(center('Régimen Común - Responsable IVA'))
+    nl()
+    push(center('Esta factura es título valor y presta'))
+    push(center('mérito ejecutivo según el Art. 616-1 E.T.'))
+    nl()
+    push(center('¡Gracias por su compra!'))
+    push(center('Conserve esta factura'))
+    nl()
+    push(center('www.reg-x.com'))
+    nl()
+    nl()
+    nl()
   }
-
-  push(lineChar())
-  push(pad('TOTAL A PAGAR:', fmt(total, currency)))
-  push(lineChar())
-  nl()
-
-  // ── PAGO ──────────────────────────────────────────────────
-  push('FORMA DE PAGO:')
-  push(pad(`  ${paymentMethod}`, fmt(total, currency)))
-  if (cashReceived !== undefined && cashReceived > 0) {
-    push(pad('  Efectivo recibido:', fmt(cashReceived, currency)))
-    push(pad('  Cambio entregado:', fmt(change ?? 0, currency)))
-  }
-
-  nl()
-  push(lineChar('·'))
-  nl()
-
-  // ── PIE LEGAL ─────────────────────────────────────────────
-  push(center('Régimen Común - Responsable IVA'))
-  nl()
-  push(center('Esta factura es título valor y presta'))
-  push(center('mérito ejecutivo según el Art. 616-1 E.T.'))
-  nl()
-  push(center('¡Gracias por su compra!'))
-  push(center('Conserve esta factura'))
-  nl()
-  push(center('www.reg-x.com'))
-  nl()
-  nl()
-  nl()
 
   return (
     <div

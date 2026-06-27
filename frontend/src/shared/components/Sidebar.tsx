@@ -18,28 +18,41 @@ interface NavItem {
   permission?: string
   badge?: string | number
   group?: string
+  cashierVisible?: boolean   // true = también aparece para el rol CASHIER
   subItems?: { to: string; label: string; icon?: React.ElementType; permission?: string }[]
 }
 
-// Menu de negocio - admins, cajeros, etc.
+// Menu de negocio
 const NAV_ITEMS: NavItem[] = [
   { to: '/dashboard',     icon: LayoutDashboard, label: 'Dashboard',   group: 'Principal' },
-  { to: '/pos',           icon: Zap,             label: 'POS',         permission: 'sales.create', group: 'Principal' },
+  { to: '/pos',           icon: Zap,             label: 'POS',         permission: 'sales.create', group: 'Principal', cashierVisible: true },
   { to: '/products',      icon: Package,         label: 'Productos',   permission: 'products.view', group: 'Catalogo' },
-  { 
-    to: '/inventory',     
-    icon: Boxes,           
-    label: 'Inventario',  
-    permission: 'inventory.view', 
+  {
+    to: '/inventory',
+    icon: Boxes,
+    label: 'Inventario',
+    permission: 'inventory.view',
     group: 'Catalogo',
     subItems: [
-      { to: '/inventory/alerts', label: 'Alertas stock', icon: AlertTriangle },
-      { to: '/inventory/valuation', label: 'Valoración inventario', icon: DollarSign }
+      { to: '/inventory/alerts',    label: 'Alertas stock',         icon: AlertTriangle },
+      { to: '/inventory/valuation', label: 'Valoración inventario', icon: DollarSign    },
+      { to: '/inventory/movements', label: 'Movimientos',           icon: Boxes         },
     ]
   },
-  { to: '/customers',     icon: Users,           label: 'Clientes',    group: 'Catalogo' },
-  { to: '/employees',    icon: UserCog,         label: 'Empleados',   group: 'Catalogo' },
-  { to: '/restaurant',    icon: ChefHat,         label: 'Restaurante', group: 'Servicio' },
+  // Cajero ve inventario general + puede ir a movimientos desde ahí
+  {
+    to: '/inventory',
+    icon: Boxes,
+    label: 'Inventario',
+    group: 'Catalogo',
+    cashierVisible: true,
+    subItems: [
+      { to: '/inventory/movements', label: 'Movimientos', icon: Boxes },
+    ],
+  },
+  { to: '/customers',     icon: Users,    label: 'Clientes',    group: 'Catalogo' },
+  { to: '/employees',     icon: UserCog,  label: 'Empleados',   group: 'Catalogo' },
+  { to: '/restaurant',    icon: ChefHat,  label: 'Restaurante', group: 'Servicio'  },
   {
     to: '/reports',
     icon: BarChart3,
@@ -50,9 +63,9 @@ const NAV_ITEMS: NavItem[] = [
       { to: '/reports/sales', label: 'Ventas', icon: TrendingUp },
     ]
   },
-  { to: '/subscriptions', icon: CreditCard,      label: 'Suscripcion', group: 'Sistema' },
-  { to: '/marketplace',   icon: Puzzle,          label: 'Marketplace', group: 'Sistema' },
-  { to: '/settings',      icon: Settings,        label: 'Ajustes',     group: 'Sistema' },
+  { to: '/subscriptions', icon: CreditCard, label: 'Suscripcion', group: 'Sistema' },
+  { to: '/marketplace',   icon: Puzzle,     label: 'Marketplace', group: 'Sistema' },
+  { to: '/settings',      icon: Settings,   label: 'Ajustes',     group: 'Sistema' },
 ]
 
 // Menu de plataforma - solo SUPER_ADMIN
@@ -71,14 +84,17 @@ interface SidebarProps {
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const location = useLocation()
-  const { hasPermission, tenant, profile } = useAuthStore()
+  const { hasPermission, hasRole, tenant, profile } = useAuthStore()
   const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({})
 
   const isSuperAdmin = profile?.platformRole === 'SUPER_ADMIN'
+  const isCashier    = hasRole('CASHIER')
 
   const visibleItems = isSuperAdmin
     ? PLATFORM_NAV_ITEMS
-    : NAV_ITEMS.filter((item) => !item.permission || hasPermission(item.permission))
+    : isCashier
+      ? NAV_ITEMS.filter(i => i.cashierVisible)
+      : NAV_ITEMS.filter((item) => !item.permission || hasPermission(item.permission))
 
   const groups = [...new Set(visibleItems.map((i) => i.group))]
 
