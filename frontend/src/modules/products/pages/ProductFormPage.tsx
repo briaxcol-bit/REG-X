@@ -10,6 +10,7 @@ import { getCategories, createCategory, createProduct, getProduct, updateProduct
 import { useAuthStore } from '@store/auth.store'
 import { cn } from '@shared/utils/cn'
 import type { CategoryRow } from '@lib/db'
+import { useQueryClient } from '@tanstack/react-query'
 
 // ── Custom Select ─────────────────────────────────────────────
 interface SelectOption { value: string; label: string; color?: string }
@@ -258,11 +259,30 @@ function SectionTitle({ icon: Icon, title }: { icon: React.ElementType; title: s
   )
 }
 
-export default function ProductFormPage() {
-  const navigate = useNavigate()
-  const { id } = useParams()
-  const isEdit = !!id
+interface ProductFormPageProps {
+  /** Cuando se usa como modal desde otra página (ej. inventario) */
+  modalProductId?: string
+  onClose?: () => void
+  onSaved?: () => void
+}
+
+export default function ProductFormPage({ modalProductId, onClose, onSaved }: ProductFormPageProps = {}) {
+  const navigate  = useNavigate()
+  const { id: routeId } = useParams()
+  const isModal   = !!onClose
+  const id        = modalProductId ?? routeId
+  const isEdit    = !!id
   const { tenant, branch, profile, user } = useAuthStore()
+  const qc        = useQueryClient()
+
+  const dismiss = (saved = false) => {
+    if (isModal) {
+      if (saved) onSaved?.()
+      onClose?.()
+    } else {
+      navigate('/products')
+    }
+  }
 
   // ── State ─────────────────────────────────────────────────
   const [name, setName]               = useState('')
@@ -373,7 +393,9 @@ export default function ProductFormPage() {
       } else {
         await createProduct(tenantId, userId, payload)
       }
-      navigate('/products')
+      qc.invalidateQueries({ queryKey: ['products'] })
+      qc.invalidateQueries({ queryKey: ['inventory'] })
+      dismiss(true)
     } catch (err: any) {
       setSaveError(err?.message ?? 'Error al guardar el producto.')
     } finally {
@@ -440,7 +462,9 @@ export default function ProductFormPage() {
     setDeleting(true)
     try {
       await deleteProduct(tenantId, id)
-      navigate('/products')
+      qc.invalidateQueries({ queryKey: ['products'] })
+      qc.invalidateQueries({ queryKey: ['inventory'] })
+      dismiss(true)
     } catch (err: any) {
       setSaveError(err?.message ?? 'Error al eliminar el producto.')
       setShowDeleteConfirm(false)
@@ -451,16 +475,21 @@ export default function ProductFormPage() {
 
   // ── Loading skeleton ──────────────────────────────────────
   if (loadingProduct) {
-    return (
-      <div className="p-6 max-w-3xl flex items-center justify-center py-32 gap-3 text-grafito-400">
+    const loader = (
+      <div className="flex items-center justify-center py-32 gap-3 text-grafito-400">
         <Loader2 className="h-5 w-5 animate-spin" />
         <span className="text-sm">Cargando producto...</span>
       </div>
     )
+    if (isModal) return createPortal(
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">{loader}</div>,
+      document.body,
+    )
+    return <div className="p-6 max-w-3xl">{loader}</div>
   }
 
-  return (
-    <div className="p-6 max-w-3xl space-y-6">
+  const formContent = (
+    <div className={cn('space-y-6', isModal ? '' : 'p-6 max-w-3xl')}>
 
       {/* ── Modal eliminar ─────────────────────────────────── */}
       {showDeleteConfirm && (
@@ -511,10 +540,10 @@ export default function ProductFormPage() {
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => navigate('/products')}
+            onClick={() => dismiss()}
             className="flex h-10 w-10 items-center justify-center rounded-xl border border-grafito-200 dark:border-white/5 bg-grafito-100 dark:bg-grafito-800 text-grafito-600 dark:text-grafito-300 hover:bg-grafito-200 dark:hover:bg-grafito-700 transition-colors"
           >
-            <ArrowLeft className="h-5 w-5" />
+            {isModal ? <X className="h-5 w-5" /> : <ArrowLeft className="h-5 w-5" />}
           </button>
           <div>
             <h1 className="text-2xl font-bold text-grafito-900 dark:text-white tracking-tight">
@@ -825,7 +854,7 @@ export default function ProductFormPage() {
         <div className="flex gap-3">
           <button
             type="button"
-            onClick={() => navigate('/products')}
+            onClick={() => dismiss()}
             className="flex-1 rounded-xl border border-grafito-200 dark:border-white/10 py-3 text-sm font-semibold text-grafito-600 dark:text-grafito-300 hover:bg-grafito-100 dark:hover:bg-white/5 transition-all"
           >
             Cancelar
@@ -842,4 +871,20 @@ export default function ProductFormPage() {
       </form>
     </div>
   )
+
+  if (isModal) {
+    return createPortal(
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+        {/* Backdrop */}
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => dismiss()} />
+        {/* Panel — mismo ancho que max-w-3xl pero scrollable */}
+        <div className="relative w-full max-w-3xl max-h-[95dvh] sm:max-h-[92dvh] overflow-y-auto rounded-t-3xl sm:rounded-3xl bg-grafito-50 dark:bg-grafito-950 shadow-2xl border border-grafito-200 dark:border-white/10 p-6">
+          {formContent}
+        </div>
+      </div>,
+      document.body,
+    )
+  }
+
+  return formContent
 }

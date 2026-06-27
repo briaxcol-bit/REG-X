@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
-import { Package, Loader2, Search, Tag, X, Pencil, Plus, Minus, CheckCircle2 } from 'lucide-react'
+import { Package, Loader2, Search, Tag, X, Pencil, Plus, Minus, CheckCircle2, Settings2 } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { getInventory, updateStock } from '@lib/db'
 import { useAuthStore } from '@store/auth.store'
 import { cn } from '@shared/utils/cn'
 import { toast } from 'sonner'
 import type { InventoryRow } from '@lib/db'
+import ProductFormPage from '@modules/products/pages/ProductFormPage'
 
 // ── Modal edición de stock ──────────────────────────────────────
 interface EditStockModalProps {
@@ -155,7 +156,8 @@ export default function InventoryPage() {
   const [inventory, setInventory] = useState<InventoryRow[]>([])
   const [loading, setLoading]     = useState(true)
   const [search, setSearch]       = useState('')
-  const [editing, setEditing]     = useState<InventoryRow | null>(null)
+  const [editing, setEditing]           = useState<InventoryRow | null>(null)
+  const [editingProductId, setEditingProductId] = useState<string | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
   const categoryId = searchParams.get('category')
 
@@ -180,11 +182,20 @@ export default function InventoryPage() {
 
   return (
     <div className="space-y-6 p-6">
-      {/* Edit modal */}
+      {/* Edit stock modal */}
       {editing && (
         <EditStockModal
           row={editing}
           onClose={() => setEditing(null)}
+          onSaved={load}
+        />
+      )}
+
+      {/* Edit full product — modal usando ProductFormPage */}
+      {editingProductId && (
+        <ProductFormPage
+          modalProductId={editingProductId}
+          onClose={() => setEditingProductId(null)}
           onSaved={load}
         />
       )}
@@ -298,9 +309,16 @@ export default function InventoryPage() {
                         <button
                           onClick={() => setEditing(row)}
                           className="flex h-8 w-8 items-center justify-center rounded-lg bg-grafito-50 dark:bg-white/5 text-grafito-500 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 transition-colors"
-                          title="Editar stock"
+                          title="Ajustar stock"
                         >
                           <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setEditingProductId(p?.id ?? null)}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg bg-grafito-50 dark:bg-white/5 text-grafito-500 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-colors"
+                          title="Editar producto"
+                        >
+                          <Settings2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
                     </div>
