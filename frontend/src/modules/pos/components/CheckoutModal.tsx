@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Banknote, CreditCard, Smartphone, CheckCircle2, Printer, ChevronRight, RotateCcw } from 'lucide-react'
+import { toast } from 'sonner'
 import { usePOSStore } from '@store/pos.store'
 import { useAuthStore } from '@store/auth.store'
 import { formatCurrency } from '@shared/utils/format'
@@ -132,6 +133,12 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
         cash_register_id: activeRegister?.id,
       })
 
+      // Avisar productos que quedan agotados tras la venta
+      const agotados = items.filter(it => it.stock - it.quantity <= 0)
+      agotados.forEach(it => {
+        toast.warning(`"${it.name}" quedó agotado en inventario.`, { duration: 5000 })
+      })
+
       const taxTotalAmt      = items.reduce((s, it) => s + it.taxAmount, 0)
       const discountTotalAmt = items.reduce((s, it) => s + it.discountAmount, 0)
       const subtotalAmt      = items.reduce((s, it) => s + it.price * it.quantity, 0)
@@ -170,7 +177,94 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
   }
 
   const handlePrint = () => {
-    window.print()
+    if (!lastReceipt) return
+    const r = lastReceipt
+    const fmt = (n: number) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: r.currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n)
+    const dateStr = r.date.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    const timeStr = r.date.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+
+    const itemRows = r.items.map(it => `
+      <tr>
+        <td style="padding:3px 0;vertical-align:top">
+          <div>${it.name}</div>
+          <div style="color:#555;font-size:10px">${it.qty} und × ${fmt(it.price)}${it.tax > 0 ? ` · IVA ${it.tax}%` : ''}</div>
+          ${it.discount > 0 ? `<div style="color:#555;font-size:10px">Desc: -${fmt(it.discount)}</div>` : ''}
+        </td>
+        <td style="padding:3px 0;text-align:right;vertical-align:top;white-space:nowrap">${fmt(it.total)}</td>
+      </tr>`).join('')
+
+    const html = `<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>Recibo ${r.orderNumber}</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Courier New',Courier,monospace; font-size:11px; width:302px; padding:8px 6px; color:#000; background:#fff; }
+  .center { text-align:center; }
+  .bold { font-weight:bold; }
+  .sep-solid { border:none; border-top:1px solid #000; margin:5px 0; }
+  .sep-dot   { border:none; border-top:1px dashed #555; margin:4px 0; }
+  table { width:100%; border-collapse:collapse; }
+  td { font-size:11px; }
+  .row-total td { font-weight:bold; font-size:12px; border-top:1px solid #000; padding-top:4px; }
+  @media print { @page { margin:4mm; } body { width:302px; } }
+</style>
+</head><body>
+  <div class="center bold" style="font-size:14px">${r.businessName.toUpperCase()}</div>
+  ${r.branchName ? `<div class="center" style="font-size:10px">${r.branchName}</div>` : ''}
+  <div class="center" style="font-size:10px">NIT: ${r.nit}</div>
+  <div class="center bold" style="margin:4px 0">* FACTURA DE VENTA *</div>
+  <hr class="sep-solid">
+  <div>No.: ${r.orderNumber}</div>
+  <div>Fecha: ${dateStr} ${timeStr}</div>
+  <div>Cajero: ${r.cashierName}</div>
+  <hr class="sep-solid">
+  <div class="bold">CLIENTE:</div>
+  <div style="padding-left:6px">Consumidor final</div>
+  <div style="padding-left:6px">CC/NIT: 222222222222</div>
+  <hr class="sep-solid">
+  <table>
+    <thead><tr>
+      <th style="text-align:left;font-size:10px;padding-bottom:3px">DESCRIPCIÓN</th>
+      <th style="text-align:right;font-size:10px;padding-bottom:3px">TOTAL</th>
+    </tr></thead>
+    <hr class="sep-dot">
+    <tbody>${itemRows}</tbody>
+  </table>
+  <hr class="sep-dot">
+  <table style="margin-top:4px">
+    <tr><td>Subtotal (sin IVA)</td><td style="text-align:right">${fmt(r.subtotal - r.taxTotal)}</td></tr>
+    ${r.discountTotal > 0 ? `<tr><td>Descuento</td><td style="text-align:right">-${fmt(r.discountTotal)}</td></tr>` : ''}
+    ${r.taxTotal > 0 ? `<tr><td>Base gravable</td><td style="text-align:right">${fmt(r.taxBase)}</td></tr><tr><td>IVA</td><td style="text-align:right">${fmt(r.taxTotal)}</td></tr>` : `<tr><td>IVA</td><td style="text-align:right">${fmt(0)} (Excluido)</td></tr>`}
+    <tr class="row-total"><td>TOTAL A PAGAR</td><td style="text-align:right">${fmt(r.total)}</td></tr>
+  </table>
+  <hr class="sep-solid">
+  <div class="bold">FORMA DE PAGO:</div>
+  <table>
+    <tr><td style="padding-left:6px">${r.paymentMethod}</td><td style="text-align:right">${fmt(r.total)}</td></tr>
+    ${r.cashReceived ? `<tr><td style="padding-left:6px">Efectivo recibido</td><td style="text-align:right">${fmt(r.cashReceived)}</td></tr>` : ''}
+    ${r.change ? `<tr><td style="padding-left:6px">Cambio entregado</td><td style="text-align:right">${fmt(r.change)}</td></tr>` : ''}
+  </table>
+  <hr class="sep-dot" style="margin-top:8px">
+  <div class="center" style="margin-top:6px;font-size:10px">Régimen Común — Responsable IVA</div>
+  <div class="center" style="font-size:10px;margin-top:4px">Esta factura es título valor según Art. 616-1 E.T.</div>
+  <div class="center bold" style="margin-top:8px">¡Gracias por su compra!</div>
+  <div class="center" style="font-size:10px">Conserve esta factura</div>
+  <div class="center" style="font-size:10px;margin-top:6px">www.reg-x.com</div>
+</body></html>`
+
+    // Blob URL: Chrome lo renderiza completamente antes de mostrar el diálogo
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+    const url  = URL.createObjectURL(blob)
+    const win  = window.open(url, '_blank', 'width=420,height=800,scrollbars=yes')
+    if (!win) { URL.revokeObjectURL(url); alert('Permite ventanas emergentes para imprimir.'); return }
+    win.onload = () => {
+      setTimeout(() => {
+        win.focus()
+        win.print()
+        win.onafterprint = () => { win.close(); URL.revokeObjectURL(url) }
+      }, 250)
+    }
   }
 
   const handleNewSale = () => {

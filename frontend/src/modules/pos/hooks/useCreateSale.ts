@@ -14,10 +14,10 @@ export function useCreateSale() {
     mutationFn: (payload: CreateSalePayload) =>
       createSale(tenantId!, branchId!, userId!, payload),
     onSuccess: () => {
-      // Invalidar queries que dependen de ventas
       qc.invalidateQueries({ queryKey: ['sales'] })
       qc.invalidateQueries({ queryKey: ['dashboard-stats'] })
       qc.invalidateQueries({ queryKey: ['inventory'] })
+      qc.invalidateQueries({ queryKey: ['products'] })
     },
   })
 }

@@ -1798,6 +1798,48 @@ export async function getSalesHistory(
   return (data ?? []) as unknown as SaleHistoryRow[]
 }
 
+// ── Update Stock ───────────────────────────────────────────────
+export async function updateStock(
+  tenantId: string,
+  branchId: string,
+  userId: string,
+  inventoryId: string,
+  productId: string,
+  newQuantity: number,
+  previousQuantity: number,
+  notes?: string,
+): Promise<void> {
+  const { error: invErr } = await supabase
+    .from('inventory')
+    .update({ quantity: newQuantity })
+    .eq('id', inventoryId)
+    .eq('tenant_id', tenantId)
+  if (invErr) throw invErr
+
+  const delta = newQuantity - previousQuantity
+  if (delta !== 0) {
+    const { data: warehouse } = await supabase
+      .from('inventory')
+      .select('warehouse_id')
+      .eq('id', inventoryId)
+      .single()
+
+    await supabase.from('stock_movements').insert({
+      tenant_id:      tenantId,
+      branch_id:      branchId,
+      warehouse_id:   warehouse?.warehouse_id ?? null,
+      product_id:     productId,
+      type:           'ADJUSTMENT',
+      quantity:       Math.abs(delta),
+      reference_type: 'MANUAL_ADJUSTMENT',
+      notes:          notes ?? (delta > 0
+        ? `Ajuste manual: +${delta} unidades`
+        : `Ajuste manual: ${delta} unidades`),
+      created_by:     userId,
+    })
+  }
+}
+
 export async function cancelSale(
   tenantId: string,
   saleId: string,
