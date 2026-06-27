@@ -84,7 +84,13 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
   const [cashInput, setCashInput] = useState('')
   const [success, setSuccess]     = useState(false)
 
-  const { items, discounts, customerId, tableId, notes, clearCart, payments, lastReceipt, setLastReceipt } = usePOSStore()
+  const { tabs, activeTabId, clearCart, lastReceipt, setLastReceipt } = usePOSStore()
+  const activeTab  = tabs.find(t => t.id === activeTabId) ?? tabs[0]
+  const items      = activeTab?.items      ?? []
+  const discounts  = activeTab?.discounts  ?? []
+  const payments   = activeTab?.payments   ?? []
+  const customerId = activeTab?.customerId
+  const notes      = activeTab?.notes      ?? ''
   const { tenant, branch, profile } = useAuthStore()
   const { mutateAsync: createSale, isPending } = useCreateSale()
   const { activeRegister } = useCashSession()

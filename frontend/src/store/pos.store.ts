@@ -15,9 +15,9 @@ export interface CartItem {
   price: number
   quantity: number
   stock: number
-  discount: number          // percentage 0-100
-  discountAmount: number    // absolute
-  tax: number               // percentage
+  discount: number
+  discountAmount: number
+  tax: number
   taxAmount: number
   total: number
   notes?: string
@@ -46,77 +46,148 @@ export interface POSSession {
   cashierId: string
 }
 
-interface POSState {
+// ── Tab (cuenta individual) ───────────────────────────────────
+
+export interface CartTab {
+  id: string
+  label: string
   items: CartItem[]
   discounts: CartDiscount[]
   payments: PaymentLine[]
-  customerId?: string | undefined
-  tableId?: string | undefined
-  orderId?: string | undefined
+  customerId?: string
+  tableId?: string
   notes: string
-  isOffline: boolean
-  session: POSSession | null
-  pendingSync: CartItem[][]
-  lastReceipt: ReceiptData | null
 }
 
-interface POSActions {
-  addItem: (item: Omit<CartItem, 'id' | 'total' | 'taxAmount' | 'discountAmount'>) => void
-  updateQuantity: (id: string, quantity: number) => void
-  removeItem: (id: string) => void
-  applyItemDiscount: (id: string, discount: number) => void
-  applyCartDiscount: (discount: CartDiscount) => void
-  removeCartDiscount: (index: number) => void
-  addPayment: (payment: PaymentLine) => void
-  removePayment: (index: number) => void
-  setCustomer: (customerId: string | undefined) => void
-  setTable: (tableId: string | undefined) => void
-  setNotes: (notes: string) => void
-  setOffline: (offline: boolean) => void
-  setSession: (session: POSSession | null) => void
-  setLastReceipt: (receipt: ReceiptData | null) => void
-  clearCart: () => void
-  // Computed
-  getSubtotal: () => number
-  getTaxTotal: () => number
-  getDiscountTotal: () => number
-  getTotal: () => number
-  getChange: () => number
-  getPendingAmount: () => number
+const MAIN_TAB_ID = 'main'
+
+function newTab(label?: string): CartTab {
+  return {
+    id: nanoid(6),
+    label: label ?? 'Nueva cuenta',
+    items: [],
+    discounts: [],
+    payments: [],
+    customerId: undefined,
+    tableId: undefined,
+    notes: '',
+  }
+}
+
+function emptyMain(): CartTab {
+  return { ...newTab('Venta principal'), id: MAIN_TAB_ID }
 }
 
 // ── Helpers ──────────────────────────────────────────────────
 
 const calcItemTotal = (item: Omit<CartItem, 'id' | 'total' | 'taxAmount' | 'discountAmount'>) => {
-  const base = item.price * item.quantity
+  const base           = item.price * item.quantity
   const discountAmount = base * (item.discount / 100)
-  const afterDiscount = base - discountAmount
-  const taxAmount = afterDiscount * (item.tax / 100)
-  const total = afterDiscount + taxAmount
+  const afterDiscount  = base - discountAmount
+  const taxAmount      = afterDiscount * (item.tax / 100)
+  const total          = afterDiscount + taxAmount
   return { discountAmount, taxAmount, total }
+}
+
+// ── Store state / actions ─────────────────────────────────────
+
+interface POSState {
+  tabs:        CartTab[]
+  activeTabId: string
+  isOffline:   boolean
+  session:     POSSession | null
+  pendingSync: CartItem[][]
+  lastReceipt: ReceiptData | null
+}
+
+interface POSActions {
+  // Tab management
+  addTab:        () => void
+  removeTab:     (id: string) => void
+  switchTab:     (id: string) => void
+  renameTab:     (id: string, label: string) => void
+
+  // Cart (all operate on activeTab)
+  addItem:            (item: Omit<CartItem, 'id' | 'total' | 'taxAmount' | 'discountAmount'>) => void
+  updateQuantity:     (id: string, quantity: number) => void
+  removeItem:         (id: string) => void
+  applyItemDiscount:  (id: string, discount: number) => void
+  applyCartDiscount:  (discount: CartDiscount) => void
+  removeCartDiscount: (index: number) => void
+  addPayment:         (payment: PaymentLine) => void
+  removePayment:      (index: number) => void
+  setCustomer:        (customerId: string | undefined) => void
+  setTable:           (tableId: string | undefined) => void
+  setNotes:           (notes: string) => void
+  clearCart:          () => void
+
+  // Session / misc
+  setOffline:    (offline: boolean) => void
+  setSession:    (session: POSSession | null) => void
+  setLastReceipt:(receipt: ReceiptData | null) => void
+
+  // Computed (active tab)
+  getSubtotal:      () => number
+  getTaxTotal:      () => number
+  getDiscountTotal: () => number
+  getTotal:         () => number
+  getChange:        () => number
+  getPendingAmount: () => number
+
 }
 
 // ── Store ────────────────────────────────────────────────────
 
 export const usePOSStore = create<POSState & POSActions>()(
   persist(
-    immer((set, get) => ({
-      items: [],
-      discounts: [],
-      payments: [],
-      customerId: undefined,
-      tableId: undefined,
-      orderId: undefined,
-      notes: '',
-      isOffline: false,
-      session: null,
-      pendingSync: [],
-      lastReceipt: null,
+    immer((set, get) => {
+      // helper: get active tab (with fallback)
+      const activeTab = (): CartTab => {
+        const { tabs, activeTabId } = get()
+        return tabs.find(t => t.id === activeTabId) ?? tabs[0]
+      }
 
-      addItem: (item) =>
-        set((state) => {
-          const existing = state.items.find(
-            (i) => i.productId === item.productId && i.variantId === item.variantId,
+      // helper: mutate active tab
+      const mutateActive = (fn: (tab: CartTab) => void) =>
+        set(state => {
+          const tab = state.tabs.find(t => t.id === state.activeTabId)
+          if (tab) fn(tab)
+        })
+
+      return {
+        tabs:        [emptyMain()],
+        activeTabId: MAIN_TAB_ID,
+        isOffline:   false,
+        session:     null,
+        pendingSync: [],
+        lastReceipt: null,
+
+        // ── Tab management ───────────────────────────────────
+        addTab: () => set(state => {
+          const tab = newTab(`Cuenta ${state.tabs.length}`)
+          state.tabs.push(tab)
+          state.activeTabId = tab.id
+        }),
+
+        removeTab: (id) => set(state => {
+          if (id === MAIN_TAB_ID) return          // main tab is permanent
+          state.tabs = state.tabs.filter(t => t.id !== id)
+          if (state.activeTabId === id) {
+            state.activeTabId = state.tabs[state.tabs.length - 1]?.id ?? MAIN_TAB_ID
+          }
+        }),
+
+        switchTab: (id) => set(state => { state.activeTabId = id }),
+
+        renameTab: (id, label) => set(state => {
+          const tab = state.tabs.find(t => t.id === id)
+          if (tab) tab.label = label
+        }),
+
+        // ── Cart actions (active tab) ────────────────────────
+        addItem: (item) => mutateActive(tab => {
+          const existing = tab.items.find(
+            i => i.productId === item.productId && i.variantId === item.variantId,
           )
           if (existing) {
             if (existing.quantity >= existing.stock) return
@@ -128,18 +199,14 @@ export const usePOSStore = create<POSState & POSActions>()(
           } else {
             if (item.quantity > item.stock) return
             const calc = calcItemTotal(item)
-            state.items.push({ ...item, id: nanoid(), ...calc })
+            tab.items.push({ ...item, id: nanoid(), ...calc })
           }
         }),
 
-      updateQuantity: (id, quantity) =>
-        set((state) => {
-          const item = state.items.find((i) => i.id === id)
+        updateQuantity: (id, quantity) => mutateActive(tab => {
+          const item = tab.items.find(i => i.id === id)
           if (!item) return
-          if (quantity <= 0) {
-            state.items = state.items.filter((i) => i.id !== id)
-            return
-          }
+          if (quantity <= 0) { tab.items = tab.items.filter(i => i.id !== id); return }
           if (quantity > item.stock) return
           item.quantity = quantity
           const calc = calcItemTotal(item)
@@ -148,14 +215,12 @@ export const usePOSStore = create<POSState & POSActions>()(
           item.discountAmount = calc.discountAmount
         }),
 
-      removeItem: (id) =>
-        set((state) => {
-          state.items = state.items.filter((i) => i.id !== id)
+        removeItem: (id) => mutateActive(tab => {
+          tab.items = tab.items.filter(i => i.id !== id)
         }),
 
-      applyItemDiscount: (id, discount) =>
-        set((state) => {
-          const item = state.items.find((i) => i.id === id)
+        applyItemDiscount: (id, discount) => mutateActive(tab => {
+          const item = tab.items.find(i => i.id === id)
           if (!item) return
           item.discount = discount
           const calc = calcItemTotal(item)
@@ -164,96 +229,70 @@ export const usePOSStore = create<POSState & POSActions>()(
           item.discountAmount = calc.discountAmount
         }),
 
-      applyCartDiscount: (discount) =>
-        set((state) => { state.discounts.push(discount) }),
+        applyCartDiscount:  (d)  => mutateActive(tab => { tab.discounts.push(d) }),
+        removeCartDiscount: (i)  => mutateActive(tab => { tab.discounts.splice(i, 1) }),
+        addPayment:         (p)  => mutateActive(tab => { tab.payments.push(p) }),
+        removePayment:      (i)  => mutateActive(tab => { tab.payments.splice(i, 1) }),
+        setCustomer: (customerId) => mutateActive(tab => { tab.customerId = customerId }),
+        setTable:    (tableId)    => mutateActive(tab => { tab.tableId = tableId }),
+        setNotes:    (notes)      => mutateActive(tab => { tab.notes = notes }),
 
-      removeCartDiscount: (index) =>
-        set((state) => { state.discounts.splice(index, 1) }),
-
-      addPayment: (payment) =>
-        set((state) => { state.payments.push(payment) }),
-
-      removePayment: (index) =>
-        set((state) => { state.payments.splice(index, 1) }),
-
-      setCustomer: (customerId) =>
-        set((state) => { state.customerId = customerId }),
-
-      setTable: (tableId) =>
-        set((state) => { state.tableId = tableId }),
-
-      setNotes: (notes) =>
-        set((state) => { state.notes = notes }),
-
-      setOffline: (offline) =>
-        set((state) => { state.isOffline = offline }),
-
-      setSession: (session) =>
-        set((state) => { state.session = session }),
-
-      setLastReceipt: (receipt) =>
-        set((state) => { state.lastReceipt = receipt }),
-
-      clearCart: () =>
-        set((state) => {
-          state.items = []
-          state.discounts = []
-          state.payments = []
-          state.customerId = undefined
-          state.tableId = undefined
-          state.orderId = undefined
-          state.notes = ''
+        clearCart: () => mutateActive(tab => {
+          tab.items = []
+          tab.discounts = []
+          tab.payments = []
+          tab.customerId = undefined
+          tab.tableId = undefined
+          tab.notes = ''
         }),
 
-      // ── Computed ──────────────────────────────────────────
+        // ── Session / misc ───────────────────────────────────
+        setOffline:     (offline) => set(state => { state.isOffline = offline }),
+        setSession:     (session) => set(state => { state.session = session }),
+        setLastReceipt: (receipt) => set(state => { state.lastReceipt = receipt }),
 
-      getSubtotal: () => {
-        const { items } = get()
-        return items.reduce((acc, i) => acc + i.price * i.quantity, 0)
-      },
+        // ── Computed (active tab) ────────────────────────────
+        getSubtotal: () => activeTab().items.reduce((acc, i) => acc + i.price * i.quantity, 0),
 
-      getTaxTotal: () => {
-        const { items } = get()
-        return items.reduce((acc, i) => acc + i.taxAmount, 0)
-      },
+        getTaxTotal: () => activeTab().items.reduce((acc, i) => acc + i.taxAmount, 0),
 
-      getDiscountTotal: () => {
-        const { items, discounts, getSubtotal } = get()
-        const itemDiscounts = items.reduce((acc, i) => acc + i.discountAmount, 0)
-        const cartDiscounts = discounts.reduce((acc, d) => {
-          if (d.type === 'PERCENTAGE') return acc + getSubtotal() * (d.value / 100)
-          return acc + d.value
-        }, 0)
-        return itemDiscounts + cartDiscounts
-      },
+        getDiscountTotal: () => {
+          const tab = activeTab()
+          const itemDiscounts = tab.items.reduce((acc, i) => acc + i.discountAmount, 0)
+          const subtotal = tab.items.reduce((acc, i) => acc + i.price * i.quantity, 0)
+          const cartDiscounts = tab.discounts.reduce((acc, d) => {
+            if (d.type === 'PERCENTAGE') return acc + subtotal * (d.value / 100)
+            return acc + d.value
+          }, 0)
+          return itemDiscounts + cartDiscounts
+        },
 
-      getTotal: () => {
-        const { getSubtotal, getTaxTotal, getDiscountTotal } = get()
-        return Math.max(0, getSubtotal() + getTaxTotal() - getDiscountTotal())
-      },
+        getTotal: () => {
+          const { getSubtotal, getTaxTotal, getDiscountTotal } = get()
+          return Math.max(0, getSubtotal() + getTaxTotal() - getDiscountTotal())
+        },
 
-      getPendingAmount: () => {
-        const { payments, getTotal } = get()
-        const paid = payments.reduce((acc, p) => acc + p.amount, 0)
-        return Math.max(0, getTotal() - paid)
-      },
+        getPendingAmount: () => {
+          const tab  = activeTab()
+          const paid = tab.payments.reduce((acc, p) => acc + p.amount, 0)
+          return Math.max(0, get().getTotal() - paid)
+        },
 
-      getChange: () => {
-        const { payments, getTotal } = get()
-        const paid = payments.reduce((acc, p) => acc + p.amount, 0)
-        return Math.max(0, paid - getTotal())
-      },
-    })),
+        getChange: () => {
+          const tab  = activeTab()
+          const paid = tab.payments.reduce((acc, p) => acc + p.amount, 0)
+          return Math.max(0, paid - get().getTotal())
+        },
+
+      }
+    }),
     {
-      name: 'regx:pos-cart',
+      name: 'regx:pos-cart-v2',
       storage: createJSONStorage(() => localStorage),
+      // Las tabs (cuentas abiertas) son por sesión de usuario — NO se persisten
+      // para evitar que un usuario vea las cuentas abiertas de otro en el mismo browser.
       partialize: (state) => ({
-        items: state.items,
-        discounts: state.discounts,
-        customerId: state.customerId,
-        tableId: state.tableId,
-        notes: state.notes,
-        session: state.session,
+        session:     state.session,
         pendingSync: state.pendingSync,
       }),
     },

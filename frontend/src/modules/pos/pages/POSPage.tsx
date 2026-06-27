@@ -4,8 +4,9 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   Search, Barcode, Plus, Minus, Trash2, CreditCard,
   Receipt, X, UserCircle, Lock, Clock, Tag, Printer,
-  ShoppingCart, Clock as HistoryIcon, Monitor,
+  ShoppingCart, Clock as HistoryIcon, Monitor, ClipboardList,
 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { usePOSStore } from '@store/pos.store'
 import { useAuthStore } from '@store/auth.store'
 import { ReceiptTemplate } from '@modules/pos/components/ReceiptTemplate'
@@ -19,9 +20,11 @@ import { OpenCashModal } from '@modules/pos/components/OpenCashModal'
 import { CloseCashModal } from '@modules/pos/components/CloseCashModal'
 import { SalesHistoryModal } from '@modules/pos/components/SalesHistoryModal'
 import { ManageTerminalsModal } from '@modules/pos/components/ManageTerminalsModal'
+import { CompleteComandaModal } from '@modules/pos/components/CompleteComandaModal'
 import { useCashSession } from '@modules/pos/hooks/useCashSession'
 import { usePOSTerminal } from '@modules/pos/hooks/usePOSTerminal'
 import { useCreateSale } from '@modules/pos/hooks/useCreateSale'
+import { getPendingSales, getPOSTerminals, type SaleHistoryRow } from '@lib/db'
 import { toast } from 'sonner'
 
 // ── Product card ─────────────────────────────────────────────
@@ -169,15 +172,25 @@ export default function POSPage() {
   const [scannerOpen, setScannerOpen]         = useState(false)
   const [customerPickerOpen, setCustomerPickerOpen] = useState(false)
   const [closeModalOpen, setCloseModalOpen]   = useState(false)
+  const [editingTabId, setEditingTabId]       = useState<string | null>(null)
+  const [editingLabel, setEditingLabel]       = useState('')
   const [historyOpen, setHistoryOpen]         = useState(false)
   const [terminalsOpen, setTerminalsOpen]     = useState(false)
+  const [selectedComanda, setSelectedComanda] = useState<SaleHistoryRow | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
 
   const {
-    items, addItem, clearCart, customerId,
+    tabs, activeTabId,
+    addItem, clearCart,
     setCustomer, getSubtotal, getTaxTotal, getDiscountTotal, getTotal,
     lastReceipt, setLastReceipt,
+    addTab, removeTab, switchTab,
   } = usePOSStore()
+
+  // Derivar datos de la tab activa directamente (reactivo con Zustand)
+  const activeTab   = tabs.find(t => t.id === activeTabId) ?? tabs[0]
+  const items       = activeTab?.items      ?? []
+  const customerId  = activeTab?.customerId
 
   const { branch, tenant, profile, hasRole } = useAuthStore()
   const currency    = branch?.currency ?? 'COP'
@@ -186,6 +199,23 @@ export default function POSPage() {
   const { activeRegister, isLoading: loadingSession, hasOpenSession } = useCashSession()
   const { terminal, isCommandsOnly, allowedCategories } = usePOSTerminal()
   const { mutateAsync: createSaleCmd, isPending: sendingCmd } = useCreateSale()
+
+  // ¿Hay algún terminal COMMANDS_ONLY en este branch?
+  const { data: allTerminals = [] } = useQuery({
+    queryKey: ['pos-terminals', tenant?.tenantId, branch?.branchId],
+    queryFn:  () => getPOSTerminals(tenant!.tenantId, branch!.branchId),
+    enabled:  isManager && !!tenant?.tenantId && !!branch?.branchId,
+    staleTime: 60_000,
+  })
+  const hasComandasMode = allTerminals.some(t => t.mode === 'COMMANDS_ONLY')
+
+  // Comandas pendientes (solo si hay terminales de comandas)
+  const { data: pendingSales = [] } = useQuery({
+    queryKey: ['pending-sales', tenant?.tenantId, branch?.branchId],
+    queryFn:  () => getPendingSales(tenant!.tenantId, branch!.branchId),
+    enabled:  isManager && hasComandasMode && !!tenant?.tenantId && !!branch?.branchId,
+    refetchInterval: 15_000,
+  })
 
   const { data: allCategories = [] } = useCategories()
 
@@ -328,6 +358,12 @@ export default function POSPage() {
       )}
       <SalesHistoryModal open={historyOpen} onClose={() => setHistoryOpen(false)} activeRegister={activeRegister ?? null} />
       {isManager && <ManageTerminalsModal open={terminalsOpen} onClose={() => setTerminalsOpen(false)} />}
+      <CompleteComandaModal
+        open={!!selectedComanda}
+        onClose={() => setSelectedComanda(null)}
+        sale={selectedComanda}
+        currency={currency}
+      />
 
       {/* ══════════════ LEFT: Productos ══════════════════════ */}
       <div className="flex flex-1 flex-col overflow-hidden">
@@ -387,6 +423,109 @@ export default function POSPage() {
           ))}
         </div>
 
+        {/* Barra de tabs — siempre visible */}
+        <div className="border-b border-grafito-200 dark:border-white/5 bg-white dark:bg-grafito-900 flex items-center overflow-x-auto scrollbar-none">
+
+          {/* Tabs de cuentas abiertas */}
+          {tabs.map(tab => {
+            const isActive   = tab.id === activeTabId
+            const isMain     = tab.id === 'main'
+            const isEditing  = editingTabId === tab.id
+            const tabTotal   = tab.items.reduce((s, i) => s + i.total, 0)
+
+            const startEdit = (e: React.MouseEvent) => {
+              if (isMain) return
+              e.stopPropagation()
+              setEditingTabId(tab.id)
+              setEditingLabel(tab.label)
+            }
+            const commitEdit = () => {
+              if (editingLabel.trim()) renameTab(tab.id, editingLabel.trim())
+              setEditingTabId(null)
+            }
+
+            return (
+              <div
+                key={tab.id}
+                className={cn(
+                  'group flex items-center gap-1.5 shrink-0 border-b-2 px-3 py-2.5 transition-colors cursor-pointer whitespace-nowrap',
+                  isActive
+                    ? 'border-brand-500 text-brand-500'
+                    : 'border-transparent text-grafito-500 hover:text-grafito-900 dark:hover:text-white hover:border-grafito-300',
+                )}
+                onClick={() => !isEditing && switchTab(tab.id)}
+              >
+                {isMain
+                  ? <ShoppingCart className="h-3.5 w-3.5 shrink-0" />
+                  : <Receipt className="h-3.5 w-3.5 shrink-0" />
+                }
+
+                {/* Nombre editable con doble clic */}
+                {isEditing ? (
+                  <input
+                    autoFocus
+                    value={editingLabel}
+                    onChange={e => setEditingLabel(e.target.value)}
+                    onBlur={commitEdit}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') commitEdit()
+                      if (e.key === 'Escape') setEditingTabId(null)
+                    }}
+                    onClick={e => e.stopPropagation()}
+                    className="w-24 text-sm font-semibold bg-transparent border-b border-brand-500 outline-none text-grafito-900 dark:text-white"
+                  />
+                ) : (
+                  <span
+                    className="text-sm font-semibold max-w-[110px] truncate"
+                    onDoubleClick={startEdit}
+                    title={!isMain ? 'Doble clic para renombrar' : undefined}
+                  >
+                    {tab.label}
+                  </span>
+                )}
+
+                {tab.items.length > 0 && !isEditing && (
+                  <span className={cn('text-xs font-bold', isActive ? 'text-brand-400' : 'text-grafito-400')}>
+                    {formatCurrency(tabTotal, currency)}
+                  </span>
+                )}
+                {!isMain && (
+                  <button
+                    onClick={e => { e.stopPropagation(); removeTab(tab.id) }}
+                    className="ml-0.5 rounded p-0.5 opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-500/10 hover:text-red-500 transition-all"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            )
+          })}
+
+          {/* Tabs: comandas pendientes de otras cajas */}
+          {isManager && hasComandasMode && pendingSales.map(s => (
+            <button
+              key={s.id}
+              onClick={() => setSelectedComanda(s)}
+              className="group flex items-center gap-2 shrink-0 border-b-2 border-transparent px-3 py-2.5 text-sm font-medium text-grafito-500 hover:text-grafito-900 dark:hover:text-white hover:border-amber-400 transition-colors whitespace-nowrap"
+            >
+              <ClipboardList className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+              <span className="max-w-[110px] truncate">#{s.order_number}</span>
+              <span className="text-xs font-bold text-amber-600 dark:text-amber-400">
+                {formatCurrency(s.total, currency)}
+              </span>
+            </button>
+          ))}
+
+          {/* Botón + nueva cuenta */}
+          <button
+            onClick={addTab}
+            className="flex items-center justify-center shrink-0 h-7 w-7 mx-2 rounded-lg border border-dashed border-grafito-300 dark:border-white/10 text-grafito-400 hover:border-brand-400 hover:text-brand-500 transition-colors"
+            title="Nueva cuenta"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+        </div>
+
         {/* Grid */}
         <div className="flex-1 overflow-y-auto p-4">
           {loadingProducts ? (
@@ -437,7 +576,7 @@ export default function POSPage() {
           <div className="flex items-center gap-2">
             <ShoppingCart className="h-4 w-4 text-brand-500" />
             <span className="text-sm font-bold text-grafito-900 dark:text-white">
-              Venta actual
+              {tabs.find(t => t.id === activeTabId)?.label ?? 'Venta actual'}
             </span>
             {itemCount > 0 && (
               <span className="rounded-full bg-brand-500 px-2 py-0.5 text-[10px] font-bold text-white">

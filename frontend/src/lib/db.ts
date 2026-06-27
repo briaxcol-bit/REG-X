@@ -849,6 +849,66 @@ export async function createSale(
   return sale
 }
 
+// ── Pending comandas (todas las cajas del branch) ─────────────
+
+export async function getPendingSales(
+  tenantId: string,
+  branchId: string,
+): Promise<SaleHistoryRow[]> {
+  const { data, error } = await supabase
+    .from('sales')
+    .select(`
+      id, order_number, status, total, subtotal, tax_total, discount_total,
+      currency, created_at, notes, cash_register_id,
+      customers(full_name),
+      sale_payments(method, amount),
+      sale_items(name, quantity, unit_price, total, discount_amount, tax, tax_amount)
+    `)
+    .eq('tenant_id', tenantId)
+    .eq('branch_id', branchId)
+    .eq('status', 'PENDING')
+    .order('created_at', { ascending: false })
+    .limit(100)
+  if (error) throw error
+  return (data ?? []) as unknown as SaleHistoryRow[]
+}
+
+// ── Completar una comanda existente (cobrarla) ────────────────
+
+export async function completeSale(
+  saleId: string,
+  userId: string,
+  payments: { method: string; amount: number; reference?: string }[],
+): Promise<void> {
+  // Marcar como COMPLETED — usamos .select() para detectar si RLS bloqueó el update
+  const { data: updated, error: updErr } = await supabase
+    .from('sales')
+    .update({
+      status:       'COMPLETED',
+      completed_at: new Date().toISOString(),
+      completed_by: userId,
+    })
+    .eq('id', saleId)
+    .select('id')
+  if (updErr) throw updErr
+  if (!updated || updated.length === 0) {
+    throw new Error('No se pudo completar la venta. Verifica los permisos en Supabase.')
+  }
+
+  // Insertar pagos
+  if (payments.length > 0) {
+    const { error: payErr } = await supabase
+      .from('sale_payments')
+      .insert(payments.map(p => ({
+        sale_id:   saleId,
+        method:    p.method as any,
+        amount:    p.amount,
+        reference: p.reference ?? null,
+      })))
+    if (payErr) throw payErr
+  }
+}
+
 // ── Stock Movements ────────────────────────────────────────────
 
 export interface StockMovementRow {
@@ -1764,6 +1824,7 @@ export interface SaleHistoryRow {
   currency: string
   created_at: string
   notes: string | null
+  cash_register_id: string | null
   customers: { full_name: string } | null
   sale_payments: { method: string; amount: number }[]
   sale_items: { name: string; quantity: number; unit_price: number; total: number; discount_amount: number; tax: number; tax_amount: number }[]
@@ -1773,7 +1834,7 @@ export interface SaleHistoryRow {
 export async function getSalesHistory(
   tenantId: string,
   branchId: string,
-  params?: { since?: string; until?: string; limit?: number; status?: string },
+  params?: { since?: string; until?: string; limit?: number; status?: string; cashRegisterId?: string },
 ): Promise<SaleHistoryRow[]> {
   let q = supabase
     .from('sales')
@@ -1789,9 +1850,10 @@ export async function getSalesHistory(
     .order('created_at', { ascending: false })
     .limit(params?.limit ?? 50)
 
-  if (params?.since)  q = q.gte('created_at', params.since)
-  if (params?.until)  q = q.lte('created_at', params.until)
-  if (params?.status) q = q.eq('status', params.status)
+  if (params?.since)           q = q.gte('created_at', params.since)
+  if (params?.until)           q = q.lte('created_at', params.until)
+  if (params?.status)          q = q.eq('status', params.status)
+  if (params?.cashRegisterId)  q = q.eq('cash_register_id', params.cashRegisterId)
 
   const { data, error } = await q
   if (error) throw error

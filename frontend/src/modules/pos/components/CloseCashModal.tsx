@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Lock, Loader2, TrendingUp, DollarSign, AlertTriangle, CheckCircle, Clock, X, StopCircle, ClipboardList } from 'lucide-react'
+import { Lock, Loader2, TrendingUp, DollarSign, AlertTriangle, CheckCircle, Clock, X, StopCircle, ClipboardList, ChevronDown } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { useCashSession, type ActiveCashRegister } from '@modules/pos/hooks/useCashSession'
+import { getSalesHistory } from '@lib/db'
 import { formatCurrency } from '@shared/utils/format'
 import { useAuthStore } from '@store/auth.store'
 import { cn } from '@shared/utils/cn'
@@ -30,7 +32,7 @@ const DENOMINATIONS = [
 const inputCls = 'w-full rounded-xl border border-grafito-200 dark:border-white/10 bg-white dark:bg-grafito-800 px-4 py-2.5 text-sm text-grafito-900 dark:text-white placeholder-grafito-400 dark:placeholder-grafito-500 outline-none focus:ring-2 focus:ring-brand-500/40'
 
 export function CloseCashModal({ open, onClose, register, isCommandsOnly = false }: CloseCashModalProps) {
-  const { branch } = useAuthStore()
+  const { branch, tenant } = useAuthStore()
   const currency = branch?.currency ?? 'COP'
   const { close: closeMutation } = useCashSession()
 
@@ -70,6 +72,19 @@ export function CloseCashModal({ open, onClose, register, isCommandsOnly = false
   const hours    = Math.floor(diffMs / 3_600_000)
   const minutes  = Math.floor((diffMs % 3_600_000) / 60_000)
   const duration = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`
+
+  const { data: shiftSales = [] } = useQuery({
+    queryKey: ['shift-sales', register.id],
+    queryFn: () => getSalesHistory(
+      tenant?.tenantId ?? '',
+      branch?.branchId ?? '',
+      { cashRegisterId: register.id, limit: 200 }
+    ),
+    enabled: open && !!tenant?.tenantId && !!branch?.branchId,
+    staleTime: 10_000,
+  })
+
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   return (
     <AnimatePresence>
@@ -198,6 +213,58 @@ export function CloseCashModal({ open, onClose, register, isCommandsOnly = false
                       </span>
                     </div>
                   </>
+                )}
+
+                {/* Listado de ventas/comandas del turno */}
+                {shiftSales.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-grafito-700 dark:text-grafito-300 mb-2">
+                      {isCommandsOnly ? 'Comandas del turno' : 'Ventas del turno'}
+                      <span className="ml-1.5 text-grafito-400 font-normal">({shiftSales.length})</span>
+                    </p>
+                    <div className="rounded-xl border border-grafito-200 dark:border-white/10 overflow-hidden divide-y divide-grafito-100 dark:divide-white/5 max-h-52 overflow-y-auto">
+                      {shiftSales.map(sale => {
+                        const isExpanded = expandedId === sale.id
+                        const isPending  = sale.status === 'PENDING'
+                        const isCancelled = sale.status === 'CANCELLED'
+                        return (
+                          <div key={sale.id}>
+                            <button
+                              type="button"
+                              onClick={() => setExpandedId(isExpanded ? null : sale.id)}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-grafito-50 dark:hover:bg-white/[0.02] transition-colors"
+                            >
+                              <span className={cn(
+                                'text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0',
+                                isPending   ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400' :
+                                isCancelled ? 'bg-red-500/15 text-red-500' :
+                                              'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                              )}>
+                                {isPending ? 'Comanda' : isCancelled ? 'Anulada' : 'Pagada'}
+                              </span>
+                              <span className="flex-1 text-xs text-grafito-700 dark:text-grafito-300 font-medium truncate">
+                                {sale.order_number}
+                              </span>
+                              <span className={cn('text-xs font-black shrink-0', isCancelled ? 'line-through text-grafito-400' : 'text-grafito-900 dark:text-white')}>
+                                {formatCurrency(sale.total, sale.currency)}
+                              </span>
+                              <ChevronDown className={cn('h-3.5 w-3.5 text-grafito-400 shrink-0 transition-transform', isExpanded && 'rotate-180')} />
+                            </button>
+                            {isExpanded && (
+                              <div className="px-3 pb-2 bg-grafito-50 dark:bg-white/[0.02]">
+                                {sale.sale_items.map((it, i) => (
+                                  <div key={i} className="flex justify-between text-xs py-1 text-grafito-500">
+                                    <span>{it.quantity}× {it.name}</span>
+                                    <span>{formatCurrency(it.total, sale.currency)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
                 )}
 
                 {/* Notas */}

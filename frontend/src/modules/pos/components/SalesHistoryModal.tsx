@@ -249,24 +249,37 @@ export function SalesHistoryModal({ open, onClose, activeRegister }: Props) {
   const [cancelTarget, setCancelTarget] = useState<SaleHistoryRow | null>(null)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('ALL')
+  const [scope, setScope] = useState<'caja' | 'sucursal'>('caja')
 
   const { tenant, branch, hasRole } = useAuthStore()
   const { setLastReceipt } = usePOSStore()
   const qc = useQueryClient()
 
-  const tenantId = tenant?.tenantId ?? ''
-  const branchId = branch?.branchId ?? ''
+  const tenantId  = tenant?.tenantId ?? ''
+  const branchId  = branch?.branchId ?? ''
   const canCancel = hasRole('OWNER') || hasRole('ADMIN')
+  const isManager = canCancel
 
-  // Solo ventas desde que se abrió esta caja
-  const sinceDate = activeRegister?.opened_at
+  const registerId = activeRegister?.id
 
-  const { data: sales = [], isLoading } = useQuery({
-    queryKey: ['sales-history', tenantId, branchId, sinceDate],
-    queryFn:  () => getSalesHistory(tenantId, branchId, { since: sinceDate, limit: 500 }),
-    enabled:  open && !!tenantId && !!branchId && !!sinceDate,
+  // Ventas de esta caja
+  const { data: cajaSales = [], isLoading: loadingCaja } = useQuery({
+    queryKey: ['sales-history', tenantId, branchId, registerId],
+    queryFn:  () => getSalesHistory(tenantId, branchId, { cashRegisterId: registerId, limit: 500 }),
+    enabled:  open && !!tenantId && !!branchId && !!registerId,
     refetchInterval: 15_000,
   })
+
+  // Todas las ventas del branch (solo managers, scope='sucursal')
+  const { data: branchSales = [], isLoading: loadingBranch } = useQuery({
+    queryKey: ['sales-history', tenantId, branchId, 'all'],
+    queryFn:  () => getSalesHistory(tenantId, branchId, { limit: 500 }),
+    enabled:  open && isManager && scope === 'sucursal' && !!tenantId && !!branchId,
+    refetchInterval: 15_000,
+  })
+
+  const sales    = scope === 'sucursal' ? branchSales : cajaSales
+  const isLoading = scope === 'sucursal' ? loadingBranch : loadingCaja
 
   const cancelMutation = useMutation({
     mutationFn: ({ saleId, reason }: { saleId: string; reason: string }) =>
@@ -353,20 +366,52 @@ export function SalesHistoryModal({ open, onClose, activeRegister }: Props) {
               <div>
                 <div className="flex items-center gap-2">
                   <Receipt className="h-4 w-4 text-brand-500" />
-                  <p className="font-bold text-grafito-900 dark:text-white">Ventas de esta caja</p>
-                </div>
-                {activeRegister ? (
-                  <p className="text-xs text-grafito-500 mt-0.5">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 inline-block mr-1 animate-pulse" />
-                    {activeRegister.name} · {sales.filter(s => s.status === 'COMPLETED').length} ventas · {formatCurrency(totalCompleted, branch?.currency ?? 'COP')}
+                  <p className="font-bold text-grafito-900 dark:text-white">
+                    {scope === 'sucursal' ? 'Ventas de la sucursal' : 'Ventas de esta caja'}
                   </p>
-                ) : (
-                  <p className="text-xs text-grafito-400 mt-0.5">Sin caja abierta</p>
-                )}
+                </div>
+                <p className="text-xs text-grafito-500 mt-0.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 inline-block mr-1 animate-pulse" />
+                  {scope === 'sucursal'
+                    ? `${branch?.branchName ?? ''} · ${sales.filter(s => s.status === 'COMPLETED').length} ventas · ${formatCurrency(totalCompleted, branch?.currency ?? 'COP')}`
+                    : activeRegister
+                      ? `${activeRegister.name} · ${sales.filter(s => s.status === 'COMPLETED').length} ventas · ${formatCurrency(totalCompleted, branch?.currency ?? 'COP')}`
+                      : 'Sin caja abierta'
+                  }
+                </p>
               </div>
-              <button onClick={onClose} className="rounded-xl p-2 text-grafito-400 hover:bg-grafito-100 dark:hover:bg-white/5 transition-colors">
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                {/* Toggle Esta caja / Sucursal — solo managers */}
+                {isManager && (
+                  <div className="flex rounded-lg border border-grafito-200 dark:border-white/10 overflow-hidden text-xs font-semibold">
+                    <button
+                      onClick={() => setScope('caja')}
+                      className={cn(
+                        'px-2.5 py-1.5 transition-colors',
+                        scope === 'caja'
+                          ? 'bg-brand-500 text-white'
+                          : 'text-grafito-500 hover:bg-grafito-100 dark:hover:bg-white/5',
+                      )}
+                    >
+                      Esta caja
+                    </button>
+                    <button
+                      onClick={() => setScope('sucursal')}
+                      className={cn(
+                        'px-2.5 py-1.5 transition-colors border-l border-grafito-200 dark:border-white/10',
+                        scope === 'sucursal'
+                          ? 'bg-brand-500 text-white'
+                          : 'text-grafito-500 hover:bg-grafito-100 dark:hover:bg-white/5',
+                      )}
+                    >
+                      Sucursal
+                    </button>
+                  </div>
+                )}
+                <button onClick={onClose} className="rounded-xl p-2 text-grafito-400 hover:bg-grafito-100 dark:hover:bg-white/5 transition-colors">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
             {/* Search + filtros de estado */}
