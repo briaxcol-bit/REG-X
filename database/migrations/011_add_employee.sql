@@ -109,7 +109,7 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION get_employee_emails TO authenticated;
+GRANT EXECUTE ON FUNCTION get_employee_emails(UUID) TO authenticated;
 
 -- ── RPC: actualizar perfil de empleado (admin puede editar sus empleados) ──
 CREATE OR REPLACE FUNCTION update_employee_profile(
@@ -194,7 +194,7 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION update_employee_profile TO authenticated;
+GRANT EXECUTE ON FUNCTION update_employee_profile(UUID, TEXT, UUID, TEXT, TEXT, UUID, TEXT) TO authenticated;
 
 -- ── RPC: eliminar empleado del tenant ────────────────────────
 CREATE OR REPLACE FUNCTION delete_employee_from_tenant(

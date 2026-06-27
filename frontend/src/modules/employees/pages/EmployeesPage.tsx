@@ -3,8 +3,9 @@ import {
   Users, Search, Loader2, UserPlus, Pencil,
   ChevronDown, CheckCircle2, XCircle, RefreshCw,
   Eye, EyeOff, X, Trash2, AlertTriangle,
-  Phone, CreditCard,
+  CreditCard,
 } from 'lucide-react'
+import { PhoneField } from '@shared/components/PhoneField'
 import {
   getEmployees, updateEmployeeRole, toggleEmployeeActive,
   addEmployee, updateEmployeeProfile, deleteEmployee,
@@ -237,23 +238,21 @@ function EditEmployeeModal({ employee, tenantId, onClose, onSaved }: EditModalPr
             />
           </div>
 
-          {/* Cédula + Celular */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-grafito-600 dark:text-grafito-300 mb-1.5 flex items-center gap-1.5">
-                <CreditCard className="h-3 w-3" /> Cédula / ID
-              </label>
-              <input value={cedula} onChange={e => setCedula(e.target.value)}
-                placeholder="Ej: 1234567890" className={inputCls} />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-grafito-600 dark:text-grafito-300 mb-1.5 flex items-center gap-1.5">
-                <Phone className="h-3 w-3" /> Celular
-              </label>
-              <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
-                placeholder="Ej: 300 123 4567" className={inputCls} />
-            </div>
+          {/* Cédula */}
+          <div>
+            <label className="block text-xs font-semibold text-grafito-600 dark:text-grafito-300 mb-1.5 flex items-center gap-1.5">
+              <CreditCard className="h-3 w-3" /> Cédula / ID
+            </label>
+            <input value={cedula} onChange={e => setCedula(e.target.value)}
+              placeholder="Ej: 1234567890" className={inputCls} />
           </div>
+
+          {/* Celular */}
+          <PhoneField
+            label="Celular"
+            value={phone || undefined}
+            onChange={val => setPhone(val ?? '')}
+          />
 
           {/* Email */}
           <div>
@@ -469,23 +468,21 @@ function AddEmployeeModal({ tenantId, branchId, onClose, onCreated }: AddModalPr
               placeholder="Ej: Juan Pérez" required className={inputCls} />
           </div>
 
-          {/* Cédula + Celular en fila */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-grafito-600 dark:text-grafito-300 mb-1.5 flex items-center gap-1.5">
-                <CreditCard className="h-3 w-3" /> Cédula / ID
-              </label>
-              <input value={cedula} onChange={e => setCedula(e.target.value)}
-                placeholder="Ej: 1234567890" className={inputCls} />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-grafito-600 dark:text-grafito-300 mb-1.5 flex items-center gap-1.5">
-                <Phone className="h-3 w-3" /> Celular
-              </label>
-              <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
-                placeholder="Ej: 300 123 4567" className={inputCls} />
-            </div>
+          {/* Cédula */}
+          <div>
+            <label className="block text-xs font-semibold text-grafito-600 dark:text-grafito-300 mb-1.5 flex items-center gap-1.5">
+              <CreditCard className="h-3 w-3" /> Cédula / ID
+            </label>
+            <input value={cedula} onChange={e => setCedula(e.target.value)}
+              placeholder="Ej: 1234567890" className={inputCls} />
           </div>
+
+          {/* Celular */}
+          <PhoneField
+            label="Celular"
+            value={phone || undefined}
+            onChange={val => setPhone(val ?? '')}
+          />
 
           {/* Email */}
           <div>

@@ -2,10 +2,11 @@ import { useState } from 'react'
 import {
   Plus, Search, Mail, Phone, Star, Loader2,
   Building2, User, X, Pencil, FileText,
-  CreditCard, MapPin, BadgeCheck, Trash2,
+  CreditCard, MapPin, BadgeCheck,
 } from 'lucide-react'
 import { useCustomers, useCreateCustomer, useUpdateCustomer, type Customer, type CustomerInput } from '@modules/customers/hooks/useCustomers'
 import { cn } from '@shared/utils/cn'
+import { PhoneField } from '@shared/components/PhoneField'
 
 // ── Constantes de facturación ────────────────────────────────
 type PersonType = 'NATURAL' | 'EMPRESA'
@@ -241,13 +242,11 @@ function CustomerModal({
                 <input type="email" value={form.email ?? ''} onChange={e => set({ email: e.target.value })}
                   placeholder="correo@empresa.com" className={inputCls} />
               </div>
-              <div>
-                <label className={labelCls + ' flex items-center gap-1.5'}>
-                  <Phone className="h-3 w-3" /> Teléfono / Celular
-                </label>
-                <input type="tel" value={form.phone ?? ''} onChange={e => set({ phone: e.target.value })}
-                  placeholder="300 123 4567" className={inputCls} />
-              </div>
+              <PhoneField
+                label="Teléfono / Celular"
+                value={form.phone ?? undefined}
+                onChange={val => set({ phone: val ?? null })}
+              />
             </div>
           </div>
 
