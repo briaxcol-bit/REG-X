@@ -1007,6 +1007,28 @@ export async function getTables(tenantId: string, branchId: string): Promise<Tab
   return (data ?? []) as unknown as TableRow[]
 }
 
+export async function createTable(
+  tenantId: string,
+  branchId: string,
+  data: { number: string; name?: string | null; capacity: number; status?: TableRow['status'] },
+): Promise<TableRow> {
+  const { data: row, error } = await supabase
+    .from('tables')
+    .insert({
+      tenant_id: tenantId,
+      branch_id: branchId,
+      number:    data.number,
+      name:      data.name ?? null,
+      capacity:  data.capacity,
+      status:    data.status ?? 'AVAILABLE',
+      is_active: true,
+    })
+    .select('id, number, name, capacity, status, area_id')
+    .single()
+  if (error) throw error
+  return row as unknown as TableRow
+}
+
 export async function updateTableStatus(tableId: string, status: TableRow['status']) {
   const { error } = await supabase
     .from('tables')

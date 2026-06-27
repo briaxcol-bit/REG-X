@@ -20,10 +20,11 @@ function EditStockModal({ row, onClose, onSaved }: EditStockModalProps) {
   const p    = row.products as any
   const prev = Number(row.quantity)
 
-  const [qty, setQty]       = useState(prev)
+  const [qtyStr, setQtyStr] = useState(String(prev))
   const [notes, setNotes]   = useState('')
   const [saving, setSaving] = useState(false)
 
+  const qty   = Math.max(0, parseInt(qtyStr) || 0)
   const delta = qty - prev
 
   const handleSave = async () => {
@@ -74,7 +75,7 @@ function EditStockModal({ row, onClose, onSaved }: EditStockModalProps) {
         {/* Cantidad actual */}
         <div className="flex items-center justify-center gap-4">
           <button
-            onClick={() => setQty(q => Math.max(0, q - 1))}
+            onClick={() => setQtyStr(String(Math.max(0, qty - 1)))}
             className="flex h-10 w-10 items-center justify-center rounded-xl border border-grafito-200 dark:border-white/10 bg-grafito-100 dark:bg-grafito-800 hover:bg-grafito-200 dark:hover:bg-grafito-700 transition-colors"
           >
             <Minus className="h-4 w-4 text-grafito-600 dark:text-grafito-300" />
@@ -84,15 +85,19 @@ function EditStockModal({ row, onClose, onSaved }: EditStockModalProps) {
             <input
               type="number"
               min={0}
-              value={qty}
-              onChange={e => setQty(Math.max(0, parseInt(e.target.value) || 0))}
+              value={qtyStr}
+              onChange={e => {
+                const raw = e.target.value.replace(/[^0-9]/g, '')
+                setQtyStr(raw === '' ? '' : String(parseInt(raw)))
+              }}
+              onBlur={() => setQtyStr(String(qty))}
               className="w-24 text-center text-3xl font-black text-grafito-900 dark:text-white bg-transparent outline-none border-b-2 border-brand-500 pb-1"
             />
             <p className="text-xs text-grafito-400 mt-1">unidades</p>
           </div>
 
           <button
-            onClick={() => setQty(q => q + 1)}
+            onClick={() => setQtyStr(String(qty + 1))}
             className="flex h-10 w-10 items-center justify-center rounded-xl border border-grafito-200 dark:border-white/10 bg-grafito-100 dark:bg-grafito-800 hover:bg-grafito-200 dark:hover:bg-grafito-700 transition-colors"
           >
             <Plus className="h-4 w-4 text-grafito-600 dark:text-grafito-300" />

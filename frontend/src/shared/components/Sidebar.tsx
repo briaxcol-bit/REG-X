@@ -33,22 +33,12 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Inventario',
     permission: 'inventory.view',
     group: 'Catalogo',
-    subItems: [
-      { to: '/inventory/alerts',    label: 'Alertas stock',         icon: AlertTriangle },
-      { to: '/inventory/valuation', label: 'Valoración inventario', icon: DollarSign    },
-      { to: '/inventory/movements', label: 'Movimientos',           icon: Boxes         },
-    ]
-  },
-  // Cajero ve inventario general + puede ir a movimientos desde ahí
-  {
-    to: '/inventory',
-    icon: Boxes,
-    label: 'Inventario',
-    group: 'Catalogo',
     cashierVisible: true,
     subItems: [
-      { to: '/inventory/movements', label: 'Movimientos', icon: Boxes },
-    ],
+      { to: '/inventory/alerts',    label: 'Alertas stock',         icon: AlertTriangle, permission: 'inventory.view' },
+      { to: '/inventory/valuation', label: 'Valoración inventario', icon: DollarSign,    permission: 'inventory.view' },
+      { to: '/inventory/movements', label: 'Movimientos',           icon: Boxes },
+    ]
   },
   { to: '/customers',     icon: Users,    label: 'Clientes',    group: 'Catalogo' },
   { to: '/employees',     icon: UserCog,  label: 'Empleados',   group: 'Catalogo' },
@@ -216,7 +206,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                         className="overflow-hidden"
                       >
                         <div className="flex flex-col gap-1 py-1 pl-10 pr-2">
-                          {item.subItems!.map(sub => {
+                          {item.subItems!.filter(sub => isCashier ? !sub.permission : (!sub.permission || hasPermission(sub.permission))).map(sub => {
                             const isSubActive = location.pathname === sub.to
                             const SubIcon = sub.icon
                             return (

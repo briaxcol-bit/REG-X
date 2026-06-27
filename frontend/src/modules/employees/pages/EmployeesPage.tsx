@@ -472,14 +472,14 @@ function AddEmployeeModal({ tenantId, branchId, onClose, onCreated }: AddModalPr
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+        <form onSubmit={handleSubmit} autoComplete="off" className="px-6 py-5 space-y-4">
           {/* Nombre */}
           <div>
             <label className="block text-xs font-semibold text-grafito-600 dark:text-grafito-300 mb-1.5">
               Nombre completo <span className="text-red-400">*</span>
             </label>
             <input ref={nameRef} value={fullName} onChange={e => setFullName(e.target.value)}
-              placeholder="Ej: Juan Pérez" required className={inputCls} />
+              placeholder="Ej: Juan Pérez" required autoComplete="off" className={inputCls} />
           </div>
 
           {/* Cédula */}
@@ -488,7 +488,7 @@ function AddEmployeeModal({ tenantId, branchId, onClose, onCreated }: AddModalPr
               <CreditCard className="h-3 w-3" /> Cédula / ID
             </label>
             <input value={cedula} onChange={e => setCedula(e.target.value)}
-              placeholder="Ej: 1234567890" className={inputCls} />
+              placeholder="Ej: 1234567890" autoComplete="off" className={inputCls} />
           </div>
 
           {/* Celular */}
@@ -504,7 +504,7 @@ function AddEmployeeModal({ tenantId, branchId, onClose, onCreated }: AddModalPr
               Correo electrónico <span className="text-red-400">*</span>
             </label>
             <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-              placeholder="empleado@negocio.com" required className={inputCls} />
+              placeholder="empleado@negocio.com" required autoComplete="off" className={inputCls} />
           </div>
 
           {/* Contraseña */}
@@ -516,6 +516,7 @@ function AddEmployeeModal({ tenantId, branchId, onClose, onCreated }: AddModalPr
               <input type={showPwd ? 'text' : 'password'} value={password}
                 onChange={e => setPassword(e.target.value)}
                 placeholder="Mínimo 6 caracteres" minLength={6} required
+                autoComplete="new-password"
                 className="w-full rounded-xl border border-grafito-200 dark:border-white/10 bg-grafito-50 dark:bg-grafito-800 pl-3.5 pr-10 py-2.5 text-sm text-grafito-900 dark:text-white placeholder:text-grafito-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all"
               />
               <button type="button" onClick={() => setShowPwd(v => !v)}

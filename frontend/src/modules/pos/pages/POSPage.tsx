@@ -171,6 +171,7 @@ export default function POSPage() {
   const [checkoutOpen, setCheckoutOpen]       = useState(false)
   const [scannerOpen, setScannerOpen]         = useState(false)
   const [customerPickerOpen, setCustomerPickerOpen] = useState(false)
+  const [customerName, setCustomerName]             = useState<string | null>(null)
   const [closeModalOpen, setCloseModalOpen]   = useState(false)
   const [editingTabId, setEditingTabId]       = useState<string | null>(null)
   const [editingLabel, setEditingLabel]       = useState('')
@@ -601,18 +602,33 @@ export default function POSPage() {
             >
               <HistoryIcon className="h-3.5 w-3.5" />
             </button>
-            <button
-              onClick={() => setCustomerPickerOpen(true)}
-              className={cn(
-                'flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors',
-                customerId
-                  ? 'bg-brand-500/10 text-brand-500 dark:text-brand-400'
-                  : 'text-grafito-500 hover:bg-grafito-100 dark:hover:bg-white/5',
-              )}
-            >
-              <UserCircle className="h-3.5 w-3.5" />
-              Cliente
-            </button>
+            {customerId && customerName ? (
+              <div className="flex items-center gap-1 rounded-lg bg-brand-500/10 px-2 py-1.5">
+                <UserCircle className="h-3.5 w-3.5 text-brand-500 shrink-0" />
+                <button
+                  onClick={() => setCustomerPickerOpen(true)}
+                  className="text-xs font-semibold text-brand-500 dark:text-brand-400 max-w-[100px] truncate leading-none"
+                  title={customerName}
+                >
+                  {customerName}
+                </button>
+                <button
+                  onClick={() => { setCustomer(undefined); setCustomerName(null) }}
+                  className="ml-0.5 text-brand-400 hover:text-red-500 transition-colors"
+                  title="Quitar cliente"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setCustomerPickerOpen(true)}
+                className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-grafito-500 hover:bg-grafito-100 dark:hover:bg-white/5 transition-colors"
+              >
+                <UserCircle className="h-3.5 w-3.5" />
+                Cliente
+              </button>
+            )}
             {items.length > 0 && (
               <button onClick={clearCart} className="rounded-lg p-1.5 text-grafito-400 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 transition-colors">
                 <Trash2 className="h-3.5 w-3.5" />
@@ -723,7 +739,11 @@ export default function POSPage() {
       {/* Modales */}
       <CheckoutModal open={checkoutOpen} onClose={() => setCheckoutOpen(false)} total={total} currency={currency} />
       <BarcodeScanner open={scannerOpen} onClose={() => setScannerOpen(false)} onScan={handleBarcodeScanned} />
-      <CustomerPicker open={customerPickerOpen} onClose={() => setCustomerPickerOpen(false)} onSelect={id => { setCustomer(id); setCustomerPickerOpen(false) }} />
+      <CustomerPicker
+        open={customerPickerOpen}
+        onClose={() => setCustomerPickerOpen(false)}
+        onSelect={(id, name) => { setCustomer(id); setCustomerName(name); setCustomerPickerOpen(false) }}
+      />
     </div>
   )
 }
