@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   getAllTenants, setTenantPlan, setTenantActive, deleteTenant,
@@ -113,9 +113,23 @@ function ActionsMenu({
   isPending: boolean
 }) {
   const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState({ top: 0, right: 0 })
+  const btnRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const rect = btnRef.current?.getBoundingClientRect()
+    if (!rect) return
+    setPos({
+      top: rect.bottom + window.scrollY + 4,
+      right: window.innerWidth - rect.right,
+    })
+  }, [open])
+
   return (
-    <div className="relative">
+    <div className="relative inline-block">
       <button
+        ref={btnRef}
         onClick={() => setOpen((o) => !o)}
         className="p-1.5 rounded-lg text-grafito-400 hover:bg-grafito-100 dark:hover:bg-white/10 transition-colors"
         title="Acciones"
@@ -124,8 +138,11 @@ function ActionsMenu({
       </button>
       {open && (
         <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-8 z-20 min-w-[170px] rounded-xl border border-grafito-200 dark:border-white/10 bg-white dark:bg-grafito-800 shadow-xl overflow-hidden">
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div
+            className="fixed z-50 min-w-[170px] rounded-xl border border-grafito-200 dark:border-white/10 bg-white dark:bg-grafito-800 shadow-xl overflow-hidden"
+            style={{ top: pos.top, right: pos.right }}
+          >
             <button
               onClick={() => { setOpen(false); onEdit() }}
               className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-grafito-700 dark:text-grafito-200 hover:bg-grafito-50 dark:hover:bg-white/5"

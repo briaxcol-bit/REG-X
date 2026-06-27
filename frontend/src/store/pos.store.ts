@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { nanoid } from 'nanoid'
+import type { ReceiptData } from '@modules/pos/components/ReceiptTemplate'
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -56,6 +57,7 @@ interface POSState {
   isOffline: boolean
   session: POSSession | null
   pendingSync: CartItem[][]
+  lastReceipt: ReceiptData | null
 }
 
 interface POSActions {
@@ -72,6 +74,7 @@ interface POSActions {
   setNotes: (notes: string) => void
   setOffline: (offline: boolean) => void
   setSession: (session: POSSession | null) => void
+  setLastReceipt: (receipt: ReceiptData | null) => void
   clearCart: () => void
   // Computed
   getSubtotal: () => number
@@ -108,6 +111,7 @@ export const usePOSStore = create<POSState & POSActions>()(
       isOffline: false,
       session: null,
       pendingSync: [],
+      lastReceipt: null,
 
       addItem: (item) =>
         set((state) => {
@@ -186,6 +190,9 @@ export const usePOSStore = create<POSState & POSActions>()(
 
       setSession: (session) =>
         set((state) => { state.session = session }),
+
+      setLastReceipt: (receipt) =>
+        set((state) => { state.lastReceipt = receipt }),
 
       clearCart: () =>
         set((state) => {

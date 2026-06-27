@@ -1373,3 +1373,141 @@ export async function cancelSubscription(tenantId: string, reason?: string): Pro
   })
   if (error) throw error
 }
+
+// ── Cash Register ─────────────────────────────────────────────
+
+export interface CashRegisterRow {
+  id: string
+  tenant_id: string
+  branch_id: string
+  name: string
+  status: 'OPEN' | 'CLOSED' | 'PAUSED'
+  opened_at: string
+  closed_at: string | null
+  opening_cash: number
+  closing_cash: number | null
+  expected_cash: number | null
+  cash_difference: number | null
+  opened_by: string
+  closed_by: string | null
+}
+
+export interface ActiveCashRegister {
+  id: string
+  name: string
+  status: string
+  opened_at: string
+  opening_cash: number
+  opened_by: string
+  opened_by_name: string
+  sales_total: number
+  cash_sales: number
+  tx_count: number
+}
+
+export async function getActiveCashRegister(
+  tenantId: string,
+  branchId: string,
+): Promise<ActiveCashRegister | null> {
+  const { data, error } = await (supabase.rpc as any)('get_active_cash_register', {
+    p_tenant_id: tenantId,
+    p_branch_id: branchId,
+  })
+  if (error) throw error
+  if (!data) return null
+  return data as ActiveCashRegister
+}
+
+export async function openCashRegister(
+  tenantId: string,
+  branchId: string,
+  name: string,
+  openingCash: number,
+): Promise<CashRegisterRow> {
+  const { data, error } = await (supabase.rpc as any)('open_cash_register', {
+    p_tenant_id:    tenantId,
+    p_branch_id:    branchId,
+    p_name:         name,
+    p_opening_cash: openingCash,
+  })
+  if (error) throw error
+  return data as CashRegisterRow
+}
+
+export async function closeCashRegister(
+  registerId: string,
+  countedCash: number,
+  notes?: string,
+): Promise<CashRegisterRow> {
+  const { data, error } = await (supabase.rpc as any)('close_cash_register', {
+    p_register_id:  registerId,
+    p_counted_cash: countedCash,
+    p_notes:        notes ?? null,
+  })
+  if (error) throw error
+  return data as CashRegisterRow
+}
+
+// ── Sales History ──────────────────────────────────────────────
+
+export interface SaleHistoryRow {
+  id: string
+  order_number: string
+  status: 'COMPLETED' | 'CANCELLED' | 'PENDING' | 'REFUNDED'
+  total: number
+  subtotal: number
+  tax_total: number
+  discount_total: number
+  currency: string
+  created_at: string
+  notes: string | null
+  customers: { full_name: string } | null
+  sale_payments: { method: string; amount: number }[]
+  sale_items: { name: string; quantity: number; unit_price: number; total: number; discount_amount: number; tax: number; tax_amount: number }[]
+  created_by_profile: { full_name: string } | null
+}
+
+export async function getSalesHistory(
+  tenantId: string,
+  branchId: string,
+  params?: { since?: string; until?: string; limit?: number; status?: string },
+): Promise<SaleHistoryRow[]> {
+  let q = supabase
+    .from('sales')
+    .select(`
+      id, order_number, status, total, subtotal, tax_total, discount_total,
+      currency, created_at, notes,
+      customers(full_name),
+      sale_payments(method, amount),
+      sale_items(name, quantity, unit_price, total, discount_amount, tax, tax_amount)
+    `)
+    .eq('tenant_id', tenantId)
+    .eq('branch_id', branchId)
+    .order('created_at', { ascending: false })
+    .limit(params?.limit ?? 50)
+
+  if (params?.since)  q = q.gte('created_at', params.since)
+  if (params?.until)  q = q.lte('created_at', params.until)
+  if (params?.status) q = q.eq('status', params.status)
+
+  const { data, error } = await q
+  if (error) throw error
+  return (data ?? []) as unknown as SaleHistoryRow[]
+}
+
+export async function cancelSale(
+  tenantId: string,
+  saleId: string,
+  reason?: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from('sales')
+    .update({
+      status: 'CANCELLED',
+      notes:  reason ? `ANULADA: ${reason}` : 'ANULADA',
+    })
+    .eq('id', saleId)
+    .eq('tenant_id', tenantId)
+    .neq('status', 'CANCELLED')
+  if (error) throw error
+}

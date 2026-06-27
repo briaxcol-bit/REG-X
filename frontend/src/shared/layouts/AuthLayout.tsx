@@ -1,4 +1,4 @@
-import { Store, TrendingUp, Clock, ShieldCheck, Sun, Moon } from 'lucide-react'
+import { TrendingUp, Clock, ShieldCheck, Sun, Moon } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useTheme } from '@shared/hooks/useTheme'
 
@@ -59,12 +59,10 @@ export function AuthLayout({ children }: AuthLayoutProps) {
           transition={{ duration: 0.4 }}
           className="relative z-10 flex items-center gap-3"
         >
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-500 shadow-lg shadow-brand-500/40">
-            <Store className="h-5 w-5 text-white" />
-          </div>
+          <img src="/logo-icon.png" alt="R" className="h-16 w-16 object-contain" />
           <div>
-            <p className="font-black text-white text-xl tracking-tight">REG-X</p>
-            <p className="text-xs text-grafito-600 font-medium">ERP / POS Enterprise</p>
+            <p className="font-black text-white text-2xl tracking-tight">RegX</p>
+            <p className="text-sm text-grafito-500 font-medium">ERP Enterprise</p>
           </div>
         </motion.div>
 
@@ -169,12 +167,10 @@ export function AuthLayout({ children }: AuthLayoutProps) {
         >
           {/* Mobile logo */}
           <div className="mb-8 flex items-center gap-2 lg:hidden">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-500 shadow-lg shadow-brand-500/30">
-              <Store className="h-5 w-5 text-white" />
-            </div>
+            <img src="/logo-icon.png" alt="R" className="h-9 w-9 object-contain" />
             <div>
-              <span className="font-bold text-grafito-900 dark:text-white text-lg">REG-X</span>
-              <p className="text-xs text-grafito-500">ERP/POS Enterprise</p>
+              <span className="font-bold text-grafito-900 dark:text-white text-lg">RegX</span>
+              <p className="text-xs text-grafito-500">ERP Enterprise</p>
             </div>
           </div>
 

@@ -143,3 +143,31 @@
     border: 1px solid rgba(255, 255, 255, 0.06);
   }
 }
+
+/* ── Impresión térmica POS ───────────────────────────────────────── */
+@media print {
+  @page {
+    size: 80mm auto;
+    margin: 0;
+  }
+
+  html, body {
+    width: 80mm !important;
+    min-width: 0 !important;
+    max-width: 80mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Ocultar todo excepto el recibo (portal directo en body) */
+  body > *:not(#pos-receipt) { display: none !important; }
+
+  #pos-receipt {
+    display: block !important;
+    width: 80mm !important;
+    max-width: 80mm !important;
+  }
+}

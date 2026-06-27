@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createTenantWithOwner, uploadTenantLogo, type CreateTenantInput } from '@lib/db'
+import { supabase } from '@lib/supabase'
 import { X, Loader2, Building2, UserPlus, CheckCircle, AlertCircle, Copy, UploadCloud, Palette, Image as ImageIcon } from 'lucide-react'
 import { cn } from '@shared/utils/cn'
 
@@ -10,34 +11,144 @@ interface CreateTenantModalProps {
 }
 
 const BUSINESS_TYPES = [
-  { value: 'STORE', label: 'Tienda' },
-  { value: 'RESTAURANT', label: 'Restaurante' },
-  { value: 'BAR', label: 'Bar' },
-  { value: 'RESTOBAR', label: 'Resto-Bar' },
-  { value: 'BAKERY', label: 'Panadería' },
+  { value: 'STORE',          label: 'Tienda' },
+  { value: 'HARDWARE',       label: 'Ferretería' },
+  { value: 'MINIMARKET',     label: 'Minimarket' },
+  { value: 'WHOLESALE',      label: 'Mayorista / Distribuidora' },
+  { value: 'PHARMACY',       label: 'Farmacia' },
+  { value: 'RESTAURANT',     label: 'Restaurante' },
+  { value: 'CAFE',           label: 'Cafetería' },
+  { value: 'BAR',            label: 'Bar' },
+  { value: 'RESTOBAR',       label: 'Resto-Bar' },
+  { value: 'BAKERY',         label: 'Panadería' },
   { value: 'ICE_CREAM_SHOP', label: 'Heladería' },
-  { value: 'PHARMACY', label: 'Farmacia' },
-  { value: 'MINIMARKET', label: 'Minimarket' },
-  { value: 'CUSTOM', label: 'Otro' },
+  { value: 'SERVICES',       label: 'Servicios (taller, peluquería…)' },
+  { value: 'CUSTOM',         label: 'Otro (configuración manual)' },
 ]
+
+const MODULE_LABELS: Record<string, string> = {
+  // Core
+  pos:                'Punto de Venta',
+  inventory:          'Inventario',
+  customers:          'Clientes',
+  reports:            'Reportes',
+  expenses:           'Gastos Operativos',
+  suppliers:          'Proveedores',
+  // Restaurant / F&B
+  kitchen_display:    'Pantalla de Cocina (KDS)',
+  tables:             'Gestión de Mesas',
+  reservations:       'Reservas',
+  bar_tabs:           'Comandas de Bar',
+  delivery:           'Delivery',
+  menu_digital:       'Menú Digital QR',
+  tips:               'Propinas',
+  split_bill:         'División de Cuenta',
+  // Retail
+  promotions:         'Promociones y Descuentos',
+  loyalty:            'Fidelización',
+  label_printer:      'Impresora de Etiquetas',
+  purchase_orders:    'Órdenes de Compra',
+  price_lists:        'Listas de Precios',
+  gift_cards:         'Tarjetas de Regalo',
+  layaway:            'Apartados',
+  // Pharmacy
+  prescriptions:      'Recetas Médicas',
+  expiry_control:     'Control de Vencimientos',
+  batch_tracking:     'Trazabilidad por Lotes',
+  drug_catalog:       'Catálogo de Medicamentos',
+  // Hardware
+  quotes:             'Cotizaciones',
+  work_orders:        'Órdenes de Trabajo',
+  assemblies:         'Ensambles y Kits',
+  unit_conversion:    'Conversión de Unidades',
+  serial_tracking:    'Seguimiento por Serial',
+  // Finance
+  accounting:         'Contabilidad',
+  accounts_receivable:'Cuentas por Cobrar',
+  accounts_payable:   'Cuentas por Pagar',
+  tax_reports:        'Informes Tributarios',
+  payroll:            'Nómina',
+  // HR
+  employees:          'Empleados',
+  attendance:         'Asistencia y Turnos',
+  commissions:        'Comisiones',
+  // Advanced
+  multi_branch:       'Multi-Sucursal',
+  warehouse_transfer: 'Transferencia de Bodegas',
+  ecommerce:          'Tienda en Línea',
+  webhooks:           'Webhooks / API',
+  audit_log:          'Auditoría',
+}
+
+// Módulos core que no se pueden desactivar
+const CORE_MODULES = ['pos','inventory','customers','reports','expenses','suppliers']
+
+const MODULES_BY_TYPE: Record<string, string[]> = {
+  STORE:          ['pos','inventory','customers','reports','expenses','suppliers',
+                   'promotions','loyalty','label_printer','purchase_orders','price_lists','gift_cards','layaway',
+                   'employees','commissions','attendance','accounts_receivable','accounts_payable'],
+  HARDWARE:       ['pos','inventory','customers','reports','expenses','suppliers',
+                   'quotes','work_orders','assemblies','unit_conversion','serial_tracking',
+                   'label_printer','purchase_orders','price_lists','promotions','layaway',
+                   'employees','commissions','attendance','accounts_receivable','accounts_payable'],
+  MINIMARKET:     ['pos','inventory','customers','reports','expenses','suppliers',
+                   'promotions','loyalty','label_printer','purchase_orders','price_lists','gift_cards',
+                   'expiry_control','batch_tracking',
+                   'employees','commissions','attendance','accounts_payable'],
+  WHOLESALE:      ['pos','inventory','customers','reports','expenses','suppliers',
+                   'purchase_orders','price_lists','quotes','label_printer','batch_tracking','serial_tracking',
+                   'employees','attendance','accounts_receivable','accounts_payable','tax_reports'],
+  PHARMACY:       ['pos','inventory','customers','reports','expenses','suppliers',
+                   'prescriptions','expiry_control','batch_tracking','drug_catalog',
+                   'label_printer','purchase_orders','price_lists',
+                   'employees','attendance','accounts_receivable','accounts_payable','tax_reports'],
+  RESTAURANT:     ['pos','inventory','customers','reports','expenses','suppliers',
+                   'kitchen_display','tables','reservations','delivery','menu_digital','tips','split_bill',
+                   'promotions','loyalty',
+                   'employees','commissions','attendance','payroll','accounts_payable'],
+  CAFE:           ['pos','inventory','customers','reports','expenses','suppliers',
+                   'kitchen_display','tables','delivery','menu_digital','tips',
+                   'promotions','loyalty',
+                   'employees','commissions','attendance'],
+  BAR:            ['pos','inventory','customers','reports','expenses','suppliers',
+                   'kitchen_display','tables','bar_tabs','tips','split_bill',
+                   'promotions','loyalty',
+                   'employees','commissions','attendance'],
+  RESTOBAR:       ['pos','inventory','customers','reports','expenses','suppliers',
+                   'kitchen_display','tables','bar_tabs','reservations','delivery','menu_digital','tips','split_bill',
+                   'promotions','loyalty',
+                   'employees','commissions','attendance','payroll','accounts_payable'],
+  BAKERY:         ['pos','inventory','customers','reports','expenses','suppliers',
+                   'kitchen_display','delivery','menu_digital',
+                   'promotions','loyalty','label_printer','purchase_orders',
+                   'employees','commissions','attendance'],
+  ICE_CREAM_SHOP: ['pos','inventory','customers','reports','expenses','suppliers',
+                   'promotions','loyalty','label_printer',
+                   'employees','commissions','attendance'],
+  SERVICES:       ['pos','inventory','customers','reports','expenses','suppliers',
+                   'quotes','work_orders',
+                   'employees','commissions','attendance','payroll',
+                   'accounts_receivable','accounts_payable'],
+  CUSTOM:         ['pos','inventory','customers','reports','expenses','suppliers'],
+}
 
 const PLANS = ['FREE', 'BASIC', 'PROFESSIONAL', 'ENTERPRISE'] as const
 
 const PRESET_COLORS = [
   { name: 'Rojo (Default)', value: '#F20D18' },
-  { name: 'Esmeralda', value: '#10b981' },
-  { name: 'Azul', value: '#3b82f6' },
-  { name: 'Violeta', value: '#8b5cf6' },
-  { name: 'Naranja', value: '#f97316' },
-  { name: 'Ámbar', value: '#f59e0b' },
-  { name: 'Cian', value: '#06b6d4' },
-  { name: 'Rosa', value: '#ec4899' },
-  { name: 'Grafito', value: '#374151' },
-  { name: 'Negro', value: '#111827' },
+  { name: 'Esmeralda',      value: '#10b981' },
+  { name: 'Azul',           value: '#3b82f6' },
+  { name: 'Violeta',        value: '#8b5cf6' },
+  { name: 'Naranja',        value: '#f97316' },
+  { name: 'Ámbar',          value: '#f59e0b' },
+  { name: 'Cian',           value: '#06b6d4' },
+  { name: 'Rosa',           value: '#ec4899' },
+  { name: 'Grafito',        value: '#374151' },
+  { name: 'Negro',          value: '#111827' },
 ]
 
 const slugify = (s: string) =>
-  s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
 
 const initial: CreateTenantInput = {
@@ -48,12 +159,30 @@ const initial: CreateTenantInput = {
   secondary_color: '#111827',
 }
 
+async function disableModules(tenantId: string, slugsToDisable: string[]) {
+  if (!slugsToDisable.length) return
+  // Obtener los module_ids de los slugs a deshabilitar
+  const { data: mods } = await (supabase as any)
+    .from('marketplace_modules')
+    .select('id, slug')
+    .in('slug', slugsToDisable)
+  if (!mods?.length) return
+  const ids = mods.map((m: any) => m.id)
+  await (supabase as any)
+    .from('tenant_modules')
+    .update({ is_enabled: false })
+    .eq('tenant_id', tenantId)
+    .in('module_id', ids)
+}
+
 export function CreateTenantModal({ open, onClose }: CreateTenantModalProps) {
   const qc = useQueryClient()
   const [form, setForm] = useState<CreateTenantInput>(initial)
   const [slugTouched, setSlugTouched] = useState(false)
-  
-  // Customization state
+  const [selectedModules, setSelectedModules] = useState<Set<string>>(
+    new Set(MODULES_BY_TYPE['STORE'])
+  )
+
   const [logoFile, setLogoFile] = useState<File | null>(null)
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -61,10 +190,16 @@ export function CreateTenantModal({ open, onClose }: CreateTenantModalProps) {
   const mutation = useMutation({
     mutationFn: async () => {
       let finalLogoUrl: string | undefined = undefined
-      if (logoFile) {
-        finalLogoUrl = await uploadTenantLogo(logoFile)
-      }
-      return createTenantWithOwner({ ...form, logo_url: finalLogoUrl })
+      if (logoFile) finalLogoUrl = await uploadTenantLogo(logoFile)
+
+      const result = await createTenantWithOwner({ ...form, logo_url: finalLogoUrl })
+
+      // Deshabilitar módulos que el admin desmarcó
+      const defaultMods = MODULES_BY_TYPE[form.business_type] ?? MODULES_BY_TYPE.CUSTOM
+      const toDisable = defaultMods.filter((s) => !selectedModules.has(s))
+      if (result?.tenant_id) await disableModules(result.tenant_id, toDisable)
+
+      return result
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['platform-tenants'] })
@@ -79,6 +214,20 @@ export function CreateTenantModal({ open, onClose }: CreateTenantModalProps) {
 
   const handleName = (v: string) =>
     setForm((f) => ({ ...f, name: v, slug: slugTouched ? f.slug : slugify(v) }))
+
+  const handleBusinessType = (biz: string) => {
+    set('business_type', biz)
+    setSelectedModules(new Set(MODULES_BY_TYPE[biz] ?? MODULES_BY_TYPE.CUSTOM))
+  }
+
+  const toggleModule = (slug: string) => {
+    if (CORE_MODULES.includes(slug)) return // core no se puede desactivar
+    setSelectedModules((prev) => {
+      const next = new Set(prev)
+      next.has(slug) ? next.delete(slug) : next.add(slug)
+      return next
+    })
+  }
 
   const handleLogoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -100,31 +249,33 @@ export function CreateTenantModal({ open, onClose }: CreateTenantModalProps) {
   const done = mutation.isSuccess
   const result = mutation.data
 
-  const reset = () => { 
+  const reset = () => {
     mutation.reset()
     setForm(initial)
     setSlugTouched(false)
     setLogoFile(null)
     setLogoPreview(null)
+    setSelectedModules(new Set(MODULES_BY_TYPE['STORE']))
   }
   const close = () => { reset(); onClose() }
+
+  const defaultMods = MODULES_BY_TYPE[form.business_type] ?? MODULES_BY_TYPE.CUSTOM
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={close} />
       <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-grafito-200 dark:border-white/10 bg-white dark:bg-grafito-900 shadow-2xl">
+
         {/* Header */}
         <div className="flex items-center justify-between border-b border-grafito-200 dark:border-white/5 px-6 py-4">
           <div className="flex items-center gap-3">
-            <div 
+            <div
               className="flex h-10 w-10 items-center justify-center rounded-xl"
               style={{ backgroundColor: `${form.primary_color}15`, color: form.primary_color }}
             >
-              {logoPreview ? (
-                <img src={logoPreview} alt="Logo" className="h-full w-full rounded-xl object-cover" />
-              ) : (
-                <Building2 className="h-5 w-5" />
-              )}
+              {logoPreview
+                ? <img src={logoPreview} alt="Logo" className="h-full w-full rounded-xl object-cover" />
+                : <Building2 className="h-5 w-5" />}
             </div>
             <div>
               <h2 className="text-base font-bold text-grafito-900 dark:text-white">Nuevo tenant</h2>
@@ -161,25 +312,18 @@ export function CreateTenantModal({ open, onClose }: CreateTenantModalProps) {
           </div>
         ) : (
           /* ── Formulario ── */
-          <form
-            onSubmit={(e) => { e.preventDefault(); if (valid) mutation.mutate() }}
-            className="p-6 space-y-6"
-          >
+          <form onSubmit={(e) => { e.preventDefault(); if (valid) mutation.mutate() }} className="p-6 space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+              {/* ── Columna izquierda ── */}
               <div className="space-y-6">
                 <Section title="Identidad Visual" icon={<Palette className="h-3.5 w-3.5" />}>
                   <Field label="Logo (Opcional)">
-                    <div 
+                    <div
                       onClick={() => fileInputRef.current?.click()}
                       className="mt-1 flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-grafito-200 dark:border-white/10 rounded-xl cursor-pointer hover:bg-grafito-50 dark:hover:bg-white/5 transition-colors overflow-hidden relative group"
                     >
-                      <input 
-                        type="file" 
-                        ref={fileInputRef} 
-                        onChange={handleLogoSelect} 
-                        accept="image/*" 
-                        className="hidden" 
-                      />
+                      <input type="file" ref={fileInputRef} onChange={handleLogoSelect} accept="image/*" className="hidden" />
                       {logoPreview ? (
                         <>
                           <img src={logoPreview} alt="Preview" className="h-full object-contain" />
@@ -200,28 +344,17 @@ export function CreateTenantModal({ open, onClose }: CreateTenantModalProps) {
                     <div className="flex flex-col gap-3">
                       <div className="flex flex-wrap gap-2 mt-1">
                         {PRESET_COLORS.map(color => (
-                          <button
-                            key={color.value}
-                            type="button"
-                            onClick={() => set('primary_color', color.value)}
-                            className={cn(
-                              "w-6 h-6 rounded-full border-2 transition-all",
-                              form.primary_color === color.value 
-                                ? "border-grafito-900 dark:border-white scale-110" 
-                                : "border-transparent scale-100 opacity-80 hover:scale-110 hover:opacity-100"
-                            )}
-                            style={{ backgroundColor: color.value }}
-                            title={color.name}
-                          />
+                          <button key={color.value} type="button" onClick={() => set('primary_color', color.value)}
+                            className={cn("w-6 h-6 rounded-full border-2 transition-all",
+                              form.primary_color === color.value
+                                ? "border-grafito-900 dark:border-white scale-110"
+                                : "border-transparent scale-100 opacity-80 hover:scale-110 hover:opacity-100")}
+                            style={{ backgroundColor: color.value }} title={color.name} />
                         ))}
                       </div>
                       <div className="flex items-center gap-2">
-                        <input
-                          type="color"
-                          value={form.primary_color}
-                          onChange={(e) => set('primary_color', e.target.value)}
-                          className="h-8 w-12 rounded cursor-pointer border-0 p-0 bg-transparent"
-                        />
+                        <input type="color" value={form.primary_color} onChange={(e) => set('primary_color', e.target.value)}
+                          className="h-8 w-12 rounded cursor-pointer border-0 p-0 bg-transparent" />
                         <span className="text-xs font-mono text-grafito-500">{form.primary_color}</span>
                       </div>
                     </div>
@@ -231,34 +364,23 @@ export function CreateTenantModal({ open, onClose }: CreateTenantModalProps) {
                     <div className="flex flex-col gap-3">
                       <div className="flex flex-wrap gap-2 mt-1">
                         {PRESET_COLORS.map(color => (
-                          <button
-                            key={color.value}
-                            type="button"
-                            onClick={() => set('secondary_color', color.value)}
-                            className={cn(
-                              "w-6 h-6 rounded-full border-2 transition-all",
-                              form.secondary_color === color.value 
-                                ? "border-grafito-900 dark:border-white scale-110" 
-                                : "border-transparent scale-100 opacity-80 hover:scale-110 hover:opacity-100"
-                            )}
-                            style={{ backgroundColor: color.value }}
-                            title={color.name}
-                          />
+                          <button key={color.value} type="button" onClick={() => set('secondary_color', color.value)}
+                            className={cn("w-6 h-6 rounded-full border-2 transition-all",
+                              form.secondary_color === color.value
+                                ? "border-grafito-900 dark:border-white scale-110"
+                                : "border-transparent scale-100 opacity-80 hover:scale-110 hover:opacity-100")}
+                            style={{ backgroundColor: color.value }} title={color.name} />
                         ))}
                       </div>
                       <div className="flex items-center gap-2">
-                        <input
-                          type="color"
-                          value={form.secondary_color ?? '#111827'}
-                          onChange={(e) => set('secondary_color', e.target.value)}
-                          className="h-8 w-12 rounded cursor-pointer border-0 p-0 bg-transparent"
-                        />
+                        <input type="color" value={form.secondary_color ?? '#111827'} onChange={(e) => set('secondary_color', e.target.value)}
+                          className="h-8 w-12 rounded cursor-pointer border-0 p-0 bg-transparent" />
                         <span className="text-xs font-mono text-grafito-500">{form.secondary_color}</span>
                       </div>
                     </div>
                   </Field>
                 </Section>
-                
+
                 <Section title="Usuario OWNER" icon={<UserPlus className="h-3.5 w-3.5" />}>
                   <Field label="Nombre completo">
                     <input value={form.owner_name} onChange={(e) => set('owner_name', e.target.value)}
@@ -275,6 +397,7 @@ export function CreateTenantModal({ open, onClose }: CreateTenantModalProps) {
                 </Section>
               </div>
 
+              {/* ── Columna derecha ── */}
               <div className="space-y-6">
                 <Section title="Información de Empresa" icon={<Building2 className="h-3.5 w-3.5" />}>
                   <Field label="Nombre">
@@ -288,7 +411,7 @@ export function CreateTenantModal({ open, onClose }: CreateTenantModalProps) {
                   </Field>
                   <div className="grid grid-cols-2 gap-3">
                     <Field label="Tipo de negocio">
-                      <select value={form.business_type} onChange={(e) => set('business_type', e.target.value)} className={inputCls}>
+                      <select value={form.business_type} onChange={(e) => handleBusinessType(e.target.value)} className={inputCls}>
                         {BUSINESS_TYPES.map((b) => <option key={b.value} value={b.value}>{b.label}</option>)}
                       </select>
                     </Field>
@@ -310,29 +433,77 @@ export function CreateTenantModal({ open, onClose }: CreateTenantModalProps) {
                   </div>
                 </Section>
 
-                {/* Live Preview Card */}
-                <div className="mt-4 p-4 rounded-xl border border-grafito-200 dark:border-white/10 overflow-hidden relative">
-                  <div
-                    className="absolute inset-0 opacity-10"
-                    style={{ background: `linear-gradient(135deg, ${form.primary_color}, ${form.secondary_color ?? '#111827'})` }}
-                  />
+                {/* ── Módulos toggleables ── */}
+                <Section title="Módulos" icon={
+                  <span className="text-[10px] font-semibold text-grafito-400">
+                    {selectedModules.size}/{defaultMods.length} activos
+                  </span>
+                }>
+                  <div className="space-y-1">
+                    {defaultMods.map((slug) => {
+                      const isCore = CORE_MODULES.includes(slug)
+                      const active = selectedModules.has(slug)
+                      return (
+                        <button
+                          key={slug}
+                          type="button"
+                          onClick={() => toggleModule(slug)}
+                          className={cn(
+                            'flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition-colors',
+                            active
+                              ? 'bg-grafito-50 dark:bg-white/5'
+                              : 'bg-grafito-50/40 dark:bg-white/[0.02] opacity-50',
+                            isCore ? 'cursor-default' : 'hover:bg-grafito-100 dark:hover:bg-white/10 cursor-pointer'
+                          )}
+                        >
+                          <span className={cn(
+                            'font-medium',
+                            active ? 'text-grafito-800 dark:text-white' : 'text-grafito-400 line-through'
+                          )}>
+                            {MODULE_LABELS[slug] ?? slug}
+                          </span>
+                          <span className="flex items-center gap-1.5 shrink-0 ml-2">
+                            {isCore && (
+                              <span className="text-[9px] font-bold uppercase text-grafito-400 bg-grafito-100 dark:bg-white/10 px-1.5 py-0.5 rounded">
+                                core
+                              </span>
+                            )}
+                            {/* Toggle pill */}
+                            <span
+                              className={cn(
+                                'relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors',
+                                active ? 'bg-emerald-500' : 'bg-grafito-300 dark:bg-white/20'
+                              )}
+                            >
+                              <span className={cn(
+                                'inline-block h-3 w-3 rounded-full bg-white shadow transition-transform',
+                                active ? 'translate-x-3.5' : 'translate-x-0.5'
+                              )} />
+                            </span>
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </Section>
+
+                {/* Live Preview */}
+                <div className="p-4 rounded-xl border border-grafito-200 dark:border-white/10 overflow-hidden relative">
+                  <div className="absolute inset-0 opacity-10"
+                    style={{ background: `linear-gradient(135deg, ${form.primary_color}, ${form.secondary_color ?? '#111827'})` }} />
                   <p className="text-xs font-semibold text-grafito-400 mb-3 uppercase tracking-wider relative z-10">Preview de Marca</p>
                   <div className="flex items-center gap-3 relative z-10">
-                    <div 
-                      className="h-12 w-12 rounded-lg flex items-center justify-center shrink-0 shadow-md overflow-hidden" 
-                      style={{ background: `linear-gradient(135deg, ${form.primary_color}, ${form.secondary_color ?? '#111827'})` }}
-                    >
-                      {logoPreview ? (
-                        <img src={logoPreview} alt="Logo" className="h-full w-full object-cover" />
-                      ) : (
-                        <span className="text-white font-bold text-lg">{(form.name || 'E').charAt(0).toUpperCase()}</span>
-                      )}
+                    <div className="h-12 w-12 rounded-lg flex items-center justify-center shrink-0 shadow-md overflow-hidden"
+                      style={{ background: `linear-gradient(135deg, ${form.primary_color}, ${form.secondary_color ?? '#111827'})` }}>
+                      {logoPreview
+                        ? <img src={logoPreview} alt="Logo" className="h-full w-full object-cover" />
+                        : <span className="text-white font-bold text-lg">{(form.name || 'E').charAt(0).toUpperCase()}</span>}
                     </div>
                     <div className="flex-1 overflow-hidden">
                       <p className="font-semibold text-sm truncate dark:text-white">{form.name || 'Mi Empresa S.A.S'}</p>
                       <div className="flex gap-1 mt-1.5">
-                        <div className="h-1.5 w-16 rounded-full" style={{ backgroundColor: form.primary_color }}></div>
-                        <div className="h-1.5 w-10 rounded-full" style={{ backgroundColor: form.secondary_color ?? '#111827' }}></div>
+                        <div className="h-1.5 w-16 rounded-full" style={{ backgroundColor: form.primary_color }} />
+                        <div className="h-1.5 w-10 rounded-full" style={{ backgroundColor: form.secondary_color ?? '#111827' }} />
                       </div>
                     </div>
                     <button type="button" className="px-3 py-1.5 text-xs font-semibold rounded-lg text-white shadow-md"
@@ -376,8 +547,9 @@ const inputCls =
 function Section({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="space-y-4 bg-white dark:bg-grafito-800/50 p-4 rounded-xl border border-grafito-100 dark:border-white/5">
-      <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-grafito-500 dark:text-grafito-400">
-        {icon}{title}
+      <p className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-grafito-500 dark:text-grafito-400">
+        <span>{title}</span>
+        {icon}
       </p>
       {children}
     </div>

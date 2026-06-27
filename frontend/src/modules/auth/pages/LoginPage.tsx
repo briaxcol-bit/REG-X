@@ -6,6 +6,7 @@ import { useAuthStore } from '@store/auth.store'
 import { supabase } from '@lib/supabase'
 import { resolveUserContext } from '@lib/db'
 import { useTheme } from '@shared/hooks/useTheme'
+import { FullscreenLoader } from '@shared/components/FullscreenLoader'
 
 // ── Glass Input wrapper ──────────────────────────────────────────────────────
 
@@ -386,6 +387,7 @@ export default function LoginPage() {
 
   return (
     <>
+      {loading && <FullscreenLoader />}
       {showPolicy && <PrivacyPolicyModal onClose={() => setShowPolicy(false)} />}
 
       <div className="space-y-5">

@@ -80,36 +80,26 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       {/* ── Logo ─────────────────────────────────────────── */}
       <div className="flex h-16 items-center border-b border-grafito-200 dark:border-white/5 px-3">
         {collapsed ? (
-          /* Colapsado: logo centrado clickeable para expandir */
+          /* Colapsado: ícono R clickeable para expandir */
           <button
             onClick={onToggle}
-            className="mx-auto flex h-8 w-8 items-center justify-center rounded-lg bg-primary hover:opacity-90 transition-opacity"
+            className="mx-auto flex h-9 w-9 items-center justify-center hover:opacity-80 transition-opacity"
             title="Expandir sidebar"
           >
-            {isSuperAdmin ? (
-              <ShieldCheck className="h-4 w-4 text-white" />
-            ) : (
-              <Store className="h-4 w-4 text-white" />
-            )}
+            <img src="/logo-icon.png" alt="RegX" className="h-9 w-9 object-contain" />
           </button>
         ) : (
-          /* Expandido: logo + nombre + flecha */
+          /* Expandido: R + nombre */
           <>
             <div className="flex items-center gap-2 min-w-0 flex-1">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary">
-                {isSuperAdmin ? (
-                  <ShieldCheck className="h-4 w-4 text-white" />
-                ) : (
-                  <Store className="h-4 w-4 text-white" />
-                )}
-              </div>
+              <img src="/logo-icon.png" alt="RegX" className="h-8 w-8 object-contain shrink-0" />
               <motion.div
                 initial={{ opacity: 0, x: -8 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ duration: 0.18 }}
                 className="flex flex-col min-w-0"
               >
-                <span className="text-sm font-bold text-grafito-900 dark:text-white">REG-X</span>
+                <span className="text-sm font-bold text-grafito-900 dark:text-white leading-tight">RegX</span>
                 <span className="text-[10px] text-grafito-500 dark:text-grafito-400 truncate max-w-[140px]">
                   {isSuperAdmin ? 'Super Admin' : (tenant?.tenantName ?? 'ERP/POS')}
                 </span>
