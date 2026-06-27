@@ -5,7 +5,7 @@ import { usePOSStore } from '@store/pos.store'
 import { useAuthStore } from '@store/auth.store'
 import { cn } from '@shared/utils/cn'
 import { formatCurrency } from '@shared/utils/format'
-import { useProducts } from '@modules/products/hooks/useProducts'
+import { useProducts, useCategories } from '@modules/products/hooks/useProducts'
 import { CheckoutModal } from '@modules/pos/components/CheckoutModal'
 import { BarcodeScanner } from '@modules/pos/components/BarcodeScanner'
 import { CustomerPicker } from '@modules/pos/components/CustomerPicker'
@@ -187,6 +187,9 @@ export default function POSPage() {
     categoryId: selectedCategory ?? undefined,
   })
 
+  // Categories query
+  const { data: categories = [] } = useCategories()
+
   const handleAddProduct = useCallback((product: typeof products[0]) => {
     const existing = items.find(i => i.productId === product.id)
     if (existing && existing.quantity >= product.stock) {
@@ -252,15 +255,32 @@ export default function POSPage() {
           <button
             onClick={() => setSelectedCategory(null)}
             className={cn(
-              'shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors',
+              'shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors border',
               !selectedCategory
-                ? 'bg-brand-500 text-grafito-900 dark:text-white'
-                : 'bg-grafito-100 dark:bg-grafito-800 text-grafito-600 dark:text-grafito-300 hover:bg-grafito-200 dark:hover:bg-grafito-700',
+                ? 'bg-brand-500 text-grafito-900 dark:text-white border-brand-500'
+                : 'bg-grafito-100 dark:bg-grafito-800 text-grafito-600 dark:text-grafito-300 border-transparent hover:bg-grafito-200 dark:hover:bg-grafito-700',
             )}
           >
             Todos
           </button>
-          {/* Categories rendered dynamically */}
+          {categories.filter(c => c.is_active).map((cat) => (
+            <button
+              key={cat.id}
+              onClick={() => setSelectedCategory(cat.id)}
+              className={cn(
+                'shrink-0 flex items-center rounded-lg px-3 py-1.5 text-xs font-medium transition-colors border',
+                selectedCategory === cat.id
+                  ? 'bg-brand-500 text-grafito-900 dark:text-white border-brand-500'
+                  : 'bg-grafito-100 dark:bg-grafito-800 text-grafito-600 dark:text-grafito-300 border-transparent hover:bg-grafito-200 dark:hover:bg-grafito-700',
+              )}
+            >
+              <span
+                className="mr-1.5 h-2 w-2 rounded-full shrink-0"
+                style={{ backgroundColor: cat.color ?? '#9ca3af' }}
+              />
+              {cat.name}
+            </button>
+          ))}
         </div>
 
         {/* Product grid */}
