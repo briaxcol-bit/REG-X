@@ -897,10 +897,19 @@ CREATE POLICY "branches_update" ON branches
     user_role_in_tenant(tenant_id) IN ('OWNER', 'ADMIN')
   );
 
--- user_profiles: users see their own profile
+-- user_profiles: users see own profile OR profiles of teammates in the same tenant
 DROP POLICY IF EXISTS "user_profiles_select" ON user_profiles;
 CREATE POLICY "user_profiles_select" ON user_profiles
-  FOR SELECT USING (id = auth.uid());
+  FOR SELECT USING (
+    id = auth.uid()
+    OR EXISTS (
+      SELECT 1
+      FROM user_tenant_roles my_role
+      JOIN user_tenant_roles their_role ON their_role.tenant_id = my_role.tenant_id
+      WHERE my_role.user_id   = auth.uid()
+        AND their_role.user_id = user_profiles.id
+    )
+  );
 
 DROP POLICY IF EXISTS "user_profiles_update" ON user_profiles;
 CREATE POLICY "user_profiles_update" ON user_profiles
@@ -1712,3 +1721,70 @@ DO $$ BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE products;
 EXCEPTION WHEN OTHERS THEN NULL;
 END $$;
+
+-- ════════════════════════════════════════════════════════════════
+-- 011 — RPC: add_employee_to_tenant
+-- ════════════════════════════════════════════════════════════════
+CREATE OR REPLACE FUNCTION add_employee_to_tenant(
+  p_email      TEXT,
+  p_full_name  TEXT,
+  p_password   TEXT,
+  p_role       TEXT,
+  p_tenant_id  UUID,
+  p_branch_id  UUID DEFAULT NULL
+)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+DECLARE
+  v_user_id UUID;
+BEGIN
+  IF p_role IN ('OWNER', 'ADMIN') THEN
+    RAISE EXCEPTION 'No se puede asignar el rol % mediante esta función.', p_role;
+  END IF;
+
+  SELECT id INTO v_user_id FROM auth.users WHERE email = lower(trim(p_email));
+
+  IF v_user_id IS NULL THEN
+    v_user_id := gen_random_uuid();
+    INSERT INTO auth.users (
+      instance_id, id, aud, role, email,
+      encrypted_password, email_confirmed_at,
+      raw_app_meta_data, raw_user_meta_data,
+      created_at, updated_at,
+      confirmation_token, recovery_token,
+      email_change_token_new, email_change
+    ) VALUES (
+      '00000000-0000-0000-0000-000000000000', v_user_id,
+      'authenticated', 'authenticated', lower(trim(p_email)),
+      crypt(p_password, gen_salt('bf', 10)), NOW(),
+      '{"provider":"email","providers":["email"]}',
+      jsonb_build_object('full_name', p_full_name),
+      NOW(), NOW(), '', '', '', ''
+    );
+    INSERT INTO auth.identities (
+      id, user_id, identity_data, provider, provider_id,
+      last_sign_in_at, created_at, updated_at
+    ) VALUES (
+      gen_random_uuid(), v_user_id,
+      jsonb_build_object('sub', v_user_id::text, 'email', lower(trim(p_email))),
+      'email', lower(trim(p_email)), NOW(), NOW(), NOW()
+    );
+  END IF;
+
+  INSERT INTO user_profiles (id, full_name)
+  VALUES (v_user_id, p_full_name)
+  ON CONFLICT (id) DO UPDATE SET full_name = EXCLUDED.full_name;
+
+  INSERT INTO user_tenant_roles (user_id, tenant_id, branch_id, role, is_active)
+  VALUES (v_user_id, p_tenant_id, p_branch_id, p_role::business_role, true)
+  ON CONFLICT (user_id, tenant_id)
+  DO UPDATE SET role = p_role::business_role, is_active = true, branch_id = p_branch_id;
+
+  RETURN v_user_id;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION add_employee_to_tenant TO authenticated;

@@ -65,14 +65,19 @@ export interface CategoryRow {
 }
 
 export interface CustomerRow {
-  id: string
-  tenant_id: string
-  full_name: string
-  email: string | null
-  phone: string | null
-  tax_id: string | null
+  id:            string
+  tenant_id:     string
+  person_type:   'NATURAL' | 'EMPRESA'
+  doc_type:      string
+  regime:        'SIMPLIFICADO' | 'COMUN'
+  full_name:     string
+  business_name: string | null
+  email:         string | null
+  phone:         string | null
+  tax_id:        string | null
+  address:       { city?: string; department?: string; street?: string } | null
   loyalty_points: number
-  created_at: string
+  created_at:    string
 }
 
 export interface SaleRow {
@@ -603,20 +608,22 @@ export async function getCategories(tenantId: string): Promise<CategoryRow[]> {
 
 // ── Customers ──────────────────────────────────────────────────
 
+const CUSTOMER_SELECT = 'id, tenant_id, person_type, doc_type, regime, full_name, business_name, email, phone, tax_id, address, loyalty_points, created_at'
+
 export async function getCustomers(
   tenantId: string,
   params?: { search?: string; limit?: number },
 ): Promise<CustomerRow[]> {
   let q = supabase
     .from('customers')
-    .select('id, tenant_id, full_name, email, phone, tax_id, loyalty_points, created_at')
+    .select(CUSTOMER_SELECT)
     .eq('tenant_id', tenantId)
     .is('deleted_at', null)
     .order('full_name')
 
   if (params?.search) {
     q = q.or(
-      `full_name.ilike.%${params.search}%,email.ilike.%${params.search}%,phone.ilike.%${params.search}%,tax_id.ilike.%${params.search}%`,
+      `full_name.ilike.%${params.search}%,business_name.ilike.%${params.search}%,email.ilike.%${params.search}%,phone.ilike.%${params.search}%,tax_id.ilike.%${params.search}%`,
     )
   }
 
@@ -624,18 +631,30 @@ export async function getCustomers(
 
   const { data, error } = await q
   if (error) throw error
-  return data ?? []
+  return (data ?? []) as CustomerRow[]
+}
+
+export interface CustomerInput {
+  person_type:   'NATURAL' | 'EMPRESA'
+  doc_type:      string
+  regime:        'SIMPLIFICADO' | 'COMUN'
+  full_name:     string
+  business_name?: string | null
+  email?:        string | null
+  phone?:        string | null
+  tax_id?:       string | null
+  address?:      { city?: string; department?: string; street?: string } | null
 }
 
 export async function createCustomer(
   tenantId: string,
   branchId: string,
-  data: { full_name: string; email?: string; phone?: string; tax_id?: string },
+  data: CustomerInput,
 ) {
   const { data: row, error } = await supabase
     .from('customers')
     .insert({ ...data, tenant_id: tenantId, branch_id: branchId })
-    .select()
+    .select(CUSTOMER_SELECT)
     .single()
   if (error) throw error
   return row
@@ -643,13 +662,13 @@ export async function createCustomer(
 
 export async function updateCustomer(
   customerId: string,
-  data: { full_name: string; email?: string; phone?: string; tax_id?: string },
+  data: CustomerInput,
 ) {
   const { data: row, error } = await supabase
     .from('customers')
     .update(data)
     .eq('id', customerId)
-    .select()
+    .select(CUSTOMER_SELECT)
     .single()
   if (error) throw error
   return row
@@ -991,6 +1010,173 @@ export async function getSalesReport(
     byPaymentMethod,
     recentSales: rows.slice(0, 20) as SaleRow[],
   }
+}
+
+// ── Employees ──────────────────────────────────────────────────
+
+export type BusinessRole =
+  | 'CASHIER'
+  | 'WAITER'
+  | 'CHEF'
+  | 'BARTENDER'
+  | 'ACCOUNTANT'
+  | 'INVENTORY_MANAGER'
+
+export const ROLE_CONFIG: Record<BusinessRole, { label: string; color: string; description: string }> = {
+  CASHIER:           { label: 'Cajero',              color: 'bg-blue-500/10 text-blue-500',     description: 'Maneja ventas y POS' },
+  WAITER:            { label: 'Mesero',              color: 'bg-teal-500/10 text-teal-500',     description: 'Atiende mesas y órdenes' },
+  CHEF:              { label: 'Chef / Cocinero',     color: 'bg-orange-500/10 text-orange-500', description: 'Gestiona cocina y producción' },
+  BARTENDER:         { label: 'Bartender',           color: 'bg-purple-500/10 text-purple-500', description: 'Maneja la barra' },
+  ACCOUNTANT:        { label: 'Contador',            color: 'bg-yellow-500/10 text-yellow-500', description: 'Acceso a reportes y finanzas' },
+  INVENTORY_MANAGER: { label: 'Gestor de Inventario', color: 'bg-emerald-500/10 text-emerald-500', description: 'Controla stock y movimientos' },
+}
+
+export interface EmployeeRow {
+  userId:    string
+  role:      string
+  isActive:  boolean
+  branchId:  string | null
+  fullName:  string | null
+  avatarUrl: string | null
+  email:     string | null
+  phone:     string | null
+  cedula:    string | null
+  createdAt: string
+}
+
+export async function getEmployees(tenantId: string): Promise<EmployeeRow[]> {
+  // Query roles
+  const { data: roles, error: rolesErr } = await supabase
+    .from('user_tenant_roles')
+    .select('user_id, role, is_active, branch_id, created_at')
+    .eq('tenant_id', tenantId)
+    .not('role', 'in', '(OWNER,ADMIN)')
+    .order('created_at', { ascending: false })
+
+  if (rolesErr) throw rolesErr
+  if (!roles || roles.length === 0) return []
+
+  // Query profiles separately (no FK between user_tenant_roles and user_profiles)
+  const userIds = [...new Set(roles.map(r => r.user_id))]
+  const { data: profiles, error: profErr } = await supabase
+    .from('user_profiles')
+    .select('id, full_name, avatar_url, phone, cedula')
+    .in('id', userIds)
+
+  if (profErr) throw profErr
+
+  // Fetch emails via RPC (email lives in auth.users, not accessible via RLS)
+  const { data: emailRows } = await (supabase.rpc as any)('get_employee_emails', {
+    p_tenant_id: tenantId,
+  })
+  const emailMap = new Map<string, string>(
+    ((emailRows ?? []) as Array<{ user_id: string; email: string }>)
+      .map(e => [e.user_id, e.email])
+  )
+
+  const profileMap = new Map((profiles ?? []).map(p => [p.id, p]))
+
+  return roles.map(r => {
+    const p = profileMap.get(r.user_id)
+    return {
+      userId:    r.user_id,
+      role:      r.role,
+      isActive:  r.is_active,
+      branchId:  r.branch_id,
+      fullName:  p?.full_name  ?? null,
+      avatarUrl: p?.avatar_url ?? null,
+      email:     emailMap.get(r.user_id) ?? null,
+      phone:     p?.phone  ?? null,
+      cedula:    p?.cedula ?? null,
+      createdAt: r.created_at,
+    }
+  })
+}
+
+export async function updateEmployeeRole(
+  tenantId: string,
+  userId: string,
+  role: BusinessRole,
+): Promise<void> {
+  const { error } = await supabase
+    .from('user_tenant_roles')
+    .update({ role })
+    .eq('tenant_id', tenantId)
+    .eq('user_id', userId)
+  if (error) throw error
+}
+
+export async function addEmployee(input: {
+  email:     string
+  fullName:  string
+  password:  string
+  role:      BusinessRole
+  tenantId:  string
+  branchId?: string | null
+  phone?:    string | null
+  cedula?:   string | null
+}): Promise<string> {
+  const { data, error } = await (supabase.rpc as any)('add_employee_to_tenant', {
+    p_email:     input.email,
+    p_full_name: input.fullName,
+    p_password:  input.password,
+    p_role:      input.role,
+    p_tenant_id: input.tenantId,
+    p_branch_id: input.branchId ?? null,
+    p_phone:     input.phone    ?? null,
+    p_cedula:    input.cedula   ?? null,
+  })
+  if (error) throw error
+  return data as string
+}
+
+export async function updateEmployeeProfile(input: {
+  userId:    string
+  fullName:  string
+  tenantId:  string
+  email?:    string
+  phone?:    string | null
+  cedula?:   string | null
+  role?:     BusinessRole
+  branchId?: string | null
+  password?: string
+}): Promise<void> {
+  const { error } = await (supabase.rpc as any)('update_employee_profile', {
+    p_user_id:   input.userId,
+    p_full_name: input.fullName,
+    p_tenant_id: input.tenantId,
+    p_email:     input.email     ?? null,
+    p_phone:     input.phone     ?? null,
+    p_cedula:    input.cedula    ?? null,
+    p_role:      input.role      ?? null,
+    p_branch_id: input.branchId  ?? null,
+    p_password:  input.password  ?? null,
+  })
+  if (error) throw error
+}
+
+export async function toggleEmployeeActive(
+  tenantId: string,
+  userId: string,
+  isActive: boolean,
+): Promise<void> {
+  const { error } = await supabase
+    .from('user_tenant_roles')
+    .update({ is_active: isActive })
+    .eq('tenant_id', tenantId)
+    .eq('user_id', userId)
+  if (error) throw error
+}
+
+export async function deleteEmployee(input: {
+  userId:   string
+  tenantId: string
+}): Promise<void> {
+  const { error } = await (supabase.rpc as any)('delete_employee_from_tenant', {
+    p_user_id:   input.userId,
+    p_tenant_id: input.tenantId,
+  })
+  if (error) throw error
 }
 
 // -- Platform-level queries (SUPER_ADMIN only) ----------------

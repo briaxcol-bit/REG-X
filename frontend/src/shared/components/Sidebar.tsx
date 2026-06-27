@@ -6,6 +6,7 @@ import {
   Users, BarChart3, Settings, ChefHat, CreditCard,
   Store, Puzzle, ChevronLeft, ChevronRight,
   Zap, Building2, ShieldCheck, ChevronDown, AlertTriangle, DollarSign,
+  UserCog,
 } from 'lucide-react'
 import { cn } from '@shared/utils/cn'
 import { useAuthStore } from '@store/auth.store'
@@ -37,6 +38,7 @@ const NAV_ITEMS: NavItem[] = [
     ]
   },
   { to: '/customers',     icon: Users,           label: 'Clientes',    group: 'Catalogo' },
+  { to: '/employees',    icon: UserCog,         label: 'Empleados',   group: 'Catalogo' },
   { to: '/restaurant',    icon: ChefHat,         label: 'Restaurante', group: 'Servicio' },
   { to: '/reports',       icon: BarChart3,       label: 'Reportes',    permission: 'reports.view', group: 'Analisis' },
   { to: '/subscriptions', icon: CreditCard,      label: 'Suscripcion', group: 'Sistema' },
