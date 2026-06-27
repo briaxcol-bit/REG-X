@@ -81,6 +81,8 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
   const [method, setMethod]       = useState<PaymentMethod>('CASH')
   const [cashInput, setCashInput] = useState('')
   const [success, setSuccess]     = useState(false)
+  const [voucherRef, setVoucherRef] = useState('')
+  const [cardType, setCardType]     = useState<'DEBIT' | 'CREDIT'>('DEBIT')
 
   const { items, discounts, customerId, tableId, notes, clearCart, payments, lastReceipt, setLastReceipt } = usePOSStore()
   const { tenant, branch, profile } = useAuthStore()
@@ -90,6 +92,7 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
 
   const cashReceived = parseInt(cashInput.replace(/\D/g, ''), 10) || 0
   const change       = method === 'CASH' ? Math.max(0, cashReceived - total) : 0
+  const needsVoucher = method === 'CARD' || method === 'TRANSFER'
   const canComplete  = method !== 'CASH' || cashReceived >= total
 
   const handleCashInput = (raw: string) => {
@@ -106,6 +109,11 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
   const handleComplete = async () => {
     try {
       const paidAmount = method === 'CASH' ? cashReceived : total
+      const voucherPart = voucherRef.trim() ? voucherRef.trim() : ''
+      const cardPart = method === 'CARD' ? (cardType === 'CREDIT' ? 'Crédito' : 'Débito') : ''
+      const refParts = [cardPart, voucherPart].filter(Boolean)
+      const ref = needsVoucher && refParts.length ? refParts.join(' · ') : undefined
+
       await createSale({
         items: items.map(it => ({
           product_id:      it.productId,
@@ -119,7 +127,7 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
           tax_amount:      it.taxAmount,
           total:           it.total,
         })),
-        payments: [{ method: method === 'NEQUI' || method === 'DAVIPLATA' ? 'QR' : method, amount: paidAmount }],
+        payments: [{ method: method === 'NEQUI' || method === 'DAVIPLATA' ? 'QR' : method, amount: paidAmount, reference: ref }],
         customer_id:    customerId,
         notes,
         subtotal:       items.reduce((s, it) => s + it.price * it.quantity, 0),
@@ -175,6 +183,8 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
     setSuccess(false)
     setCashInput('')
     setMethod('CASH')
+    setVoucherRef('')
+    setCardType('DEBIT')
     onClose()
   }
 
@@ -286,7 +296,7 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
                           return (
                             <button
                               key={m.method}
-                              onClick={() => setMethod(m.method)}
+                              onClick={() => { setMethod(m.method); setVoucherRef('') }}
                               className={cn(
                                 'flex flex-col items-center gap-1.5 rounded-xl p-3 border-2 transition-all',
                                 active
@@ -312,6 +322,54 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
                       </div>
                     </div>
 
+                    {/* Tipo de tarjeta */}
+                    {method === 'CARD' && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="space-y-1.5"
+                      >
+                        <label className="text-xs font-bold text-grafito-500 uppercase tracking-wider">Tipo de tarjeta</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {(['DEBIT', 'CREDIT'] as const).map((type) => (
+                            <button
+                              key={type}
+                              type="button"
+                              onClick={() => setCardType(type)}
+                              className={cn(
+                                'rounded-xl py-2.5 text-sm font-semibold border transition-all',
+                                cardType === type
+                                  ? 'border-brand-500 bg-brand-500/10 text-brand-500'
+                                  : 'border-grafito-200 dark:border-white/10 bg-grafito-100 dark:bg-grafito-800 text-grafito-600 dark:text-grafito-300 hover:border-grafito-300 dark:hover:border-white/20',
+                              )}
+                            >
+                              {type === 'DEBIT' ? 'Débito' : 'Crédito'}
+                            </button>
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+
+                    {/* Voucher / comprobante */}
+                    {needsVoucher && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="space-y-1.5"
+                      >
+                        <label className="text-xs font-bold text-grafito-500 uppercase tracking-wider">
+                          Nº de comprobante <span className="text-grafito-400 dark:text-grafito-600">(opcional)</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={voucherRef}
+                          onChange={(e) => setVoucherRef(e.target.value)}
+                          placeholder="Ej: 2847364"
+                          className="w-full rounded-xl bg-grafito-100 dark:bg-grafito-800 border border-grafito-200 dark:border-white/10 px-4 py-3 text-sm font-mono text-grafito-900 dark:text-white placeholder:text-grafito-400 dark:placeholder:text-grafito-600 outline-none focus:border-brand-500 transition-colors"
+                        />
+                      </motion.div>
+                    )}
+
                     {/* ── EFECTIVO ────────────────────────── */}
                     {method === 'CASH' && (
                       <motion.div
@@ -336,6 +394,7 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
                         {/* Denominaciones rápidas */}
                         <div className="flex gap-2 flex-wrap">
                           <button
+                            type="button"
                             onClick={() => setCashInput(new Intl.NumberFormat('es-CO').format(total))}
                             className="rounded-lg bg-brand-500/10 border border-brand-500/30 px-3 py-1.5 text-xs font-bold text-brand-600 dark:text-brand-400 hover:bg-brand-500/20 transition-colors"
                           >
@@ -343,6 +402,7 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
                           </button>
                           {QUICK_CASH.filter(v => v > total * 0.8).slice(0, 4).map(v => (
                             <button
+                              type="button"
                               key={v}
                               onClick={() => addQuickCash(v)}
                               className="rounded-lg bg-grafito-100 dark:bg-white/5 border border-grafito-200 dark:border-white/10 px-3 py-1.5 text-xs font-semibold text-grafito-600 dark:text-grafito-300 hover:bg-grafito-200 dark:hover:bg-white/10 transition-colors"

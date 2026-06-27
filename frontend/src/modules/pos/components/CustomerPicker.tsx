@@ -6,7 +6,7 @@ import { useCustomers } from '@modules/customers/hooks/useCustomers'
 interface CustomerPickerProps {
   open: boolean
   onClose: () => void
-  onSelect: (customerId: string) => void
+  onSelect: (customerId: string, customerName: string) => void
 }
 
 export function CustomerPicker({ open, onClose, onSelect }: CustomerPickerProps) {
@@ -49,7 +49,7 @@ export function CustomerPicker({ open, onClose, onSelect }: CustomerPickerProps)
                 customers.map((c) => (
                   <button
                     key={c.id}
-                    onClick={() => onSelect(c.id)}
+                    onClick={() => onSelect(c.id, c.fullName)}
                     className="flex w-full items-center gap-3 px-4 py-3 hover:bg-grafito-100 dark:bg-grafito-800 transition-colors"
                   >
                     <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-500/20">

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Plus, Search, Tag, Eye, Package, Loader2, Trash2, AlertTriangle, X } from 'lucide-react'
+import { Plus, Search, Tag, Pencil, Package, Loader2, Trash2, AlertTriangle, X } from 'lucide-react'
 import { getProducts, deleteProduct } from '@lib/db'
 import { useAuthStore } from '@store/auth.store'
 import type { ProductRow } from '@lib/db'
@@ -216,9 +216,9 @@ export default function ProductsPage() {
               <div key={p.id} className="group flex flex-col rounded-2xl bg-white dark:bg-grafito-900/80 border border-grafito-200 dark:border-white/5 overflow-hidden hover:shadow-xl hover:shadow-brand-500/5 hover:-translate-y-1 hover:border-brand-500/30 transition-all duration-300">
                 
                 {/* Imagen & Badges */}
-                <div className="aspect-[4/3] bg-grafito-100 dark:bg-grafito-800/50 flex items-center justify-center relative overflow-hidden">
+                <div className="h-44 bg-white dark:bg-grafito-800/50 flex items-center justify-center relative overflow-hidden">
                   {p.image_url ? (
-                    <img src={p.image_url} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                    <img src={p.image_url} alt={p.name} className="w-full h-full object-contain p-2 group-hover:scale-105 transition-transform duration-300" />
                   ) : (
                     <Package className="h-10 w-10 text-grafito-300 dark:text-grafito-600 group-hover:scale-110 transition-transform duration-500" />
                   )}
@@ -255,7 +255,7 @@ export default function ProductsPage() {
                         className="flex h-8 w-8 items-center justify-center rounded-lg bg-grafito-50 dark:bg-white/5 text-grafito-500 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 transition-colors"
                         title="Editar"
                       >
-                        <Eye className="h-4 w-4" />
+                        <Pencil className="h-4 w-4" />
                       </Link>
                       <button
                         onClick={() => setToDelete(p)}
