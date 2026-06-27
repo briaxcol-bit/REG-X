@@ -171,6 +171,8 @@
     width: 80mm !important;
     max-width: 80mm !important;
   }
+}
+
 /* ── react-phone-number-input: estilos REG-X ─────────────────────────────── */
 .phone-field-inner {
   display: flex;
