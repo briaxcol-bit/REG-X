@@ -4,21 +4,24 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   Search, Barcode, Plus, Minus, Trash2, CreditCard,
   Receipt, X, UserCircle, Lock, Clock, Tag, Printer,
-  ShoppingCart, Clock as HistoryIcon,
+  ShoppingCart, Clock as HistoryIcon, Monitor, Send,
 } from 'lucide-react'
 import { usePOSStore } from '@store/pos.store'
 import { useAuthStore } from '@store/auth.store'
 import { ReceiptTemplate } from '@modules/pos/components/ReceiptTemplate'
 import { cn } from '@shared/utils/cn'
 import { formatCurrency } from '@shared/utils/format'
-import { useProducts } from '@modules/products/hooks/useProducts'
+import { useProducts, useCategories } from '@modules/products/hooks/useProducts'
 import { CheckoutModal } from '@modules/pos/components/CheckoutModal'
 import { BarcodeScanner } from '@modules/pos/components/BarcodeScanner'
 import { CustomerPicker } from '@modules/pos/components/CustomerPicker'
 import { OpenCashModal } from '@modules/pos/components/OpenCashModal'
 import { CloseCashModal } from '@modules/pos/components/CloseCashModal'
 import { SalesHistoryModal } from '@modules/pos/components/SalesHistoryModal'
+import { ManageTerminalsModal } from '@modules/pos/components/ManageTerminalsModal'
 import { useCashSession } from '@modules/pos/hooks/useCashSession'
+import { usePOSTerminal } from '@modules/pos/hooks/usePOSTerminal'
+import { useCreateSale } from '@modules/pos/hooks/useCreateSale'
 import { toast } from 'sonner'
 
 // ── Product card ─────────────────────────────────────────────
@@ -167,6 +170,7 @@ export default function POSPage() {
   const [customerPickerOpen, setCustomerPickerOpen] = useState(false)
   const [closeModalOpen, setCloseModalOpen]   = useState(false)
   const [historyOpen, setHistoryOpen]         = useState(false)
+  const [terminalsOpen, setTerminalsOpen]     = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
 
   const {
@@ -175,15 +179,64 @@ export default function POSPage() {
     lastReceipt,
   } = usePOSStore()
 
-  const { branch } = useAuthStore()
-  const currency = branch?.currency ?? 'COP'
+  const { branch, hasRole } = useAuthStore()
+  const currency    = branch?.currency ?? 'COP'
+  const isManager   = hasRole('OWNER') || hasRole('ADMIN')
 
   const { activeRegister, isLoading: loadingSession, hasOpenSession } = useCashSession()
+  const { isCommandsOnly, allowedCategories } = usePOSTerminal()
+  const { mutateAsync: createSaleCmd, isPending: sendingCmd } = useCreateSale()
+
+  const { data: allCategories = [] } = useCategories()
+
+  // Categorías visibles para este cajero
+  const visibleCategories = allowedCategories
+    ? allCategories.filter(c => allowedCategories.includes(c.id))
+    : allCategories
 
   const { data: products = [], isLoading: loadingProducts } = useProducts({
     search,
     categoryId: selectedCategory ?? undefined,
   })
+
+  // Filtrar productos por categorías permitidas si hay restricción
+  const visibleProducts = allowedCategories
+    ? products.filter(p => !p.categoryId || allowedCategories.includes(p.categoryId))
+    : products
+
+  // Enviar comanda (modo COMMANDS_ONLY) — crea venta PENDING sin pago
+  const handleSendComanda = async () => {
+    if (items.length === 0) return
+    try {
+      await createSaleCmd({
+        items: items.map(it => ({
+          product_id:      it.productId,
+          name:            it.name,
+          sku:             it.sku,
+          quantity:        it.quantity,
+          unit_price:      it.price,
+          discount:        it.discount,
+          discount_amount: it.discountAmount,
+          tax:             it.tax,
+          tax_amount:      it.taxAmount,
+          total:           it.total,
+        })),
+        payments:       [],
+        customer_id:    customerId,
+        notes:          'COMANDA',
+        subtotal:       getSubtotal(),
+        tax_total:      getTaxTotal(),
+        discount_total: getDiscountTotal(),
+        total:          getTotal(),
+        currency,
+        status:         'PENDING',
+      })
+      clearCart()
+      toast.success('Comanda enviada')
+    } catch {
+      toast.error('Error al enviar la comanda')
+    }
+  }
 
   const handleAddProduct = useCallback((product: typeof products[0]) => {
     const existing = items.find(i => i.productId === product.id)
@@ -229,7 +282,8 @@ export default function POSPage() {
       {activeRegister && (
         <CloseCashModal open={closeModalOpen} onClose={() => setCloseModalOpen(false)} register={activeRegister} />
       )}
-      <SalesHistoryModal open={historyOpen} onClose={() => setHistoryOpen(false)} />
+      <SalesHistoryModal open={historyOpen} onClose={() => setHistoryOpen(false)} activeRegister={activeRegister ?? null} />
+      {isManager && <ManageTerminalsModal open={terminalsOpen} onClose={() => setTerminalsOpen(false)} />}
 
       {/* ══════════════ LEFT: Productos ══════════════════════ */}
       <div className="flex flex-1 flex-col overflow-hidden">
@@ -272,6 +326,21 @@ export default function POSPage() {
           >
             Todos
           </button>
+          {visibleCategories.map(cat => (
+            <button
+              key={cat.id}
+              onClick={() => setSelectedCategory(cat.id)}
+              className={cn(
+                'shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap',
+                selectedCategory === cat.id
+                  ? 'text-white'
+                  : 'bg-grafito-100 dark:bg-grafito-800 text-grafito-600 dark:text-grafito-300 hover:bg-grafito-200 dark:hover:bg-grafito-700',
+              )}
+              style={selectedCategory === cat.id ? { backgroundColor: cat.color || '#6366f1' } : {}}
+            >
+              {cat.name}
+            </button>
+          ))}
         </div>
 
         {/* Grid */}
@@ -282,14 +351,14 @@ export default function POSPage() {
                 <div key={i} className="aspect-[3/4] animate-pulse rounded-xl bg-grafito-200 dark:bg-grafito-800" />
               ))}
             </div>
-          ) : products.length === 0 ? (
+          ) : visibleProducts.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-grafito-400">
               <Search className="h-12 w-12 opacity-30" />
               <p className="text-sm font-medium">No se encontraron productos</p>
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-              {products.map(product => (
+              {visibleProducts.map(product => (
                 <ProductCard key={product.id} product={product} onAdd={() => handleAddProduct(product)} />
               ))}
             </div>
@@ -333,6 +402,15 @@ export default function POSPage() {
             )}
           </div>
           <div className="flex items-center gap-1">
+            {isManager && (
+              <button
+                onClick={() => setTerminalsOpen(true)}
+                className="rounded-lg p-1.5 text-grafito-400 hover:bg-grafito-100 dark:hover:bg-white/5 hover:text-grafito-700 dark:hover:text-white transition-colors"
+                title="Gestionar terminales"
+              >
+                <Monitor className="h-3.5 w-3.5" />
+              </button>
+            )}
             <button
               onClick={() => setHistoryOpen(true)}
               className="rounded-lg p-1.5 text-grafito-400 hover:bg-grafito-100 dark:hover:bg-white/5 hover:text-grafito-700 dark:hover:text-white transition-colors"
@@ -423,21 +501,38 @@ export default function POSPage() {
               </button>
             )}
 
-            {/* Cobrar */}
-            <motion.button
-              whileTap={{ scale: 0.98 }}
-              onClick={() => items.length > 0 && setCheckoutOpen(true)}
-              disabled={items.length === 0}
-              className={cn(
-                'flex w-full items-center justify-center gap-2 rounded-xl py-4 text-base font-bold transition-all',
-                items.length > 0
-                  ? 'bg-brand-500 text-white hover:bg-brand-600 shadow-lg shadow-brand-500/20'
-                  : 'bg-grafito-100 dark:bg-white/5 text-grafito-400 cursor-not-allowed',
-              )}
-            >
-              <CreditCard className="h-5 w-5" />
-              {items.length > 0 ? `Cobrar ${formatCurrency(total, currency)}` : 'Cobrar'}
-            </motion.button>
+            {/* Cobrar / Enviar comanda */}
+            {isCommandsOnly ? (
+              <motion.button
+                whileTap={{ scale: 0.98 }}
+                onClick={handleSendComanda}
+                disabled={items.length === 0 || sendingCmd}
+                className={cn(
+                  'flex w-full items-center justify-center gap-2 rounded-xl py-4 text-base font-bold transition-all',
+                  items.length > 0
+                    ? 'bg-amber-500 text-white hover:bg-amber-600 shadow-lg shadow-amber-500/20'
+                    : 'bg-grafito-100 dark:bg-white/5 text-grafito-400 cursor-not-allowed',
+                )}
+              >
+                <Send className="h-5 w-5" />
+                {sendingCmd ? 'Enviando…' : items.length > 0 ? `Enviar comanda (${itemCount})` : 'Enviar comanda'}
+              </motion.button>
+            ) : (
+              <motion.button
+                whileTap={{ scale: 0.98 }}
+                onClick={() => items.length > 0 && setCheckoutOpen(true)}
+                disabled={items.length === 0}
+                className={cn(
+                  'flex w-full items-center justify-center gap-2 rounded-xl py-4 text-base font-bold transition-all',
+                  items.length > 0
+                    ? 'bg-brand-500 text-white hover:bg-brand-600 shadow-lg shadow-brand-500/20'
+                    : 'bg-grafito-100 dark:bg-white/5 text-grafito-400 cursor-not-allowed',
+                )}
+              >
+                <CreditCard className="h-5 w-5" />
+                {items.length > 0 ? `Cobrar ${formatCurrency(total, currency)}` : 'Cobrar'}
+              </motion.button>
+            )}
           </div>
         </div>
       </div>

@@ -1425,93 +1425,100 @@ export type PlanCode = 'FREE' | 'BASIC' | 'PROFESSIONAL' | 'ENTERPRISE'
 
 export interface PlanRow {
   code:        PlanCode
-  name:        string
-  description: string | null
-  price:       number
-  currency:    string
-  features:    string[]
-  is_active:   boolean
-  sort_order:  number
 }
 
-export interface TenantSubscriptionRow {
-  id:            string
-  name:          string
-  slug:          string
-  plan:          string
-  is_active:     boolean
-  subscriptions: {
-    id:                   string
-    plan:                 string
-    status:               string
-    price:                number
-    currency:             string
-    current_period_start: string | null
-    current_period_end:   string | null
-  }[]
-}
+// ── POS Terminals ──────────────────────────────────────────────
 
-/** Catálogo de planes (precios editables). */
-export async function getPlans(): Promise<PlanRow[]> {
-  const { data, error } = await supabase
-    .from('plans')
-    .select('code, name, description, price, currency, features, is_active, sort_order')
-    .order('sort_order')
-  if (error) throw error
-  return (data ?? []) as unknown as PlanRow[]
-}
+export type POSTerminalMode = 'FULL' | 'COMMANDS_ONLY'
 
-/** Cambia el precio (y opcionalmente moneda) de un plan del catálogo. */
-export async function setPlanPrice(code: PlanCode, price: number, currency?: string): Promise<void> {
-  const { error } = await (supabase.rpc as any)('set_plan_price', {
-    p_code: code,
-    p_price: price,
-    p_currency: currency ?? null,
-  })
-  if (error) throw error
-}
-
-/** Actualiza los features de un plan del catálogo. */
-export async function setPlanFeatures(code: PlanCode, features: string[]): Promise<void> {
-  const { error } = await supabase
-    .from('plans')
-    .update({ features })
-    .eq('code', code)
-  if (error) throw error
-}
-
-/** Activa o desactiva un plan del catálogo (is_active). */
-export async function setPlanActive(code: string, isActive: boolean): Promise<void> {
-  const { error } = await supabase
-    .from('plans')
-    .update({ is_active: isActive })
-    .eq('code', code)
-  if (error) throw error
-}
-
-/** Crea un plan nuevo en el catálogo (requiere migración 008). */
-export async function createPlan(input: {
-  code: string
+export interface POSTerminalRow {
+  id: string
+  tenant_id: string
+  branch_id: string
   name: string
-  description?: string
-  price: number
-  currency: string
-  features: string[]
-  sort_order?: number
-}): Promise<void> {
-  const { error } = await (supabase.rpc as any)('create_plan', {
-    p_code:        input.code.toUpperCase().trim(),
-    p_name:        input.name,
-    p_description: input.description ?? null,
-    p_price:       input.price,
-    p_currency:    input.currency,
-    p_features:    input.features,
-    p_sort_order:  input.sort_order ?? 99,
-  })
+  cashier_id: string | null
+  mode: POSTerminalMode
+  allowed_category_ids: string[] | null
+  is_active: boolean
+  notes: string | null
+  created_at: string
+}
+
+export interface POSTerminalWithCashier extends POSTerminalRow {
+  cashier?: { full_name: string; email: string } | null
+}
+
+export async function getPOSTerminals(
+  tenantId: string,
+  branchId: string,
+): Promise<POSTerminalWithCashier[]> {
+  const { data, error } = await supabase
+    .from('pos_terminals')
+    .select('*, cashier:cashier_id(full_name, email)')
+    .eq('tenant_id', tenantId)
+    .eq('branch_id', branchId)
+    .order('created_at')
+  if (error) throw error
+  return (data ?? []) as unknown as POSTerminalWithCashier[]
+}
+
+export async function upsertPOSTerminal(
+  tenantId: string,
+  branchId: string,
+  userId: string,
+  payload: {
+    id?: string
+    name: string
+    cashier_id: string | null
+    mode: POSTerminalMode
+    allowed_category_ids: string[] | null
+    notes?: string
+    is_active?: boolean
+  },
+): Promise<POSTerminalRow> {
+  const row = {
+    tenant_id:            tenantId,
+    branch_id:            branchId,
+    created_by:           userId,
+    name:                 payload.name,
+    cashier_id:           payload.cashier_id,
+    mode:                 payload.mode,
+    allowed_category_ids: payload.allowed_category_ids,
+    notes:                payload.notes ?? null,
+    is_active:            payload.is_active ?? true,
+  }
+  const q = payload.id
+    ? supabase.from('pos_terminals').update(row).eq('id', payload.id).eq('tenant_id', tenantId)
+    : supabase.from('pos_terminals').insert(row)
+  const { data, error } = await q.select().single()
+  if (error) throw error
+  return data as unknown as POSTerminalRow
+}
+
+export async function deletePOSTerminal(
+  tenantId: string,
+  terminalId: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from('pos_terminals')
+    .delete()
+    .eq('id', terminalId)
+    .eq('tenant_id', tenantId)
   if (error) throw error
 }
 
-/** Elimina un plan del catálogo (falla si hay tenants activos con ese plan). */
+export async function getMyPOSTerminal(
+  tenantId: string,
+  branchId: string,
+): Promise<POSTerminalRow | null> {
+  const { data, error } = await (supabase.rpc as any)('get_my_pos_terminal', {
+    p_tenant_id: tenantId,
+    p_branch_id: branchId,
+  })
+  if (error) throw error
+  return data as POSTerminalRow | null
+}
+/* si hay tenants activos con ese plan). */
 export async function deletePlan(code: string): Promise<void> {
   const { error } = await (supabase.rpc as any)('delete_plan', { p_code: code })
   if (error) throw error
@@ -1632,6 +1639,35 @@ export async function closeCashRegister(
   })
   if (error) throw error
   return data as CashRegisterRow
+}
+
+// ── Cash Register History ─────────────────────────────────────
+
+export interface CashRegisterHistoryRow extends CashRegisterRow {
+  opened_by_profile: { full_name: string } | null
+  closed_by_profile: { full_name: string } | null
+}
+
+export async function getCashRegisterHistory(
+  tenantId: string,
+  branchId: string,
+  since?: string,
+): Promise<CashRegisterHistoryRow[]> {
+  let q = supabase
+    .from('cash_registers')
+    .select(`
+      *,
+      opened_by_profile:opened_by(full_name),
+      closed_by_profile:closed_by(full_name)
+    `)
+    .eq('tenant_id', tenantId)
+    .eq('branch_id', branchId)
+    .order('opened_at', { ascending: false })
+    .limit(50)
+  if (since) q = q.gte('opened_at', since)
+  const { data, error } = await q
+  if (error) throw error
+  return (data ?? []) as unknown as CashRegisterHistoryRow[]
 }
 
 // ── Sales History ──────────────────────────────────────────────

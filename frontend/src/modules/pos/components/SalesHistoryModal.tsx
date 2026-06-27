@@ -8,7 +8,8 @@ import {
 import { useAuthStore } from '@store/auth.store'
 import { usePOSStore } from '@store/pos.store'
 import { getSalesHistory, cancelSale, type SaleHistoryRow } from '@lib/db'
-import { ReceiptTemplate, type ReceiptData, type ReceiptCustomer } from './ReceiptTemplate'
+import { type ReceiptData } from './ReceiptTemplate'
+import type { ActiveCashRegister } from '@lib/db'
 import { formatCurrency } from '@shared/utils/format'
 import { cn } from '@shared/utils/cn'
 import { toast } from 'sonner'
@@ -237,9 +238,13 @@ function SaleRow({
 }
 
 // ── Main ──────────────────────────────────────────────────────
-interface Props { open: boolean; onClose: () => void }
+interface Props {
+  open: boolean
+  onClose: () => void
+  activeRegister: ActiveCashRegister | null
+}
 
-export function SalesHistoryModal({ open, onClose }: Props) {
+export function SalesHistoryModal({ open, onClose, activeRegister }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [cancelTarget, setCancelTarget] = useState<SaleHistoryRow | null>(null)
   const [search, setSearch] = useState('')
@@ -253,15 +258,14 @@ export function SalesHistoryModal({ open, onClose }: Props) {
   const branchId = branch?.branchId ?? ''
   const canCancel = hasRole('OWNER') || hasRole('ADMIN')
 
-  // Today range
-  const todayStart = new Date()
-  todayStart.setHours(0, 0, 0, 0)
+  // Solo ventas desde que se abrió esta caja
+  const sinceDate = activeRegister?.opened_at
 
   const { data: sales = [], isLoading } = useQuery({
-    queryKey: ['sales-history', tenantId, branchId],
-    queryFn:  () => getSalesHistory(tenantId, branchId, { since: todayStart.toISOString(), limit: 100 }),
-    enabled:  open && !!tenantId && !!branchId,
-    refetchInterval: 30_000,
+    queryKey: ['sales-history', tenantId, branchId, sinceDate],
+    queryFn:  () => getSalesHistory(tenantId, branchId, { since: sinceDate, limit: 500 }),
+    enabled:  open && !!tenantId && !!branchId && !!sinceDate,
+    refetchInterval: 15_000,
   })
 
   const cancelMutation = useMutation({
@@ -349,18 +353,23 @@ export function SalesHistoryModal({ open, onClose }: Props) {
               <div>
                 <div className="flex items-center gap-2">
                   <Receipt className="h-4 w-4 text-brand-500" />
-                  <p className="font-bold text-grafito-900 dark:text-white">Historial de ventas</p>
+                  <p className="font-bold text-grafito-900 dark:text-white">Ventas de esta caja</p>
                 </div>
-                <p className="text-xs text-grafito-500 mt-0.5">
-                  Hoy · {sales.filter(s => s.status === 'COMPLETED').length} ventas · {formatCurrency(totalCompleted, branch?.currency ?? 'COP')}
-                </p>
+                {activeRegister ? (
+                  <p className="text-xs text-grafito-500 mt-0.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 inline-block mr-1 animate-pulse" />
+                    {activeRegister.name} · {sales.filter(s => s.status === 'COMPLETED').length} ventas · {formatCurrency(totalCompleted, branch?.currency ?? 'COP')}
+                  </p>
+                ) : (
+                  <p className="text-xs text-grafito-400 mt-0.5">Sin caja abierta</p>
+                )}
               </div>
               <button onClick={onClose} className="rounded-xl p-2 text-grafito-400 hover:bg-grafito-100 dark:hover:bg-white/5 transition-colors">
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            {/* Search + filter */}
+            {/* Search + filtros de estado */}
             <div className="px-4 py-3 border-b border-grafito-100 dark:border-white/5 shrink-0 space-y-2">
               <div className="flex items-center gap-2 rounded-xl border border-grafito-200 dark:border-white/10 bg-grafito-50 dark:bg-grafito-800 px-3 py-2">
                 <Search className="h-3.5 w-3.5 text-grafito-400 shrink-0" />
@@ -371,19 +380,19 @@ export function SalesHistoryModal({ open, onClose }: Props) {
                   className="flex-1 bg-transparent text-xs text-grafito-900 dark:text-white placeholder-grafito-400 outline-none"
                 />
               </div>
-              <div className="flex gap-1.5">
-                {(['ALL', 'COMPLETED', 'CANCELLED'] as const).map(s => (
+              <div className="flex gap-1">
+                {(['ALL', 'COMPLETED', 'PENDING', 'CANCELLED'] as const).map(s => (
                   <button
                     key={s}
                     onClick={() => setFilterStatus(s)}
                     className={cn(
-                      'rounded-lg px-3 py-1.5 text-[11px] font-semibold transition-colors',
+                      'rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition-colors',
                       filterStatus === s
                         ? 'bg-brand-500 text-white'
                         : 'bg-grafito-100 dark:bg-white/5 text-grafito-500 hover:bg-grafito-200 dark:hover:bg-white/10',
                     )}
                   >
-                    {s === 'ALL' ? 'Todas' : s === 'COMPLETED' ? 'Completadas' : 'Anuladas'}
+                    {s === 'ALL' ? 'Todas' : s === 'COMPLETED' ? 'Completadas' : s === 'PENDING' ? 'Comandas' : 'Anuladas'}
                   </button>
                 ))}
               </div>
@@ -400,10 +409,16 @@ export function SalesHistoryModal({ open, onClose }: Props) {
                   />
                   <p className="text-sm">Cargando ventas…</p>
                 </div>
+              ) : !activeRegister ? (
+                <div className="flex flex-col items-center justify-center h-full gap-3 text-grafito-400">
+                  <Receipt className="h-10 w-10 opacity-30" />
+                  <p className="text-sm font-medium">No hay caja abierta</p>
+                  <p className="text-xs text-center max-w-[200px] leading-relaxed">Abre una caja para ver las ventas del turno. El historial completo está en <strong>Reportes → Ventas</strong>.</p>
+                </div>
               ) : filtered.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full gap-3 text-grafito-400">
                   <Receipt className="h-10 w-10 opacity-30" />
-                  <p className="text-sm font-medium">No hay ventas hoy</p>
+                  <p className="text-sm font-medium">Sin ventas en este turno</p>
                 </div>
               ) : (
                 filtered.map(sale => (
