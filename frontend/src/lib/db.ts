@@ -616,6 +616,27 @@ export async function createCategory(tenantId: string, name: string, color: stri
   return data as unknown as CategoryRow
 }
 
+export async function updateCategory(tenantId: string, categoryId: string, name: string, color: string): Promise<CategoryRow> {
+  const { data, error } = await supabase
+    .from('categories')
+    .update({ name: name.trim(), color })
+    .eq('id', categoryId)
+    .eq('tenant_id', tenantId)
+    .select('id, tenant_id, name, color, icon, is_active')
+    .single()
+  if (error) throw error
+  return data as unknown as CategoryRow
+}
+
+export async function deleteCategory(tenantId: string, categoryId: string): Promise<void> {
+  const { error } = await supabase
+    .from('categories')
+    .update({ deleted_at: new Date().toISOString(), is_active: false })
+    .eq('id', categoryId)
+    .eq('tenant_id', tenantId)
+  if (error) throw error
+}
+
 // ── Customers ──────────────────────────────────────────────────
 
 const CUSTOMER_SELECT = 'id, tenant_id, person_type, doc_type, regime, full_name, business_name, email, phone, tax_id, address, loyalty_points, created_at'
