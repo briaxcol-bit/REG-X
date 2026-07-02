@@ -1242,6 +1242,40 @@ export async function addItemsToOrder(
   } catch { /* ignorar si las columnas name/sku no existen aún */ }
 }
 
+// Órdenes activas para la pantalla KDS (incluye notas por ítem)
+export async function getKDSOrders(
+  tenantId: string,
+  branchId: string,
+): Promise<RestaurantOrderRow[]> {
+  const { data, error } = await supabase
+    .from('orders')
+    .select(`
+      id, order_number, status, notes, created_at, table_id,
+      tables(number, name),
+      order_items(id, product_id, quantity, unit_price, status, destination, notes, created_at,
+        products(name, sku, price))
+    `)
+    .eq('tenant_id', tenantId)
+    .eq('branch_id', branchId)
+    .in('status', ['PENDING', 'PREPARING'] as any[])
+    .order('created_at', { ascending: true })
+
+  if (error) throw error
+  return (data ?? []) as unknown as RestaurantOrderRow[]
+}
+
+// Actualizar estado de una orden (PENDING → PREPARING → READY → SERVED)
+export async function updateRestaurantOrderStatus(
+  orderId: string,
+  status:  'PENDING' | 'PREPARING' | 'READY' | 'SERVED' | 'CANCELLED',
+): Promise<void> {
+  const { error } = await supabase
+    .from('orders')
+    .update({ status: status as any })
+    .eq('id', orderId)
+  if (error) throw error
+}
+
 export async function closeRestaurantOrder(
   orderId: string,
   tableId: string,
