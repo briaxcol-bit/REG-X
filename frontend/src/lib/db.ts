@@ -765,17 +765,16 @@ export async function createSale(
   userId: string,
   payload: CreateSalePayload,
 ) {
-  // Generate order number
+  // Generate order number (se envía al RPC para mantener el mismo formato)
   const ts = Date.now().toString(36).toUpperCase()
   const orderNumber = `ORD-${ts}`
+  const saleStatus = payload.status ?? 'COMPLETED'
 
-  const saleStatus  = payload.status ?? 'COMPLETED'
-  const isCompleted = saleStatus === 'COMPLETED'
-
-  // Insert sale
-  const { data: sale, error: saleErr } = await supabase
-    .from('sales')
-    .insert({
+  // Venta atómica vía RPC: venta + ítems + pagos + descuento de stock en
+  // UNA sola transacción de Postgres. Valida el tenant y frena stock negativo.
+  // Ver database/migrations/021_hardened_create_sale.sql
+  const { data: saleId, error: rpcErr } = await supabase.rpc('create_sale_transaction', {
+    p_sale: {
       tenant_id:        tenantId,
       branch_id:        branchId,
       order_number:     orderNumber,
@@ -786,21 +785,11 @@ export async function createSale(
       total:            payload.total,
       currency:         payload.currency,
       status:           saleStatus,
-      completed_at:     isCompleted ? new Date().toISOString() : null,
       notes:            payload.notes ?? null,
       created_by:       userId,
-      completed_by:     isCompleted ? userId : null,
       cash_register_id: payload.cash_register_id ?? null,
-    })
-    .select()
-    .single()
-
-  if (saleErr) throw saleErr
-
-  // Insert items
-  const { error: itemsErr } = await supabase.from('sale_items').insert(
-    payload.items.map((item) => ({
-      sale_id:         sale.id,
+    },
+    p_items: payload.items.map((item) => ({
       product_id:      item.product_id,
       sku:             item.sku,
       name:            item.name,
@@ -812,61 +801,23 @@ export async function createSale(
       tax_amount:      item.tax_amount ?? 0,
       total:           item.total,
     })),
-  )
-  if (itemsErr) throw itemsErr
-
-  // Insert payments
-  const { error: payErr } = await supabase.from('sale_payments').insert(
-    payload.payments.map((p) => ({
-      sale_id:   sale.id,
-      method:    p.method as any,
+    p_payments: payload.payments.map((p) => ({
+      method:    p.method,
       amount:    p.amount,
       reference: p.reference ?? null,
     })),
-  )
-  if (payErr) throw payErr
+  } as any)
 
-  // Descontar stock por cada ítem vendido
-  const { data: warehouse } = await supabase
-    .from('warehouses')
-    .select('id')
-    .eq('branch_id', branchId)
-    .limit(1)
+  if (rpcErr) throw rpcErr
+
+  // Devolver la fila completa (los llamadores usan sale.order_number, sale.id, etc.)
+  const { data: sale, error: fetchErr } = await supabase
+    .from('sales')
+    .select()
+    .eq('id', saleId as unknown as string)
     .single()
 
-  if (warehouse) {
-    for (const item of payload.items) {
-      // Obtener cantidad actual
-      const { data: inv } = await supabase
-        .from('inventory')
-        .select('id, quantity')
-        .eq('product_id', item.product_id)
-        .eq('warehouse_id', warehouse.id)
-        .limit(1)
-        .single()
-
-      if (inv) {
-        const newQty = Math.max(0, Number(inv.quantity) - item.quantity)
-        await supabase
-          .from('inventory')
-          .update({ quantity: newQty })
-          .eq('id', inv.id)
-
-        await supabase.from('stock_movements').insert({
-          tenant_id:      tenantId,
-          branch_id:      branchId,
-          warehouse_id:   warehouse.id,
-          product_id:     item.product_id,
-          type:           'SALE',
-          quantity:       item.quantity,
-          unit_cost:      item.unit_price,
-          reference_type: 'SALE',
-          notes:          `Venta ${sale.order_number}`,
-        })
-      }
-    }
-  }
-
+  if (fetchErr) throw fetchErr
   return sale
 }
 
