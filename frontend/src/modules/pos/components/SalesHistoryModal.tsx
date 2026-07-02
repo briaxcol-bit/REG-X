@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { useAuthStore } from '@store/auth.store'
 import { usePOSStore } from '@store/pos.store'
-import { getSalesHistory, cancelSale, type SaleHistoryRow } from '@lib/db'
+import { getSalesHistory, getOpenCashRegisters, cancelSale, type SaleHistoryRow, type CashRegisterRow } from '@lib/db'
 import { type ReceiptData } from './ReceiptTemplate'
 import type { ActiveCashRegister } from '@lib/db'
 import { formatCurrency } from '@shared/utils/format'
@@ -249,7 +249,7 @@ export function SalesHistoryModal({ open, onClose, activeRegister }: Props) {
   const [cancelTarget, setCancelTarget] = useState<SaleHistoryRow | null>(null)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('ALL')
-  const [scope, setScope] = useState<'caja' | 'sucursal'>('caja')
+  const [selectedRegisterId, setSelectedRegisterId] = useState<string | null>(null)
 
   const { tenant, branch, hasRole } = useAuthStore()
   const { setLastReceipt } = usePOSStore()
@@ -260,26 +260,42 @@ export function SalesHistoryModal({ open, onClose, activeRegister }: Props) {
   const canCancel = hasRole('OWNER') || hasRole('ADMIN')
   const isManager = canCancel
 
-  const registerId = activeRegister?.id
+  // Al abrir, seleccionar la caja del usuario activo
+  useEffect(() => {
+    if (open && activeRegister?.id) setSelectedRegisterId(activeRegister.id)
+  }, [open, activeRegister?.id])
 
-  // Ventas de esta caja
-  const { data: cajaSales = [], isLoading: loadingCaja } = useQuery({
-    queryKey: ['sales-history', tenantId, branchId, registerId],
-    queryFn:  () => getSalesHistory(tenantId, branchId, { cashRegisterId: registerId, limit: 500 }),
-    enabled:  open && !!tenantId && !!branchId && !!registerId,
-    refetchInterval: 15_000,
+  // Todas las cajas abiertas del branch (managers)
+  const { data: openRegisters = [] } = useQuery({
+    queryKey: ['open-registers', tenantId, branchId],
+    queryFn:  () => getOpenCashRegisters(tenantId, branchId),
+    enabled:  open && isManager && !!tenantId && !!branchId,
+    refetchInterval: 10_000,
   })
 
-  // Todas las ventas del branch (solo managers, scope='sucursal')
-  const { data: branchSales = [], isLoading: loadingBranch } = useQuery({
-    queryKey: ['sales-history', tenantId, branchId, 'all'],
-    queryFn:  () => getSalesHistory(tenantId, branchId, { limit: 500 }),
-    enabled:  open && isManager && scope === 'sucursal' && !!tenantId && !!branchId,
-    refetchInterval: 15_000,
+  // Período desde la caja abierta más antigua del branch
+  const earliestOpened = openRegisters.length > 0
+    ? openRegisters.reduce((min, r) => r.opened_at < min ? r.opened_at : min, openRegisters[0].opened_at)
+    : activeRegister?.opened_at
+
+  // Todas las ventas del branch en el período actual
+  const { data: allBranchSales = [], isLoading } = useQuery({
+    queryKey: ['sales-history', tenantId, branchId, 'all', earliestOpened],
+    queryFn:  () => getSalesHistory(tenantId, branchId, { since: earliestOpened, limit: 1000 }),
+    enabled:  open && !!tenantId && !!branchId && !!earliestOpened,
+    refetchInterval: 5_000,
   })
 
-  const sales    = scope === 'sucursal' ? branchSales : cajaSales
-  const isLoading = scope === 'sucursal' ? loadingBranch : loadingCaja
+  // Tabs: si es manager mostramos todas las cajas abiertas, sino solo la activa
+  const tabs: CashRegisterRow[] = isManager && openRegisters.length > 0
+    ? openRegisters
+    : activeRegister
+      ? [{ id: activeRegister.id, name: activeRegister.name, status: 'OPEN', opened_at: activeRegister.opened_at, opening_cash: activeRegister.opening_cash, opened_by: activeRegister.opened_by, closed_at: null, closing_cash: null, expected_cash: null, cash_difference: null, closed_by: null, tenant_id: tenantId, branch_id: branchId }]
+      : []
+
+  const activeTab = tabs.find(t => t.id === selectedRegisterId) ?? tabs[0] ?? null
+
+  const sales = allBranchSales.filter(s => s.cash_register_id === activeTab?.id)
 
   const cancelMutation = useMutation({
     mutationFn: ({ saleId, reason }: { saleId: string; reason: string }) =>
@@ -362,56 +378,47 @@ export function SalesHistoryModal({ open, onClose, activeRegister }: Props) {
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-grafito-100 dark:border-white/5 px-5 py-4 shrink-0">
-              <div>
+            <div className="border-b border-grafito-100 dark:border-white/5 px-5 pt-4 pb-0 shrink-0">
+              <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <Receipt className="h-4 w-4 text-brand-500" />
                   <p className="font-bold text-grafito-900 dark:text-white">
-                    {scope === 'sucursal' ? 'Ventas de la sucursal' : 'Ventas de esta caja'}
+                    {activeTab ? `Ventas · ${activeTab.name}` : 'Historial de ventas'}
                   </p>
                 </div>
-                <p className="text-xs text-grafito-500 mt-0.5">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 inline-block mr-1 animate-pulse" />
-                  {scope === 'sucursal'
-                    ? `${branch?.branchName ?? ''} · ${sales.filter(s => s.status === 'COMPLETED').length} ventas · ${formatCurrency(totalCompleted, branch?.currency ?? 'COP')}`
-                    : activeRegister
-                      ? `${activeRegister.name} · ${sales.filter(s => s.status === 'COMPLETED').length} ventas · ${formatCurrency(totalCompleted, branch?.currency ?? 'COP')}`
-                      : 'Sin caja abierta'
-                  }
-                </p>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-grafito-500">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 inline-block mr-1 animate-pulse" />
+                    {sales.filter(s => s.status === 'COMPLETED').length} ventas · {formatCurrency(totalCompleted, branch?.currency ?? 'COP')}
+                  </span>
+                  <button onClick={onClose} className="rounded-xl p-1.5 text-grafito-400 hover:bg-grafito-100 dark:hover:bg-white/5 transition-colors ml-1">
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                {/* Toggle Esta caja / Sucursal — solo managers */}
-                {isManager && (
-                  <div className="flex rounded-lg border border-grafito-200 dark:border-white/10 overflow-hidden text-xs font-semibold">
+
+              {/* Tabs por caja */}
+              {tabs.length > 1 && (
+                <div className="flex gap-1 overflow-x-auto pb-0 scrollbar-none -mx-1 px-1">
+                  {tabs.map(tab => (
                     <button
-                      onClick={() => setScope('caja')}
+                      key={tab.id}
+                      onClick={() => setSelectedRegisterId(tab.id)}
                       className={cn(
-                        'px-2.5 py-1.5 transition-colors',
-                        scope === 'caja'
-                          ? 'bg-brand-500 text-white'
-                          : 'text-grafito-500 hover:bg-grafito-100 dark:hover:bg-white/5',
+                        'shrink-0 rounded-t-lg px-3 py-2 text-xs font-semibold transition-colors border-b-2',
+                        selectedRegisterId === tab.id
+                          ? 'border-brand-500 text-brand-500 bg-brand-500/5'
+                          : 'border-transparent text-grafito-500 hover:text-grafito-700 dark:hover:text-grafito-200 hover:bg-grafito-50 dark:hover:bg-white/5',
                       )}
                     >
-                      Esta caja
-                    </button>
-                    <button
-                      onClick={() => setScope('sucursal')}
-                      className={cn(
-                        'px-2.5 py-1.5 transition-colors border-l border-grafito-200 dark:border-white/10',
-                        scope === 'sucursal'
-                          ? 'bg-brand-500 text-white'
-                          : 'text-grafito-500 hover:bg-grafito-100 dark:hover:bg-white/5',
+                      {tab.name}
+                      {tab.id === activeRegister?.id && (
+                        <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" />
                       )}
-                    >
-                      Sucursal
                     </button>
-                  </div>
-                )}
-                <button onClick={onClose} className="rounded-xl p-2 text-grafito-400 hover:bg-grafito-100 dark:hover:bg-white/5 transition-colors">
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Search + filtros de estado */}
@@ -463,7 +470,7 @@ export function SalesHistoryModal({ open, onClose, activeRegister }: Props) {
               ) : filtered.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full gap-3 text-grafito-400">
                   <Receipt className="h-10 w-10 opacity-30" />
-                  <p className="text-sm font-medium">Sin ventas en este turno</p>
+                  <p className="text-sm font-medium">Sin ventas en este período</p>
                 </div>
               ) : (
                 filtered.map(sale => (

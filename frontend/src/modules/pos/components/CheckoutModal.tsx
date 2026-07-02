@@ -114,7 +114,9 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
 
   const handleComplete = async () => {
     try {
-      const paidAmount = method === 'CASH' ? cashReceived : total
+      // Siempre guardamos el total de la venta como monto del pago.
+      // Para efectivo, cashReceived > total es el vuelto — sale de caja pero no es ingreso.
+      const paidAmount = total
       await createSale({
         items: items.map(it => ({
           product_id:      it.productId,

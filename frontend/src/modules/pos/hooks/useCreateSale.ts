@@ -14,10 +14,14 @@ export function useCreateSale() {
     mutationFn: (payload: CreateSalePayload) =>
       createSale(tenantId!, branchId!, userId!, payload),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['sales'] })
-      qc.invalidateQueries({ queryKey: ['dashboard-stats'] })
-      qc.invalidateQueries({ queryKey: ['inventory'] })
-      qc.invalidateQueries({ queryKey: ['products'] })
+      const opts = { refetchType: 'all' as const }
+      qc.invalidateQueries({ queryKey: ['sales'],          ...opts })
+      qc.invalidateQueries({ queryKey: ['sales-history'],  ...opts })
+      qc.invalidateQueries({ queryKey: ['shift-sales'],    ...opts })
+      qc.invalidateQueries({ queryKey: ['pending-sales'],  ...opts })
+      qc.invalidateQueries({ queryKey: ['dashboard-stats'],...opts })
+      qc.invalidateQueries({ queryKey: ['inventory'],      ...opts })
+      qc.invalidateQueries({ queryKey: ['products'],       ...opts })
     },
   })
 }

@@ -1806,6 +1806,21 @@ export async function closeCashRegister(
 
 // ── Cash Register History ─────────────────────────────────────
 
+export async function getOpenCashRegisters(
+  tenantId: string,
+  branchId: string,
+): Promise<CashRegisterRow[]> {
+  const { data, error } = await supabase
+    .from('cash_registers')
+    .select('id, tenant_id, branch_id, name, status, opened_at, closed_at, opening_cash, closing_cash, expected_cash, cash_difference, opened_by, closed_by')
+    .eq('tenant_id', tenantId)
+    .eq('branch_id', branchId)
+    .eq('status', 'OPEN')
+    .order('opened_at', { ascending: true })
+  if (error) throw error
+  return (data ?? []) as CashRegisterRow[]
+}
+
 export interface CashRegisterHistoryRow extends CashRegisterRow {
   opened_by_profile: { full_name: string } | null
   closed_by_profile: { full_name: string } | null
@@ -1862,7 +1877,7 @@ export async function getSalesHistory(
     .from('sales')
     .select(`
       id, order_number, status, total, subtotal, tax_total, discount_total,
-      currency, created_at, notes,
+      currency, created_at, notes, cash_register_id,
       customers(full_name),
       sale_payments(method, amount),
       sale_items(name, quantity, unit_price, total, discount_amount, tax, tax_amount)
