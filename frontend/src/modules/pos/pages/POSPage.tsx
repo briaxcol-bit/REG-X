@@ -29,6 +29,15 @@ import { useCreateSale } from '@modules/pos/hooks/useCreateSale'
 import { getPendingSales, getPOSTerminals, getActiveTableOrders, type SaleHistoryRow, type RestaurantOrderRow } from '@lib/db'
 import { toast } from 'sonner'
 
+// Función global — disponible para CartRow y handleAddProduct sin pasar props
+async function sendBrowserPush(title: string, body: string, tag: string) {
+  if (typeof Notification === 'undefined') return
+  let perm = Notification.permission
+  if (perm === 'default') perm = await Notification.requestPermission()
+  if (perm !== 'granted') return
+  new Notification(title, { body, icon: '/pwa-192x192.png', tag })
+}
+
 // ── Product card ─────────────────────────────────────────────
 function ProductCard({ product, onAdd }: {
   product: { id: string; name: string; price: number; imageUrl?: string; sku: string; stock: number; categoryColor?: string; tax: number }
@@ -47,20 +56,26 @@ function ProductCard({ product, onAdd }: {
       )}
     >
       {/* Image */}
-      <div className="aspect-square w-full overflow-hidden bg-grafito-100 dark:bg-grafito-700 relative">
+      <div className="h-40 w-full overflow-hidden bg-grafito-50 dark:bg-grafito-700/50 relative flex items-center justify-center">
         {product.imageUrl ? (
-          <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300" />
+          <img src={product.imageUrl} alt={product.name} className="h-full w-full object-contain p-1.5 group-hover:scale-105 transition-transform duration-300" />
         ) : (
-          <div className="h-full w-full flex items-center justify-center text-3xl font-black text-white"
+          <div className="h-full w-full flex items-center justify-center text-2xl font-black text-white"
             style={{ backgroundColor: product.categoryColor ?? '#374151' }}>
             {product.name[0]?.toUpperCase()}
           </div>
         )}
-        {product.stock > 0 && product.stock <= 5 && (
-          <span className="absolute top-1.5 right-1.5 rounded-full bg-amber-500 px-1.5 py-0.5 text-[9px] font-bold text-white">
-            {product.stock}
-          </span>
-        )}
+        {/* Badge de stock — siempre visible */}
+        <span className={cn(
+          'absolute top-1.5 right-1.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold border',
+          product.stock === 0
+            ? 'bg-red-500 text-white border-red-600/20'
+            : product.stock <= 5
+              ? 'bg-amber-400 text-amber-900 border-amber-500/20'
+              : 'bg-white/90 dark:bg-grafito-900/90 text-grafito-700 dark:text-grafito-200 border-black/5 dark:border-white/10',
+        )}>
+          {product.stock} uds
+        </span>
         {product.stock === 0 && (
           <div className="absolute inset-0 flex items-center justify-center bg-grafito-900/60">
             <span className="text-[10px] font-bold text-white uppercase tracking-wider">Agotado</span>
@@ -125,8 +140,14 @@ function CartRow({ item }: { item: ReturnType<typeof usePOSStore.getState>['item
             setInputValue(e.target.value)
             const v = parseInt(e.target.value)
             if (!isNaN(v) && v > 0) {
-              if (v > item.stock) { toast.error(`Solo hay ${item.stock}`); updateQuantity(item.id, item.stock) }
-              else updateQuantity(item.id, v)
+              if (v > item.stock) {
+                toast.error(`Solo hay ${item.stock} ud${item.stock !== 1 ? 's' : ''} de "${item.name}".`, { duration: 3000 })
+                sendBrowserPush('Stock máximo', `Solo hay ${item.stock} unidades de "${item.name}" disponibles.`, `stock-max-${item.id}`)
+                updateQuantity(item.id, item.stock)
+                setInputValue(item.stock.toString())
+              } else {
+                updateQuantity(item.id, v)
+              }
             }
           }}
           onBlur={() => {
@@ -134,11 +155,17 @@ function CartRow({ item }: { item: ReturnType<typeof usePOSStore.getState>['item
             if (isNaN(v) || v < 1) { updateQuantity(item.id, 1); setInputValue('1') }
             else if (v > item.stock) setInputValue(item.stock.toString())
           }}
-          className="w-8 text-center text-xs font-bold text-grafito-900 dark:text-white bg-transparent outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+          className="w-10 text-center text-xs font-bold text-grafito-900 dark:text-white bg-transparent outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
         />
         <button
-          onClick={() => updateQuantity(item.id, item.quantity + 1)}
-          disabled={item.quantity >= item.stock}
+          onClick={() => {
+            if (item.quantity >= item.stock) {
+              toast.error(`Solo hay ${item.stock} ud${item.stock !== 1 ? 's' : ''} de "${item.name}".`, { duration: 3000 })
+              sendBrowserPush('Stock máximo', `Solo hay ${item.stock} unidades de "${item.name}" disponibles.`, `stock-max-${item.id}`)
+              return
+            }
+            updateQuantity(item.id, item.quantity + 1)
+          }}
           className={cn(
             'flex h-7 w-7 items-center justify-center transition-colors',
             item.quantity >= item.stock
@@ -228,23 +255,26 @@ export default function POSPage() {
     queryKey: ['active-table-orders', tenant?.tenantId, branch?.branchId],
     queryFn:  () => getActiveTableOrders(tenant!.tenantId, branch!.branchId),
     enabled:  !!tenant?.tenantId && !!branch?.branchId,
-    refetchInterval: 10_000,
+    refetchInterval: 5_000,   // polling cada 5s como fallback
   })
 
   // Realtime: actualizar cuentas de mesa al instante cuando un mesero envía orden
+  // Escuchamos orders + order_items sin filtro (más compatible con RLS de Supabase)
   useEffect(() => {
     if (!tenant?.tenantId) return
+    const invalidate = () =>
+      queryClient.invalidateQueries({ queryKey: ['active-table-orders'] })
+
     const channel = supabase
-      .channel('pos-table-orders')
-      .on('postgres_changes', {
-        event:  '*',
-        schema: 'public',
-        table:  'orders',
-        filter: `tenant_id=eq.${tenant.tenantId}`,
-      }, () => {
-        queryClient.invalidateQueries({ queryKey: ['active-table-orders'] })
+      .channel(`pos-table-orders-${tenant.tenantId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, invalidate)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, invalidate)
+      .subscribe((status) => {
+        // Si la suscripción falló, forzar un refetch inmediato
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          invalidate()
+        }
       })
-      .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [tenant?.tenantId, queryClient])
 
@@ -356,12 +386,14 @@ export default function POSPage() {
 
   const handleAddProduct = useCallback((product: typeof products[0]) => {
     if (product.stock === 0) {
-      toast.warning(`"${product.name}" está agotado — no hay unidades en inventario.`)
+      toast.error(`"${product.name}" está agotado.`, { duration: 3000 })
+      sendBrowserPush('Producto agotado', `"${product.name}" no tiene unidades en inventario.`, `agotado-${product.id}`)
       return
     }
     const existing = items.find(i => i.productId === product.id)
     if (existing && existing.quantity >= product.stock) {
-      toast.error(`Solo hay ${product.stock} disponibles.`)
+      toast.error(`Solo hay ${product.stock} ud${product.stock !== 1 ? 's' : ''} de "${product.name}".`, { duration: 3000 })
+      sendBrowserPush('Stock máximo', `Solo hay ${product.stock} unidad${product.stock !== 1 ? 'es' : ''} de "${product.name}".`, `stock-max-${product.id}`)
       return
     }
     addItem({ productId: product.id, sku: product.sku, name: product.name, price: product.price, quantity: 1, stock: product.stock, discount: 0, tax: product.tax ?? 0 })
@@ -809,14 +841,14 @@ export default function POSPage() {
 
           {/* Acciones */}
           <div className="px-3 pb-3 pt-1 space-y-2">
-            {/* Imprimir último recibo — solo si existe */}
-            {lastReceipt && (
+            {/* Cerrar pestaña de mesa — solo después de cobrar (carrito vacío y es una mesa) */}
+            {activeTab?.restaurantOrderId && items.length === 0 && (
               <button
-                onClick={() => window.print()}
-                className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-grafito-200 dark:border-white/10 py-2 text-xs font-semibold text-grafito-500 hover:bg-grafito-50 dark:hover:bg-white/5 transition-colors"
+                onClick={() => removeTab(activeTab.id)}
+                className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-emerald-200 dark:border-emerald-500/30 py-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors"
               >
-                <Printer className="h-3.5 w-3.5" />
-                Reimprimir último recibo
+                <X className="h-3.5 w-3.5" />
+                Cerrar pestaña de mesa
               </button>
             )}
 
@@ -839,7 +871,7 @@ export default function POSPage() {
             ) : (
               <motion.button
                 whileTap={{ scale: 0.98 }}
-                onClick={() => items.length > 0 && setCheckoutOpen(true)}
+                onClick={() => setCheckoutOpen(true)}
                 disabled={items.length === 0}
                 className={cn(
                   'flex w-full items-center justify-center gap-2 rounded-xl py-4 text-base font-bold transition-all',
@@ -849,28 +881,42 @@ export default function POSPage() {
                 )}
               >
                 <CreditCard className="h-5 w-5" />
-                {items.length > 0 ? `Cobrar ${formatCurrency(grandTotal, currency)}` : 'Cobrar'}
+                {items.length > 0 ? `Cobrar ${formatCurrency(grandTotal)}` : 'Cobrar'}
               </motion.button>
             )}
           </div>
         </div>
       </div>
 
+      {/* ── Modals (CheckoutModal / Scanner / CustomerPicker) ── */}
       <CheckoutModal
         open={checkoutOpen}
         onClose={() => setCheckoutOpen(false)}
         total={grandTotal}
-        tip={tip}
+        tip={tipAmount}
         currency={currency}
         tableId={activeTab?.tableId}
         restaurantOrderId={activeTab?.restaurantOrderId}
       />
-      <BarcodeScanner open={scannerOpen} onClose={() => setScannerOpen(false)} onScan={handleBarcodeScanned} />
+      {scannerOpen && (
+        <BarcodeScanner
+          onScanned={handleBarcodeScanned}
+          onClose={() => setScannerOpen(false)}
+        />
+      )}
       <CustomerPicker
         open={customerPickerOpen}
         onClose={() => setCustomerPickerOpen(false)}
         onSelect={(id, name) => { setCustomer(id); setCustomerName(name); setCustomerPickerOpen(false) }}
       />
+
+      {/* Receipt print */}
+      {lastReceipt && createPortal(
+        <div id="pos-receipt" style={{ display: 'none' }}>
+          <ReceiptTemplate data={lastReceipt} />
+        </div>,
+        document.body,
+      )}
     </div>
   )
 }
