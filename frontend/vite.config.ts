@@ -8,6 +8,7 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      selfDestroying: true,
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'logo.svg'],
       manifest: {
@@ -26,23 +27,11 @@ export default defineConfig({
           { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
           { src: 'maskable-icon-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
-        screenshots: [
-          {
-            src: 'screenshot-wide.png',
-            sizes: '1280x720',
-            type: 'image/png',
-            form_factor: 'wide',
-            label: 'REG-X Dashboard',
-          },
-        ],
         categories: ['business', 'productivity'],
         shortcuts: [
           { name: 'POS', short_name: 'POS', url: '/pos', icons: [{ src: '/pwa-64x64.png', sizes: '64x64' }] },
           { name: 'Dashboard', short_name: 'Panel', url: '/dashboard', icons: [{ src: '/pwa-64x64.png', sizes: '64x64' }] },
         ],
-        protocol_handlers: [],
-        file_handlers: [],
-        related_applications: [],
         prefer_related_applications: false,
       },
       workbox: {
@@ -90,8 +79,7 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
       },
       devOptions: {
-        enabled: true,
-        type: 'module',
+        enabled: false,
       },
     }),
   ],

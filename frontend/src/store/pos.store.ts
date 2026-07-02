@@ -56,6 +56,8 @@ export interface CartTab {
   payments: PaymentLine[]
   customerId?: string
   tableId?: string
+  restaurantOrderId?: string   // ID de la orden de restaurante vinculada
+  tip: number                  // Propina (no impositiva)
   notes: string
 }
 
@@ -70,6 +72,8 @@ function newTab(label?: string): CartTab {
     payments: [],
     customerId: undefined,
     tableId: undefined,
+    restaurantOrderId: undefined,
+    tip: 0,
     notes: '',
   }
 }
@@ -119,7 +123,15 @@ interface POSActions {
   setCustomer:        (customerId: string | undefined) => void
   setTable:           (tableId: string | undefined) => void
   setNotes:           (notes: string) => void
+  setTip:             (amount: number) => void
   clearCart:          () => void
+  /** Carga los ítems de una orden de restaurante en una nueva tab del POS */
+  loadTableOrder: (params: {
+    tableId:           string
+    restaurantOrderId: string
+    label:             string
+    items:             Omit<CartItem, 'id' | 'total' | 'taxAmount' | 'discountAmount'>[]
+  }) => void
 
   // Session / misc
   setOffline:    (offline: boolean) => void
@@ -130,7 +142,9 @@ interface POSActions {
   getSubtotal:      () => number
   getTaxTotal:      () => number
   getDiscountTotal: () => number
-  getTotal:         () => number
+  getTotal:         () => number   // total sin propina
+  getTip:           () => number
+  getGrandTotal:    () => number   // total + propina (lo que paga el cliente)
   getChange:        () => number
   getPendingAmount: () => number
 
@@ -236,17 +250,54 @@ export const usePOSStore = create<POSState & POSActions>()(
         setCustomer: (customerId) => mutateActive(tab => { tab.customerId = customerId }),
         setTable:    (tableId)    => mutateActive(tab => { tab.tableId = tableId }),
         setNotes:    (notes)      => mutateActive(tab => { tab.notes = notes }),
+        setTip:      (amount)     => mutateActive(tab => { tab.tip = Math.max(0, amount) }),
 
-        clearCart: () => mutateActive(tab => {
-          tab.items = []
-          tab.discounts = []
-          tab.payments = []
-          tab.customerId = undefined
-          tab.tableId = undefined
-          tab.notes = ''
+        loadTableOrder: ({ tableId, restaurantOrderId, label, items }) => set(state => {
+          // Reusar tab existente si ya está abierta para esa mesa
+          const existing = state.tabs.find(t => t.tableId === tableId)
+          if (existing) {
+            // Actualizar ítems y activar
+            existing.restaurantOrderId = restaurantOrderId
+            existing.label             = label
+            existing.items             = items.map(it => {
+              const calc = calcItemTotal(it)
+              return { ...it, id: nanoid(), ...calc }
+            })
+            state.activeTabId = existing.id
+            return
+          }
+          // Crear nueva tab
+          const tab: CartTab = {
+            id:                nanoid(6),
+            label,
+            items:             items.map(it => {
+              const calc = calcItemTotal(it)
+              return { ...it, id: nanoid(), ...calc }
+            }),
+            discounts:         [],
+            payments:          [],
+            customerId:        undefined,
+            tableId,
+            restaurantOrderId,
+            tip:               0,
+            notes:             '',
+          }
+          state.tabs.push(tab)
+          state.activeTabId = tab.id
         }),
 
-        // ── Session / misc ───────────────────────────────────
+        clearCart: () => mutateActive(tab => {
+          tab.items              = []
+          tab.discounts          = []
+          tab.payments           = []
+          tab.customerId         = undefined
+          tab.tableId            = undefined
+          tab.restaurantOrderId  = undefined
+          tab.tip                = 0
+          tab.notes              = ''
+        }),
+
+        // ── Session / misc ─────
         setOffline:     (offline) => set(state => { state.isOffline = offline }),
         setSession:     (session) => set(state => { state.session = session }),
         setLastReceipt: (receipt) => set(state => { state.lastReceipt = receipt }),
@@ -272,16 +323,20 @@ export const usePOSStore = create<POSState & POSActions>()(
           return Math.max(0, getSubtotal() + getTaxTotal() - getDiscountTotal())
         },
 
+        getTip: () => activeTab().tip ?? 0,
+
+        getGrandTotal: () => get().getTotal() + (activeTab().tip ?? 0),
+
         getPendingAmount: () => {
           const tab  = activeTab()
           const paid = tab.payments.reduce((acc, p) => acc + p.amount, 0)
-          return Math.max(0, get().getTotal() - paid)
+          return Math.max(0, get().getGrandTotal() - paid)
         },
 
         getChange: () => {
           const tab  = activeTab()
           const paid = tab.payments.reduce((acc, p) => acc + p.amount, 0)
-          return Math.max(0, paid - get().getTotal())
+          return Math.max(0, paid - get().getGrandTotal())
         },
 
       }

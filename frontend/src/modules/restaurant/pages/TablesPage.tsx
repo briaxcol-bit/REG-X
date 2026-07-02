@@ -2,7 +2,9 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Users, Lock, Unlock, RotateCcw, Loader2, Plus, X } from 'lucide-react'
 import { getTables, createTable, type TableRow } from '@lib/db'
+import { supabase } from '@lib/supabase'
 import { useAuthStore } from '@store/auth.store'
+import { TableOrderPanel } from '../components/TableOrderPanel'
 import { toast } from 'sonner'
 import { cn } from '@shared/utils/cn'
 
@@ -20,26 +22,27 @@ const STATUS_MAP: Record<TableRow['status'], { label: string; bg: string; border
   MAINTENANCE: { label: 'Mantenimiento', bg: 'bg-grafito-100 dark:bg-white/5',        border: 'border-grafito-300 dark:border-white/10',       dot: 'bg-grafito-400' },
 }
 
-// Snap al grid
 const snap = (v: number) => Math.round(v / GRID) * GRID
 
-// Posición inicial por defecto (grid auto)
 const defaultPos = (index: number) => ({
   x: snap(40 + (index % 5) * 200),
   y: snap(40 + Math.floor(index / 5) * 160),
 })
 
-// ── Componente de mesa ──────────────────────────────────────────
+// ── TableCard ──────────────────────────────────────────────────
+
 interface TableCardProps {
   table:    TableRow
   pos:      { x: number; y: number }
   editMode: boolean
   onDragEnd: (id: string, x: number, y: number) => void
+  onClick:   (table: TableRow) => void
 }
 
-function TableCard({ table, pos, editMode, onDragEnd }: TableCardProps) {
+function TableCard({ table, pos, editMode, onDragEnd, onClick }: TableCardProps) {
   const s        = STATUS_MAP[table.status] ?? STATUS_MAP.AVAILABLE
   const dragging = useRef(false)
+  const didMove  = useRef(false)
   const offset   = useRef({ x: 0, y: 0 })
   const elRef    = useRef<HTMLDivElement>(null)
 
@@ -47,7 +50,8 @@ function TableCard({ table, pos, editMode, onDragEnd }: TableCardProps) {
     if (!editMode) return
     e.preventDefault()
     dragging.current = true
-    const rect = elRef.current!.getBoundingClientRect()
+    didMove.current  = false
+    const rect   = elRef.current!.getBoundingClientRect()
     const parent = elRef.current!.parentElement!.getBoundingClientRect()
     offset.current = {
       x: e.clientX - rect.left + parent.left - parent.left,
@@ -56,6 +60,7 @@ function TableCard({ table, pos, editMode, onDragEnd }: TableCardProps) {
 
     const onMove = (ev: MouseEvent) => {
       if (!dragging.current || !elRef.current) return
+      didMove.current = true
       const parent = elRef.current.parentElement!.getBoundingClientRect()
       const nx = snap(Math.max(0, Math.min(ev.clientX - parent.left - offset.current.x, CANVAS_W - TABLE_W)))
       const ny = snap(Math.max(0, Math.min(ev.clientY - parent.top  - offset.current.y, CANVAS_H - TABLE_H)))
@@ -76,17 +81,23 @@ function TableCard({ table, pos, editMode, onDragEnd }: TableCardProps) {
     document.addEventListener('mouseup',   onUp)
   }
 
+  const handleClick = () => {
+    if (editMode || didMove.current) return
+    onClick(table)
+  }
+
   return (
     <div
       ref={elRef}
       onMouseDown={onMouseDown}
+      onClick={handleClick}
       style={{ left: pos.x, top: pos.y, width: TABLE_W, height: TABLE_H, position: 'absolute' }}
       className={cn(
         'rounded-xl border-2 flex flex-col justify-between p-2.5 select-none transition-shadow',
         s.bg, s.border,
         editMode
           ? 'cursor-grab active:cursor-grabbing shadow-lg ring-2 ring-brand-500/30'
-          : 'cursor-default shadow-sm hover:shadow-md',
+          : 'cursor-pointer shadow-sm hover:shadow-lg hover:scale-105 transition-transform',
       )}
     >
       {/* Nombre + dot */}
@@ -118,9 +129,10 @@ function TableCard({ table, pos, editMode, onDragEnd }: TableCardProps) {
 }
 
 // ── Modal nueva mesa ───────────────────────────────────────────
+
 interface AddTableModalProps {
-  onClose:  () => void
-  onSaved:  (table: TableRow, pos: { x: number; y: number }) => void
+  onClose: () => void
+  onSaved: (table: TableRow, pos: { x: number; y: number }) => void
 }
 
 function AddTableModal({ onClose, onSaved }: AddTableModalProps) {
@@ -143,7 +155,6 @@ function AddTableModal({ onClose, onSaved }: AddTableModalProps) {
         capacity: Math.max(1, parseInt(capacity) || 4),
       })
       toast.success(`Mesa "${row.number}" creada.`)
-      // Posición inicial: centro del canvas
       onSaved(row, { x: snap(CANVAS_W / 2 - TABLE_W / 2), y: snap(CANVAS_H / 2 - TABLE_H / 2) })
     } catch (e: any) {
       toast.error(e?.message ?? 'Error al crear la mesa.')
@@ -155,7 +166,6 @@ function AddTableModal({ onClose, onSaved }: AddTableModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-grafito-900 border border-grafito-200 dark:border-white/10 shadow-2xl overflow-hidden">
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-grafito-100 dark:border-white/5">
           <h2 className="text-sm font-bold text-grafito-900 dark:text-white">Nueva Mesa</h2>
           <button onClick={onClose} className="rounded-lg p-1.5 text-grafito-400 hover:bg-grafito-100 dark:hover:bg-white/10 transition-colors">
@@ -163,7 +173,6 @@ function AddTableModal({ onClose, onSaved }: AddTableModalProps) {
           </button>
         </div>
 
-        {/* Form */}
         <div className="p-5 space-y-4">
           <div>
             <label className="block text-xs font-semibold text-grafito-600 dark:text-grafito-300 mb-1.5">
@@ -217,7 +226,6 @@ function AddTableModal({ onClose, onSaved }: AddTableModalProps) {
           </div>
         </div>
 
-        {/* Footer */}
         <div className="px-5 pb-5 flex gap-2">
           <button
             onClick={onClose}
@@ -240,11 +248,12 @@ function AddTableModal({ onClose, onSaved }: AddTableModalProps) {
 }
 
 // ── Página principal ────────────────────────────────────────────
+
 const STORAGE_KEY = 'regx_table_positions'
 
 export default function TablesPage() {
-  const navigate        = useNavigate()
-  const { tenant, branch } = useAuthStore()
+  const navigate            = useNavigate()
+  const { tenant, branch }  = useAuthStore()
 
   const [tables,    setTables]    = useState<TableRow[]>([])
   const [loading,   setLoading]   = useState(true)
@@ -252,21 +261,25 @@ export default function TablesPage() {
   const [addOpen,   setAddOpen]   = useState(false)
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({})
 
-  // Cargar mesas desde Supabase
+  const [selectedTable, setSelectedTable] = useState<TableRow | null>(null)
+
+  // ── Click en mesa → siempre abre el panel del mesero ──────────
+  const handleTableClick = useCallback((table: TableRow) => {
+    if (editMode) return
+    setSelectedTable(table)
+  }, [editMode])
+
+  // ── Cargar mesas ─────────────────────────────────────────────
   useEffect(() => {
     if (!tenant?.tenantId || !branch?.branchId) return
     setLoading(true)
     getTables(tenant.tenantId, branch.branchId)
       .then(rows => {
         setTables(rows)
-        // Cargar posiciones guardadas
         try {
           const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}')
-          // Para mesas sin posición guardada, asignar posición por defecto
           const merged: Record<string, { x: number; y: number }> = {}
-          rows.forEach((t, i) => {
-            merged[t.id] = saved[t.id] ?? defaultPos(i)
-          })
+          rows.forEach((t, i) => { merged[t.id] = saved[t.id] ?? defaultPos(i) })
           setPositions(merged)
         } catch {
           const merged: Record<string, { x: number; y: number }> = {}
@@ -278,6 +291,42 @@ export default function TablesPage() {
       .finally(() => setLoading(false))
   }, [tenant?.tenantId, branch?.branchId])
 
+  // ── Supabase Realtime — tabla "tables" ───────────────────────
+  useEffect(() => {
+    if (!tenant?.tenantId) return
+
+    const channel = supabase
+      .channel('tables-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event:  '*',
+          schema: 'public',
+          table:  'tables',
+          filter: `tenant_id=eq.${tenant.tenantId}`,
+        },
+        payload => {
+          if (payload.eventType === 'UPDATE') {
+            const updated = payload.new as TableRow
+            setTables(prev => prev.map(t => t.id === updated.id ? { ...t, ...updated } : t))
+            // Si el panel tiene esa mesa abierta, actualizarla también
+            setSelectedTable(prev => prev?.id === updated.id ? { ...prev, ...updated } : prev)
+          } else if (payload.eventType === 'INSERT') {
+            // Nueva mesa creada desde otro dispositivo — poco frecuente, recargar
+            if (tenant?.tenantId && branch?.branchId) {
+              getTables(tenant.tenantId, branch.branchId).then(setTables).catch(() => {})
+            }
+          } else if (payload.eventType === 'DELETE') {
+            setTables(prev => prev.filter(t => t.id !== (payload.old as any).id))
+          }
+        },
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [tenant?.tenantId, branch?.branchId])
+
+  // ── Drag & drop ──────────────────────────────────────────────
   const handleDragEnd = useCallback((id: string, x: number, y: number) => {
     setPositions(prev => {
       const next = { ...prev, [id]: { x, y } }
@@ -294,7 +343,7 @@ export default function TablesPage() {
       return next
     })
     setAddOpen(false)
-    setEditMode(true) // activa modo edición para que el usuario la pueda mover de una
+    setEditMode(true)
   }
 
   const resetLayout = () => {
@@ -304,7 +353,12 @@ export default function TablesPage() {
     localStorage.removeItem(STORAGE_KEY)
   }
 
-  // Leyenda
+  // ── Actualización desde el panel ─────────────────────────────
+  const handleTableUpdated = useCallback((updated: TableRow) => {
+    setTables(prev => prev.map(t => t.id === updated.id ? updated : t))
+    setSelectedTable(updated)
+  }, [])
+
   const legend = Object.entries(STATUS_MAP).map(([k, v]) => ({ key: k, ...v }))
 
   return (
@@ -313,6 +367,14 @@ export default function TablesPage() {
         <AddTableModal
           onClose={() => setAddOpen(false)}
           onSaved={handleTableCreated}
+        />
+      )}
+
+      {selectedTable && (
+        <TableOrderPanel
+          table={selectedTable}
+          onClose={() => setSelectedTable(null)}
+          onTableUpdated={handleTableUpdated}
         />
       )}
 
@@ -328,12 +390,13 @@ export default function TablesPage() {
           <div>
             <h1 className="text-lg font-bold text-grafito-900 dark:text-white">Mapa de Mesas</h1>
             <p className="text-xs text-grafito-500 dark:text-grafito-400">
-              {editMode ? 'Arrastra las mesas para posicionarlas en el espacio físico.' : 'Distribución física y estado actual.'}
+              {editMode
+                ? 'Arrastra las mesas para posicionarlas en el espacio físico.'
+                : 'Haz clic en una mesa para gestionar su pedido.'}
             </p>
           </div>
         </div>
 
-        {/* Controles */}
         <div className="flex items-center gap-2">
           {/* Leyenda */}
           <div className="hidden md:flex items-center gap-3 mr-4">
@@ -372,7 +435,10 @@ export default function TablesPage() {
                 : 'border border-grafito-200 dark:border-white/10 text-grafito-600 dark:text-grafito-300 hover:bg-grafito-100 dark:hover:bg-white/5',
             )}
           >
-            {editMode ? <><Lock className="h-3.5 w-3.5" /> Guardar layout</> : <><Unlock className="h-3.5 w-3.5" /> Editar layout</>}
+            {editMode
+              ? <><Lock className="h-3.5 w-3.5" /> Guardar layout</>
+              : <><Unlock className="h-3.5 w-3.5" /> Editar layout</>
+            }
           </button>
         </div>
       </div>
@@ -385,8 +451,15 @@ export default function TablesPage() {
             <span className="text-sm">Cargando mesas...</span>
           </div>
         ) : tables.length === 0 ? (
-          <div className="flex items-center justify-center h-full">
+          <div className="flex flex-col items-center justify-center h-full gap-3">
             <p className="text-sm text-grafito-400">No hay mesas configuradas.</p>
+            <button
+              onClick={() => setAddOpen(true)}
+              className="flex items-center gap-1.5 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 transition-colors"
+            >
+              <Plus className="h-4 w-4" />
+              Crear primera mesa
+            </button>
           </div>
         ) : (
           <div
@@ -424,6 +497,7 @@ export default function TablesPage() {
                 pos={positions[t.id] ?? defaultPos(tables.indexOf(t))}
                 editMode={editMode}
                 onDragEnd={handleDragEnd}
+                onClick={handleTableClick}
               />
             ))}
           </div>
