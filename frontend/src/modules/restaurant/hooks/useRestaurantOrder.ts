@@ -34,7 +34,8 @@ export function useRestaurantOrder() {
     setSubmitting(true)
     try {
       if (order) {
-        await addItemsToOrder(order.id, items)
+        // Cualquier mesero puede agregar a una mesa ya abierta; se registra quién.
+        await addItemsToOrder(order.id, items, waiterId, waiterName)
       } else {
         await createRestaurantOrder(tenantId, branchId, tableId, waiterId, waiterName, items)
       }

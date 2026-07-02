@@ -268,7 +268,9 @@ function AddTableModal({ onClose, onSaved }: AddTableModalProps) {
 
 export default function TablesPage() {
   const navigate            = useNavigate()
-  const { tenant, branch }  = useAuthStore()
+  const { tenant, branch, hasPermission }  = useAuthStore()
+  // El mesero puede abrir cuentas pero NO crear/editar mesas ni el layout.
+  const canManageTables = hasPermission('restaurant.tables.manage')
 
   const [tables,    setTables]    = useState<TableRow[]>([])
   const [loading,   setLoading]   = useState(true)
@@ -488,15 +490,17 @@ export default function TablesPage() {
             ))}
           </div>
 
-          <button
-            onClick={() => setAddOpen(true)}
-            className="flex items-center gap-1.5 rounded-lg bg-brand-500 px-3 py-2 text-xs font-semibold text-white hover:bg-brand-600 transition-colors"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Nueva Mesa
-          </button>
+          {canManageTables && (
+            <button
+              onClick={() => setAddOpen(true)}
+              className="flex items-center gap-1.5 rounded-lg bg-brand-500 px-3 py-2 text-xs font-semibold text-white hover:bg-brand-600 transition-colors"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Nueva Mesa
+            </button>
+          )}
 
-          {editMode && (
+          {canManageTables && editMode && (
             <button
               onClick={resetLayout}
               className="flex items-center gap-1.5 rounded-lg border border-grafito-200 dark:border-white/10 px-3 py-2 text-xs text-grafito-500 hover:bg-grafito-100 dark:hover:bg-white/5 transition-colors"
@@ -506,20 +510,22 @@ export default function TablesPage() {
             </button>
           )}
 
-          <button
-            onClick={() => setEditMode(v => !v)}
-            className={cn(
-              'flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors',
-              editMode
-                ? 'bg-brand-500 text-white hover:bg-brand-600'
-                : 'border border-grafito-200 dark:border-white/10 text-grafito-600 dark:text-grafito-300 hover:bg-grafito-100 dark:hover:bg-white/5',
-            )}
-          >
-            {editMode
-              ? <><Lock className="h-3.5 w-3.5" /> Guardar layout</>
-              : <><Unlock className="h-3.5 w-3.5" /> Editar layout</>
-            }
-          </button>
+          {canManageTables && (
+            <button
+              onClick={() => setEditMode(v => !v)}
+              className={cn(
+                'flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors',
+                editMode
+                  ? 'bg-brand-500 text-white hover:bg-brand-600'
+                  : 'border border-grafito-200 dark:border-white/10 text-grafito-600 dark:text-grafito-300 hover:bg-grafito-100 dark:hover:bg-white/5',
+              )}
+            >
+              {editMode
+                ? <><Lock className="h-3.5 w-3.5" /> Guardar layout</>
+                : <><Unlock className="h-3.5 w-3.5" /> Editar layout</>
+              }
+            </button>
+          )}
         </div>
       </div>
 
@@ -565,13 +571,15 @@ export default function TablesPage() {
         ) : tables.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-3">
             <p className="text-sm text-grafito-400">No hay mesas configuradas.</p>
-            <button
-              onClick={() => setAddOpen(true)}
-              className="flex items-center gap-1.5 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 transition-colors"
-            >
-              <Plus className="h-4 w-4" />
-              Crear primera mesa
-            </button>
+            {canManageTables && (
+              <button
+                onClick={() => setAddOpen(true)}
+                className="flex items-center gap-1.5 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 transition-colors"
+              >
+                <Plus className="h-4 w-4" />
+                Crear primera mesa
+              </button>
+            )}
           </div>
         ) : (
           <>

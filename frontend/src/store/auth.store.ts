@@ -46,11 +46,12 @@ export interface UserProfile {
 
 const ROLE_PERMISSIONS: Record<string, string[]> = {
   OWNER:             ['*'],
-  ADMIN:             ['sales.create', 'products.view', 'inventory.view', 'reports.view', 'kitchen.view'],
-  CASHIER:           ['sales.create', 'products.view', 'inventory.view'],
-  WAITER:            ['sales.create', 'kitchen.view'],
+  ADMIN:             ['sales.create', 'products.view', 'inventory.view', 'reports.view', 'kitchen.view', 'restaurant.view', 'restaurant.order.create', 'restaurant.tables.manage'],
+  CASHIER:           ['sales.create', 'products.view', 'inventory.view', 'restaurant.view', 'restaurant.order.create'],
+  // Mesero: SOLO ve el mapa de mesas y crea cuentas nuevas. Nada más.
+  WAITER:            ['restaurant.view', 'restaurant.order.create'],
   CHEF:              ['kitchen.view'],
-  BARTENDER:         ['sales.create', 'kitchen.view'],
+  BARTENDER:         ['sales.create', 'kitchen.view', 'restaurant.view', 'restaurant.order.create'],
   ACCOUNTANT:        ['reports.view', 'inventory.view'],
   INVENTORY_MANAGER: ['inventory.view', 'products.view'],
 }

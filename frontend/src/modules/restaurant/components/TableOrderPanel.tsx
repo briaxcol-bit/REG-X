@@ -396,6 +396,12 @@ export function TableOrderPanel({ table, onClose, onTableUpdated }: TableOrderPa
                           {item.notes && (
                             <p className="text-[10px] text-grafito-400 italic truncate">{item.notes}</p>
                           )}
+                          {item.added_by_name && (
+                            <p className="text-[10px] text-brand-500/90 truncate flex items-center gap-1">
+                              <Users className="h-2.5 w-2.5 shrink-0" />
+                              {item.added_by_name}
+                            </p>
+                          )}
                         </div>
                         <span className="text-xs font-semibold text-grafito-700 dark:text-grafito-200 shrink-0">
                           {fmt(itemPrice * item.quantity)}

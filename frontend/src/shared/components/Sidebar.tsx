@@ -19,6 +19,7 @@ interface NavItem {
   badge?: string | number
   group?: string
   cashierVisible?: boolean   // true = también aparece para el rol CASHIER
+  waiterVisible?: boolean    // true = también aparece para el rol WAITER (mesero)
   subItems?: { to: string; label: string; icon?: React.ElementType; permission?: string }[]
 }
 
@@ -42,7 +43,7 @@ const NAV_ITEMS: NavItem[] = [
   },
   { to: '/customers',     icon: Users,    label: 'Clientes',    group: 'Catalogo' },
   { to: '/employees',     icon: UserCog,  label: 'Empleados',   group: 'Catalogo' },
-  { to: '/restaurant',    icon: ChefHat,  label: 'Restaurante', group: 'Servicio'  },
+  { to: '/restaurant',    icon: ChefHat,  label: 'Restaurante', permission: 'restaurant.view', group: 'Servicio', waiterVisible: true },
   {
     to: '/reports',
     icon: BarChart3,
@@ -79,12 +80,15 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   const isSuperAdmin = profile?.platformRole === 'SUPER_ADMIN'
   const isCashier    = hasRole('CASHIER')
+  const isWaiter     = hasRole('WAITER')
 
   const visibleItems = isSuperAdmin
     ? PLATFORM_NAV_ITEMS
-    : isCashier
-      ? NAV_ITEMS.filter(i => i.cashierVisible)
-      : NAV_ITEMS.filter((item) => !item.permission || hasPermission(item.permission))
+    : isWaiter
+      ? NAV_ITEMS.filter(i => i.waiterVisible)
+      : isCashier
+        ? NAV_ITEMS.filter(i => i.cashierVisible)
+        : NAV_ITEMS.filter((item) => !item.permission || hasPermission(item.permission))
 
   const groups = [...new Set(visibleItems.map((i) => i.group))]
 

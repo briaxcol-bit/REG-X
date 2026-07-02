@@ -69,6 +69,16 @@ function NoCashier({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+// -- Guard: el mesero solo puede estar en el mapa de mesas -----
+// Cualquier ruta que no sea de restaurante lo devuelve a /restaurant/tables.
+function NoWaiter({ children }: { children: React.ReactNode }) {
+  const profile   = useAuthStore((s) => s.profile)
+  const isLoading = useAuthStore((s) => s.isLoading)
+  if (isLoading) return <FullscreenLoader />
+  if (profile?.businessRole === 'WAITER') return <Navigate to="/restaurant/tables" replace />
+  return <>{children}</>
+}
+
 // -- Smart home redirect --------------------------------------
 // SUPER_ADMIN -> /admin  |  todos los demas -> /dashboard
 function SmartHome() {
@@ -81,6 +91,7 @@ function SmartHome() {
     let dest = '/dashboard'
     if (profile?.platformRole === 'SUPER_ADMIN') dest = '/admin'
     else if (profile?.businessRole === 'CASHIER') dest = '/pos'
+    else if (profile?.businessRole === 'WAITER') dest = '/restaurant/tables'
     navigate(dest, { replace: true })
   }, [profile, isLoading, navigate])
 
@@ -144,8 +155,8 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <SmartHome /> },
 
-      // Regular dashboard — OWNER/ADMIN. Cajero redirige al POS.
-      { path: 'dashboard', element: <NoCashier><Page><DashboardPage /></Page></NoCashier> },
+      // Regular dashboard — OWNER/ADMIN. Cajero redirige al POS, mesero al mapa de mesas.
+      { path: 'dashboard', element: <NoWaiter><NoCashier><Page><DashboardPage /></Page></NoCashier></NoWaiter> },
       { path: 'saas',      element: <Page><SaaSDashboard /></Page> },
 
       // Platform Admin (SUPER_ADMIN only)
@@ -186,14 +197,15 @@ export const router = createBrowserRouter([
       },
 
       // Customers
-      { path: 'customers', element: <Page><CustomersPage /></Page> },
+      { path: 'customers', element: <NoWaiter><Page><CustomersPage /></Page></NoWaiter> },
 
       // Employees
-      { path: 'employees', element: <Page><EmployeesPage /></Page> },
+      { path: 'employees', element: <NoWaiter><Page><EmployeesPage /></Page></NoWaiter> },
 
       // Restaurant
       {
         path: 'restaurant',
+        element: <RequirePermission permission="restaurant.view"><Outlet /></RequirePermission>,
         children: [
           { index: true,    element: <Page><RestaurantPage /></Page> },
           { path: 'tables', element: <Page><TablesPage /></Page> },
@@ -211,13 +223,13 @@ export const router = createBrowserRouter([
       },
 
       // Settings
-      { path: 'settings/*', element: <Page><SettingsPage /></Page> },
+      { path: 'settings/*', element: <NoWaiter><Page><SettingsPage /></Page></NoWaiter> },
 
       // Subscriptions
-      { path: 'subscriptions', element: <Page><SubscriptionsPage /></Page> },
+      { path: 'subscriptions', element: <NoWaiter><Page><SubscriptionsPage /></Page></NoWaiter> },
 
       // Marketplace
-      { path: 'marketplace', element: <Page><MarketplacePage /></Page> },
+      { path: 'marketplace', element: <NoWaiter><Page><MarketplacePage /></Page></NoWaiter> },
     ],
   },
 

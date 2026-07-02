@@ -1,7 +1,10 @@
 import { Link } from 'react-router-dom'
 import { Utensils, Monitor } from 'lucide-react'
+import { useAuthStore } from '@store/auth.store'
 
 export default function RestaurantPage() {
+  const hasPermission = useAuthStore((s) => s.hasPermission)
+  const canSeeKitchen = hasPermission('kitchen.view')
   return (
     <div className="space-y-6 p-6">
       <div>
@@ -21,16 +24,18 @@ export default function RestaurantPage() {
           <p className="text-sm text-grafito-500 dark:text-grafito-400">Visualiza y administra el estado de las mesas de tu salón en tiempo real.</p>
         </Link>
 
-        <Link
-          to="/kds"
-          className="flex flex-col justify-between rounded-2xl border border-grafito-200 dark:border-white/5 bg-white dark:bg-grafito-900/60 p-6 backdrop-blur-md hover:border-brand-500/30 transition-all space-y-4"
-        >
-          <div className="flex items-center justify-between">
-            <h3 className="font-bold text-grafito-900 dark:text-white">Pantalla de Cocina (KDS)</h3>
-            <Monitor className="h-5 w-5 text-blue-400" />
-          </div>
-          <p className="text-sm text-grafito-500 dark:text-grafito-400">Pantalla de pedidos de cocina para preparación y despacho rápido.</p>
-        </Link>
+        {canSeeKitchen && (
+          <Link
+            to="/kds"
+            className="flex flex-col justify-between rounded-2xl border border-grafito-200 dark:border-white/5 bg-white dark:bg-grafito-900/60 p-6 backdrop-blur-md hover:border-brand-500/30 transition-all space-y-4"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-grafito-900 dark:text-white">Pantalla de Cocina (KDS)</h3>
+              <Monitor className="h-5 w-5 text-blue-400" />
+            </div>
+            <p className="text-sm text-grafito-500 dark:text-grafito-400">Pantalla de pedidos de cocina para preparación y despacho rápido.</p>
+          </Link>
+        )}
       </div>
     </div>
   )

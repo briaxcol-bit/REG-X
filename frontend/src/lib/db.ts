@@ -1086,6 +1086,9 @@ export interface RestaurantOrderItemRow {
   name?:       string | null
   sku?:        string | null
   unit_price?: number | null
+  // Trazabilidad: quién agregó este ítem (migración 023)
+  added_by?:      string | null
+  added_by_name?: string | null
   products?:   { name: string; sku: string; price: number } | null
 }
 
@@ -1134,17 +1137,20 @@ export async function createRestaurantOrder(
     await (supabase.from('orders').update({ waiter_name: waiterName } as any).eq('id', order.id)) as any
   } catch { /* columna no existe aún — ignorar */ }
 
-  // Insertar ítems — unit_price es NOT NULL en el esquema original
+  // Insertar ítems — unit_price es NOT NULL en el esquema original.
+  // added_by / added_by_name registran quién agregó cada ítem (migración 023).
   const { error: itemsErr } = await supabase.from('order_items').insert(
     items.map(item => ({
-      order_id:    order.id,
-      product_id:  item.product_id,
-      quantity:    item.quantity,
-      unit_price:  item.unit_price,
-      status:      'PENDING' as any,
-      destination: item.destination ?? 'KITCHEN',
-      notes:       item.notes ?? null,
-    })),
+      order_id:      order.id,
+      product_id:    item.product_id,
+      quantity:      item.quantity,
+      unit_price:    item.unit_price,
+      status:        'PENDING' as any,
+      destination:   item.destination ?? 'KITCHEN',
+      notes:         item.notes ?? null,
+      added_by:      waiterId,
+      added_by_name: waiterName,
+    } as any)),
   )
   if (itemsErr) throw itemsErr
 
@@ -1180,6 +1186,7 @@ export async function getActiveOrderForTable(
       id, order_number, status, notes, created_at, table_id, waiter_id,
       tables(number, name),
       order_items(id, product_id, quantity, unit_price, status, destination, notes, created_at,
+        added_by, added_by_name,
         products(name, sku, price))
     `)
     .eq('tenant_id', tenantId)
@@ -1216,19 +1223,24 @@ export async function getActiveTableOrders(
 }
 
 export async function addItemsToOrder(
-  orderId: string,
-  items:   RestaurantOrderItemInput[],
+  orderId:     string,
+  items:       RestaurantOrderItemInput[],
+  addedById?:  string,
+  addedByName?: string,
 ): Promise<void> {
+  // added_by / added_by_name registran quién agregó cada ítem (migración 023).
   const { error } = await supabase.from('order_items').insert(
     items.map(item => ({
-      order_id:    orderId,
-      product_id:  item.product_id,
-      quantity:    item.quantity,
-      unit_price:  item.unit_price,
-      status:      'PENDING' as any,
-      destination: item.destination ?? 'KITCHEN',
-      notes:       item.notes ?? null,
-    })),
+      order_id:      orderId,
+      product_id:    item.product_id,
+      quantity:      item.quantity,
+      unit_price:    item.unit_price,
+      status:        'PENDING' as any,
+      destination:   item.destination ?? 'KITCHEN',
+      notes:         item.notes ?? null,
+      added_by:      addedById ?? null,
+      added_by_name: addedByName ?? null,
+    } as any)),
   )
   if (error) throw error
 
