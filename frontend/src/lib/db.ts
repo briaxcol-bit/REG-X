@@ -1107,6 +1107,208 @@ export async function updateOrderItemStatus(itemId: string, status: string) {
   if (error) throw error
 }
 
+// ── Restaurant Orders ──────────────────────────────────────────
+// Nota: funciona con el esquema actual. Después de correr
+// MIGRATION_restaurant_orders.sql los campos denormalizados
+// (name, sku, unit_price en order_items; waiter_name en orders)
+// estarán disponibles — el código ya los soporta vía `as any`.
+
+export interface RestaurantOrderItemInput {
+  product_id:   string
+  name:         string
+  sku:          string
+  quantity:     number
+  unit_price:   number
+  notes?:       string | null
+  destination?: 'KITCHEN' | 'BAR'
+}
+
+export interface RestaurantOrderItemRow {
+  id:          string
+  product_id:  string
+  quantity:    number
+  status:      string
+  destination: string
+  notes:       string | null
+  created_at:  string
+  // Estos campos existen después de la migración (o vienen del join de productos)
+  name?:       string | null
+  sku?:        string | null
+  unit_price?: number | null
+  products?:   { name: string; sku: string; price: number } | null
+}
+
+export interface RestaurantOrderRow {
+  id:           string
+  order_number: string
+  status:       string
+  notes:        string | null
+  created_at:   string
+  table_id:     string | null
+  waiter_id:    string | null
+  waiter_name?: string | null
+  tables?:      { number: string; name: string | null } | null
+  order_items?: RestaurantOrderItemRow[]
+}
+
+export async function createRestaurantOrder(
+  tenantId:   string,
+  branchId:   string,
+  tableId:    string,
+  waiterId:   string,
+  waiterName: string,
+  items:      RestaurantOrderItemInput[],
+): Promise<RestaurantOrderRow> {
+  const orderNumber = `ORD-${Date.now().toString(36).toUpperCase()}`
+
+  // waiter_id y waiter_name son nuevos — insertar como any
+  const { data: order, error: orderErr } = await (supabase
+    .from('orders')
+    .insert({
+      tenant_id:    tenantId,
+      branch_id:    branchId,
+      table_id:     tableId,
+      waiter_id:    waiterId,
+      order_number: orderNumber,
+      status:       'PENDING',
+      notes:        null,
+    } as any)
+    .select('id, order_number, status, notes, created_at, table_id, waiter_id')
+    .single()) as any
+
+  if (orderErr) throw orderErr
+
+  // Intentar guardar también waiter_name si la columna existe (post-migración)
+  try {
+    await (supabase.from('orders').update({ waiter_name: waiterName } as any).eq('id', order.id)) as any
+  } catch { /* columna no existe aún — ignorar */ }
+
+  // Insertar ítems — unit_price es NOT NULL en el esquema original
+  const { error: itemsErr } = await supabase.from('order_items').insert(
+    items.map(item => ({
+      order_id:    order.id,
+      product_id:  item.product_id,
+      quantity:    item.quantity,
+      unit_price:  item.unit_price,
+      status:      'PENDING' as any,
+      destination: item.destination ?? 'KITCHEN',
+      notes:       item.notes ?? null,
+    })),
+  )
+  if (itemsErr) throw itemsErr
+
+  // Guardar campos denormalizados si la migración ya fue aplicada (name, sku)
+  try {
+    for (const item of items) {
+      await (supabase.from('order_items').update({
+        name: item.name, sku: item.sku,
+      } as any).eq('order_id', order.id).eq('product_id', item.product_id)) as any
+    }
+  } catch { /* ignorar si las columnas name/sku no existen aún */ }
+
+  // Marcar mesa como OCUPADA
+  const { error: tableErr } = await supabase
+    .from('tables')
+    .update({ status: 'OCCUPIED' as any })
+    .eq('id', tableId)
+  if (tableErr) console.error('[createRestaurantOrder] tables.update error:', tableErr)
+
+  return order as RestaurantOrderRow
+}
+
+
+export async function getActiveOrderForTable(
+  tenantId: string,
+  tableId:  string,
+): Promise<RestaurantOrderRow | null> {
+  // Status válidos del enum actual: PENDING | PREPARING | READY | SERVED | CANCELLED
+  // Usamos SERVED como estado "cerrado" (orden cobrada/finalizada)
+  const { data, error } = await supabase
+    .from('orders')
+    .select(`
+      id, order_number, status, notes, created_at, table_id, waiter_id,
+      tables(number, name),
+      order_items(id, product_id, quantity, unit_price, status, destination, notes, created_at,
+        products(name, sku, price))
+    `)
+    .eq('tenant_id', tenantId)
+    .eq('table_id', tableId)
+    .not('status', 'in', '(SERVED,CANCELLED)')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) throw error
+  return data as unknown as RestaurantOrderRow | null
+}
+
+export async function getActiveTableOrders(
+  tenantId: string,
+  branchId: string,
+): Promise<RestaurantOrderRow[]> {
+  const { data, error } = await supabase
+    .from('orders')
+    .select(`
+      id, order_number, status, notes, created_at, table_id,
+      tables(number, name),
+      order_items(id, product_id, quantity, unit_price, status, destination,
+        products(name, sku, price))
+    `)
+    .eq('tenant_id', tenantId)
+    .eq('branch_id', branchId)
+    .not('status', 'in', '(SERVED,CANCELLED)')
+    .not('table_id', 'is', null)
+    .order('created_at', { ascending: true })
+
+  if (error) throw error
+  return (data ?? []) as unknown as RestaurantOrderRow[]
+}
+
+export async function addItemsToOrder(
+  orderId: string,
+  items:   RestaurantOrderItemInput[],
+): Promise<void> {
+  const { error } = await supabase.from('order_items').insert(
+    items.map(item => ({
+      order_id:    orderId,
+      product_id:  item.product_id,
+      quantity:    item.quantity,
+      unit_price:  item.unit_price,
+      status:      'PENDING' as any,
+      destination: item.destination ?? 'KITCHEN',
+      notes:       item.notes ?? null,
+    })),
+  )
+  if (error) throw error
+
+  // Guardar campos denormalizados si la migración ya fue aplicada (name, sku)
+  try {
+    for (const item of items) {
+      await (supabase.from('order_items').update({
+        name: item.name, sku: item.sku,
+      } as any).eq('order_id', orderId).eq('product_id', item.product_id)) as any
+    }
+  } catch { /* ignorar si las columnas name/sku no existen aún */ }
+}
+
+export async function closeRestaurantOrder(
+  orderId: string,
+  tableId: string,
+): Promise<void> {
+  // Usamos SERVED (estado terminal válido en el enum actual) como "cerrado"
+  const { error: orderErr } = await supabase
+    .from('orders')
+    .update({ status: 'SERVED' as any })
+    .eq('id', orderId)
+  if (orderErr) throw orderErr
+
+  const { error: tableErr } = await supabase
+    .from('tables')
+    .update({ status: 'AVAILABLE' })
+    .eq('id', tableId)
+  if (tableErr) throw tableErr
+}
+
 // ── Sales Report ───────────────────────────────────────────────
 
 export interface SalesReportData {
@@ -1918,7 +2120,7 @@ export async function getSalesHistory(
   return (data ?? []) as unknown as SaleHistoryRow[]
 }
 
-// ── Update Stock ───────────────────────────────────────────────
+// ── Update Stock ──────────────────────
 export async function updateStock(
   tenantId: string,
   branchId: string,

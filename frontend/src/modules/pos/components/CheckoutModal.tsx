@@ -9,6 +9,7 @@ import { cn } from '@shared/utils/cn'
 import { useCreateSale } from '@modules/pos/hooks/useCreateSale'
 import { useCashSession } from '@modules/pos/hooks/useCashSession'
 import { ReceiptTemplate, type ReceiptData } from './ReceiptTemplate'
+import { closeRestaurantOrder } from '@lib/db'
 
 // ── Métodos de pago ────────────────────────────────────────────────────────────
 type PaymentMethod = 'CASH' | 'CARD' | 'NEQUI' | 'DAVIPLATA' | 'TRANSFER'
@@ -73,13 +74,16 @@ const METHODS: {
 const QUICK_CASH = [5000, 10000, 20000, 50000, 100000]
 
 interface CheckoutModalProps {
-  open:     boolean
-  onClose:  () => void
-  total:    number
-  currency: string
+  open:                boolean
+  onClose:             () => void
+  total:               number   // grand total (incluye propina)
+  tip?:                number
+  currency:            string
+  tableId?:            string
+  restaurantOrderId?:  string
 }
 
-export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalProps) {
+export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId, restaurantOrderId }: CheckoutModalProps) {
   const [method, setMethod]       = useState<PaymentMethod>('CASH')
   const [cashInput, setCashInput] = useState('')
   const [success, setSuccess]     = useState(false)
@@ -116,7 +120,13 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
     try {
       // Siempre guardamos el total de la venta como monto del pago.
       // Para efectivo, cashReceived > total es el vuelto — sale de caja pero no es ingreso.
-      const paidAmount = total
+      const paidAmount   = total
+      const subtotalAmt  = items.reduce((s, it) => s + it.price * it.quantity, 0)
+      const taxTotalAmt  = items.reduce((s, it) => s + it.taxAmount, 0)
+      const discountAmt  = items.reduce((s, it) => s + it.discountAmount, 0)
+      // El total de la venta (sin propina) — la propina se anota en notas
+      const saleTotal    = total - tip
+
       await createSale({
         items: items.map(it => ({
           product_id:      it.productId,
@@ -132,14 +142,23 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
         })),
         payments: [{ method: method === 'NEQUI' || method === 'DAVIPLATA' ? 'QR' : method, amount: paidAmount }],
         customer_id:      customerId,
-        notes,
-        subtotal:         items.reduce((s, it) => s + it.price * it.quantity, 0),
-        tax_total:        items.reduce((s, it) => s + it.taxAmount, 0),
-        discount_total:   items.reduce((s, it) => s + it.discountAmount, 0),
-        total,
+        notes:            tip > 0 ? `${notes ? notes + ' | ' : ''}Propina: ${tip}` : notes,
+        subtotal:         subtotalAmt,
+        tax_total:        taxTotalAmt,
+        discount_total:   discountAmt,
+        total:            saleTotal,
         currency,
         cash_register_id: activeRegister?.id,
       })
+
+      // Cerrar orden de restaurante si la venta viene de una mesa
+      if (restaurantOrderId && tableId) {
+        try {
+          await closeRestaurantOrder(restaurantOrderId, tableId)
+        } catch (e) {
+          console.warn('No se pudo cerrar la orden de restaurante:', e)
+        }
+      }
 
       // Avisar productos que quedan agotados tras la venta
       const agotados = items.filter(it => it.stock - it.quantity <= 0)
@@ -147,15 +166,12 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
         toast.warning(`"${it.name}" quedó agotado en inventario.`, { duration: 5000 })
       })
 
-      const taxTotalAmt      = items.reduce((s, it) => s + it.taxAmount, 0)
-      const discountTotalAmt = items.reduce((s, it) => s + it.discountAmount, 0)
-      const subtotalAmt      = items.reduce((s, it) => s + it.price * it.quantity, 0)
-      const taxBaseAmt       = subtotalAmt - discountTotalAmt
+      const taxBaseAmt       = subtotalAmt - discountAmt
 
       setLastReceipt({
         businessName:   tenant?.tenantName ?? 'Mi Negocio',
         branchName:     branch?.branchName ?? '',
-        nit:            '000.000.000-0',   // TODO: agregar NIT al tenant
+        nit:            '000.000.000-0',
         orderNumber:    `ORD-${Date.now().toString(36).toUpperCase()}`,
         cashierName:    profile?.full_name ?? 'Cajero',
         date:           new Date(),
@@ -169,9 +185,10 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
           taxAmt:   it.taxAmount,
         })),
         subtotal:       subtotalAmt,
-        discountTotal:  discountTotalAmt,
+        discountTotal:  discountAmt,
         taxBase:        taxBaseAmt,
         taxTotal:       taxTotalAmt,
+        tip:            tip > 0 ? tip : undefined,
         total,
         paymentMethod:  METHODS.find(m => m.method === method)?.label ?? method,
         cashReceived:   method === 'CASH' ? cashReceived : undefined,
@@ -244,6 +261,7 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
     <tr><td>Subtotal (sin IVA)</td><td style="text-align:right">${fmt(r.subtotal - r.taxTotal)}</td></tr>
     ${r.discountTotal > 0 ? `<tr><td>Descuento</td><td style="text-align:right">-${fmt(r.discountTotal)}</td></tr>` : ''}
     ${r.taxTotal > 0 ? `<tr><td>Base gravable</td><td style="text-align:right">${fmt(r.taxBase)}</td></tr><tr><td>IVA</td><td style="text-align:right">${fmt(r.taxTotal)}</td></tr>` : `<tr><td>IVA</td><td style="text-align:right">${fmt(0)} (Excluido)</td></tr>`}
+    ${r.tip ? `<tr><td>Propina voluntaria</td><td style="text-align:right">${fmt(r.tip)}</td></tr>` : ''}
     <tr class="row-total"><td>TOTAL A PAGAR</td><td style="text-align:right">${fmt(r.total)}</td></tr>
   </table>
   <hr class="sep-solid">
@@ -517,6 +535,7 @@ export function CheckoutModal({ open, onClose, total, currency }: CheckoutModalP
                     >
                       {isPending ? (
                         <motion.span
+    
                           animate={{ rotate: 360 }}
                           transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
                           className="h-5 w-5 rounded-full border-2 border-white/30 border-t-white inline-block"

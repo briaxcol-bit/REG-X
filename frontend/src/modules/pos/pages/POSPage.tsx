@@ -5,10 +5,12 @@ import {
   Search, Barcode, Plus, Minus, Trash2, CreditCard,
   Receipt, X, UserCircle, Lock, Clock, Tag, Printer,
   ShoppingCart, Clock as HistoryIcon, Monitor, ClipboardList,
+  UtensilsCrossed,
 } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { usePOSStore } from '@store/pos.store'
 import { useAuthStore } from '@store/auth.store'
+import { supabase } from '@lib/supabase'
 import { ReceiptTemplate } from '@modules/pos/components/ReceiptTemplate'
 import { cn } from '@shared/utils/cn'
 import { formatCurrency } from '@shared/utils/format'
@@ -24,7 +26,7 @@ import { CompleteComandaModal } from '@modules/pos/components/CompleteComandaMod
 import { useCashSession } from '@modules/pos/hooks/useCashSession'
 import { usePOSTerminal } from '@modules/pos/hooks/usePOSTerminal'
 import { useCreateSale } from '@modules/pos/hooks/useCreateSale'
-import { getPendingSales, getPOSTerminals, type SaleHistoryRow } from '@lib/db'
+import { getPendingSales, getPOSTerminals, getActiveTableOrders, type SaleHistoryRow, type RestaurantOrderRow } from '@lib/db'
 import { toast } from 'sonner'
 
 // ── Product card ─────────────────────────────────────────────
@@ -183,19 +185,22 @@ export default function POSPage() {
   const {
     tabs, activeTabId,
     addItem, clearCart,
-    setCustomer, getSubtotal, getTaxTotal, getDiscountTotal, getTotal,
+    setCustomer, setTip, loadTableOrder,
+    getSubtotal, getTaxTotal, getDiscountTotal, getTotal, getTip, getGrandTotal,
     lastReceipt, setLastReceipt,
-    addTab, removeTab, switchTab,
+    addTab, removeTab, switchTab, renameTab,
   } = usePOSStore()
 
   // Derivar datos de la tab activa directamente (reactivo con Zustand)
   const activeTab   = tabs.find(t => t.id === activeTabId) ?? tabs[0]
   const items       = activeTab?.items      ?? []
   const customerId  = activeTab?.customerId
+  const tipAmount   = activeTab?.tip        ?? 0
 
   const { branch, tenant, profile, hasRole } = useAuthStore()
   const currency    = branch?.currency ?? 'COP'
   const isManager   = hasRole('OWNER') || hasRole('ADMIN')
+  const queryClient = useQueryClient()
 
   const { activeRegister, isLoading: loadingSession, hasOpenSession } = useCashSession()
   const { terminal, isCommandsOnly, allowedCategories } = usePOSTerminal()
@@ -217,6 +222,55 @@ export default function POSPage() {
     enabled:  isManager && hasComandasMode && !!tenant?.tenantId && !!branch?.branchId,
     refetchInterval: 15_000,
   })
+
+  // Cuentas de mesa activas — visible para el cajero
+  const { data: tableOrders = [] } = useQuery<RestaurantOrderRow[]>({
+    queryKey: ['active-table-orders', tenant?.tenantId, branch?.branchId],
+    queryFn:  () => getActiveTableOrders(tenant!.tenantId, branch!.branchId),
+    enabled:  !!tenant?.tenantId && !!branch?.branchId,
+    refetchInterval: 10_000,
+  })
+
+  // Realtime: actualizar cuentas de mesa al instante cuando un mesero envía orden
+  useEffect(() => {
+    if (!tenant?.tenantId) return
+    const channel = supabase
+      .channel('pos-table-orders')
+      .on('postgres_changes', {
+        event:  '*',
+        schema: 'public',
+        table:  'orders',
+        filter: `tenant_id=eq.${tenant.tenantId}`,
+      }, () => {
+        queryClient.invalidateQueries({ queryKey: ['active-table-orders'] })
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [tenant?.tenantId, queryClient])
+
+  // Cargar cuenta de mesa en el POS
+  const handleLoadTableOrder = useCallback((order: RestaurantOrderRow) => {
+    const posItems = (order.order_items ?? []).map(item => ({
+      productId:      item.product_id,
+      sku:            item.products?.sku   ?? item.sku   ?? '',
+      name:           item.products?.name  ?? item.name  ?? 'Producto',
+      price:          item.products?.price ?? item.unit_price ?? 0,
+      quantity:       item.quantity,
+      stock:          9999,
+      discount:       0,
+      discountAmount: 0,
+      tax:            0,
+      taxAmount:      0,
+    }))
+    const tableLabel = `Mesa ${order.tables?.number ?? '?'}${order.tables?.name ? ` · ${order.tables.name}` : ''}`
+    loadTableOrder({
+      tableId:           order.table_id!,
+      restaurantOrderId: order.id,
+      label:             tableLabel,
+      items:             posItems,
+    })
+    toast.success(`${tableLabel} cargada en POS`)
+  }, [loadTableOrder])
 
   const { data: allCategories = [] } = useCategories()
 
@@ -323,6 +377,8 @@ export default function POSPage() {
   const taxes      = getTaxTotal()
   const discounts  = getDiscountTotal()
   const total      = getTotal()
+  const tip        = getTip()
+  const grandTotal = getGrandTotal()
   const itemCount  = items.reduce((acc, i) => acc + i.quantity, 0)
 
   const sessionDuration = (() => {
@@ -517,6 +573,31 @@ export default function POSPage() {
             </button>
           ))}
 
+          {/* Cuentas de mesa activas — el cajero las carga para cobrar */}
+          {tableOrders
+            .filter(o => !tabs.some(t => t.restaurantOrderId === o.id))
+            .map(order => {
+              const mesaLabel = `Mesa ${order.tables?.number ?? '?'}${order.tables?.name ? ` · ${order.tables.name}` : ''}`
+              const mesaTotal = (order.order_items ?? []).reduce(
+                (s, i) => s + (i.unit_price ?? i.products?.price ?? 0) * i.quantity, 0,
+              )
+              return (
+                <button
+                  key={order.id}
+                  onClick={() => handleLoadTableOrder(order)}
+                  title={`Cargar ${mesaLabel} en POS`}
+                  className="group flex items-center gap-2 shrink-0 border-b-2 border-transparent px-3 py-2.5 text-sm font-medium text-grafito-500 hover:text-grafito-900 dark:hover:text-white hover:border-brand-400 transition-colors whitespace-nowrap"
+                >
+                  <UtensilsCrossed className="h-3.5 w-3.5 text-brand-500 shrink-0" />
+                  <span className="max-w-[110px] truncate">{mesaLabel}</span>
+                  <span className="text-xs font-bold text-brand-500">
+                    {formatCurrency(mesaTotal, currency)}
+                  </span>
+                </button>
+              )
+            })
+          }
+
           {/* Botón + nueva cuenta */}
           <button
             onClick={addTab}
@@ -574,13 +655,18 @@ export default function POSPage() {
 
         {/* Header carrito */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-grafito-100 dark:border-white/5">
-          <div className="flex items-center gap-2">
-            <ShoppingCart className="h-4 w-4 text-brand-500" />
-            <span className="text-sm font-bold text-grafito-900 dark:text-white">
+          <div className="flex items-center gap-2 min-w-0">
+            <ShoppingCart className="h-4 w-4 text-brand-500 shrink-0" />
+            <span className="text-sm font-bold text-grafito-900 dark:text-white truncate">
               {tabs.find(t => t.id === activeTabId)?.label ?? 'Venta actual'}
             </span>
+            {activeTab?.tableId && (
+              <span className="shrink-0 rounded-full bg-red-500/15 text-red-600 dark:text-red-400 px-2 py-0.5 text-[10px] font-bold">
+                Mesa
+              </span>
+            )}
             {itemCount > 0 && (
-              <span className="rounded-full bg-brand-500 px-2 py-0.5 text-[10px] font-bold text-white">
+              <span className="shrink-0 rounded-full bg-brand-500 px-2 py-0.5 text-[10px] font-bold text-white">
                 {itemCount}
               </span>
             )}
@@ -680,9 +766,43 @@ export default function POSPage() {
                   <span>{formatCurrency(taxes, currency)}</span>
                 </div>
               )}
+              {/* Propina */}
+              <div className="flex items-center justify-between gap-2 pt-0.5">
+                <span className="text-xs text-grafito-500 shrink-0">Propina</span>
+                <div className="flex items-center gap-1">
+                  {[0, 5000, 10000, 15000].map(amt => (
+                    <button
+                      key={amt}
+                      onClick={() => setTip(amt)}
+                      className={cn(
+                        'text-[10px] font-semibold px-1.5 py-0.5 rounded-full transition-colors',
+                        tipAmount === amt
+                          ? 'bg-brand-500 text-white'
+                          : 'bg-grafito-100 dark:bg-grafito-800 text-grafito-500 hover:bg-grafito-200 dark:hover:bg-grafito-700',
+                      )}
+                    >
+                      {amt === 0 ? 'No' : formatCurrency(amt, currency)}
+                    </button>
+                  ))}
+                  <input
+                    type="number"
+                    min={0}
+                    value={tipAmount || ''}
+                    onChange={e => setTip(parseInt(e.target.value.replace(/\D/g, '')) || 0)}
+                    placeholder="Otro"
+                    className="w-16 text-xs text-right rounded-lg border border-grafito-200 dark:border-white/10 bg-white dark:bg-grafito-800 px-1.5 py-0.5 text-grafito-900 dark:text-white placeholder:text-grafito-400 outline-none focus:border-brand-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                </div>
+              </div>
+              {tip > 0 && (
+                <div className="flex justify-between text-xs text-amber-600 dark:text-amber-400 font-semibold">
+                  <span>Propina</span>
+                  <span>+{formatCurrency(tip, currency)}</span>
+                </div>
+              )}
               <div className="flex justify-between items-baseline border-t border-grafito-100 dark:border-white/5 pt-2 mt-2">
                 <span className="text-xs font-bold text-grafito-500 uppercase tracking-wider">Total</span>
-                <span className="text-2xl font-black text-grafito-900 dark:text-white">{formatCurrency(total, currency)}</span>
+                <span className="text-2xl font-black text-grafito-900 dark:text-white">{formatCurrency(grandTotal, currency)}</span>
               </div>
             </div>
           )}
@@ -729,15 +849,22 @@ export default function POSPage() {
                 )}
               >
                 <CreditCard className="h-5 w-5" />
-                {items.length > 0 ? `Cobrar ${formatCurrency(total, currency)}` : 'Cobrar'}
+                {items.length > 0 ? `Cobrar ${formatCurrency(grandTotal, currency)}` : 'Cobrar'}
               </motion.button>
             )}
           </div>
         </div>
       </div>
 
-      {/* Modales */}
-      <CheckoutModal open={checkoutOpen} onClose={() => setCheckoutOpen(false)} total={total} currency={currency} />
+      <CheckoutModal
+        open={checkoutOpen}
+        onClose={() => setCheckoutOpen(false)}
+        total={grandTotal}
+        tip={tip}
+        currency={currency}
+        tableId={activeTab?.tableId}
+        restaurantOrderId={activeTab?.restaurantOrderId}
+      />
       <BarcodeScanner open={scannerOpen} onClose={() => setScannerOpen(false)} onScan={handleBarcodeScanned} />
       <CustomerPicker
         open={customerPickerOpen}

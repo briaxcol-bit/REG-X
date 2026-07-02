@@ -42,6 +42,7 @@ export interface ReceiptData {
   taxBase:         number
   taxTotal:        number
   total:           number
+  tip?:            number   // Propina (opcional, no impositiva)
   // Pago
   paymentMethod:   string
   cashReceived?:   number
