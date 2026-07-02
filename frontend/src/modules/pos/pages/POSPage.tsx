@@ -465,7 +465,7 @@ export default function POSPage() {
               ref={searchRef}
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Buscar producto o escanear SKU…"
+              placeholder="Buscar por nombre, SKU o código de barras…"
               className="flex-1 bg-transparent text-sm text-grafito-900 dark:text-white placeholder:text-grafito-400 outline-none"
             />
             {search && (
@@ -898,12 +898,11 @@ export default function POSPage() {
         tableId={activeTab?.tableId}
         restaurantOrderId={activeTab?.restaurantOrderId}
       />
-      {scannerOpen && (
-        <BarcodeScanner
-          onScanned={handleBarcodeScanned}
-          onClose={() => setScannerOpen(false)}
-        />
-      )}
+      <BarcodeScanner
+        open={scannerOpen}
+        onScan={handleBarcodeScanned}
+        onClose={() => setScannerOpen(false)}
+      />
       <CustomerPicker
         open={customerPickerOpen}
         onClose={() => setCustomerPickerOpen(false)}
