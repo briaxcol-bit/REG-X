@@ -5,7 +5,7 @@ import {
   Search, Barcode, Plus, Minus, Trash2, CreditCard,
   Receipt, X, UserCircle, Lock, Clock, Tag, Printer,
   ShoppingCart, Clock as HistoryIcon, Monitor, ClipboardList,
-  UtensilsCrossed,
+  UtensilsCrossed, ChevronDown, User,
 } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { usePOSStore } from '@store/pos.store'
@@ -101,6 +101,8 @@ function ProductCard({ product, onAdd }: {
 function CartRow({ item }: { item: ReturnType<typeof usePOSStore.getState>['items'][0] }) {
   const { updateQuantity, removeItem } = usePOSStore()
   const [inputValue, setInputValue] = useState(item.quantity.toString())
+  const [expanded, setExpanded]     = useState(false)
+  const hasDetail = !!(item.addedByName || item.notes)
 
   useEffect(() => { setInputValue(item.quantity.toString()) }, [item.quantity])
 
@@ -110,85 +112,120 @@ function CartRow({ item }: { item: ReturnType<typeof usePOSStore.getState>['item
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: -20 }}
-      className="flex items-center gap-3 rounded-xl border border-grafito-100 dark:border-white/5 bg-grafito-50 dark:bg-white/[0.03] px-3 py-2.5 group"
+      className="rounded-xl border border-grafito-100 dark:border-white/5 bg-grafito-50 dark:bg-white/[0.03] overflow-hidden group"
     >
-      {/* Name + price */}
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-grafito-900 dark:text-white truncate">{item.name}</p>
-        <div className="flex items-center gap-2 mt-0.5">
-          <p className="text-xs text-grafito-500">{formatCurrency(item.price)} c/u</p>
-          {item.discount > 0 && (
-            <span className="flex items-center gap-0.5 text-[10px] font-semibold text-emerald-500">
-              <Tag className="h-2.5 w-2.5" />−{item.discount}%
-            </span>
+      <div className="flex items-center gap-3 px-3 py-2.5">
+        {/* Name + price */}
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-grafito-900 dark:text-white truncate">{item.name}</p>
+          <div className="flex items-center gap-2 mt-0.5">
+            <p className="text-xs text-grafito-500">{formatCurrency(item.price)} c/u</p>
+            {item.discount > 0 && (
+              <span className="flex items-center gap-0.5 text-[10px] font-semibold text-emerald-500">
+                <Tag className="h-2.5 w-2.5" />−{item.discount}%
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Qty controls */}
+        <div className="flex items-center rounded-lg border border-grafito-200 dark:border-white/10 overflow-hidden shrink-0">
+          <button
+            onClick={() => updateQuantity(item.id, item.quantity - 1)}
+            className="flex h-7 w-7 items-center justify-center text-grafito-500 hover:bg-brand-500/10 hover:text-brand-500 transition-colors"
+          >
+            <Minus className="h-3 w-3" />
+          </button>
+          <input
+            type="number" min={1} max={item.stock}
+            value={inputValue}
+            onChange={e => {
+              setInputValue(e.target.value)
+              const v = parseInt(e.target.value)
+              if (!isNaN(v) && v > 0) {
+                if (v > item.stock) {
+                  toast.error(`Solo hay ${item.stock} ud${item.stock !== 1 ? 's' : ''} de "${item.name}".`, { duration: 3000 })
+                  sendBrowserPush('Stock máximo', `Solo hay ${item.stock} unidades de "${item.name}" disponibles.`, `stock-max-${item.id}`)
+                  updateQuantity(item.id, item.stock)
+                  setInputValue(item.stock.toString())
+                } else {
+                  updateQuantity(item.id, v)
+                }
+              }
+            }}
+            onBlur={() => {
+              const v = parseInt(inputValue)
+              if (isNaN(v) || v < 1) { updateQuantity(item.id, 1); setInputValue('1') }
+              else if (v > item.stock) setInputValue(item.stock.toString())
+            }}
+            className="w-10 text-center text-xs font-bold text-grafito-900 dark:text-white bg-transparent outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+          />
+          <button
+            onClick={() => {
+              if (item.quantity >= item.stock) {
+                toast.error(`Solo hay ${item.stock} ud${item.stock !== 1 ? 's' : ''} de "${item.name}".`, { duration: 3000 })
+                sendBrowserPush('Stock máximo', `Solo hay ${item.stock} unidades de "${item.name}" disponibles.`, `stock-max-${item.id}`)
+                return
+              }
+              updateQuantity(item.id, item.quantity + 1)
+            }}
+            className={cn(
+              'flex h-7 w-7 items-center justify-center transition-colors',
+              item.quantity >= item.stock
+                ? 'text-grafito-300 dark:text-grafito-700 cursor-not-allowed'
+                : 'text-grafito-500 hover:bg-brand-500/10 hover:text-brand-500'
+            )}
+          >
+            <Plus className="h-3 w-3" />
+          </button>
+        </div>
+
+        {/* Total + detail toggle + delete */}
+        <div className="flex items-center gap-1 shrink-0">
+          <span className="text-sm font-black text-grafito-900 dark:text-white w-16 text-right">
+            {formatCurrency(item.total)}
+          </span>
+          {hasDetail && (
+            <button
+              onClick={() => setExpanded(v => !v)}
+              className="rounded-lg p-1 text-grafito-400 hover:text-brand-500 transition-colors"
+            >
+              <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')} />
+            </button>
           )}
+          <button
+            onClick={() => removeItem(item.id)}
+            className="opacity-0 group-hover:opacity-100 rounded-lg p-1 text-grafito-400 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 transition-all"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
         </div>
       </div>
 
-      {/* Qty controls */}
-      <div className="flex items-center rounded-lg border border-grafito-200 dark:border-white/10 overflow-hidden shrink-0">
-        <button
-          onClick={() => updateQuantity(item.id, item.quantity - 1)}
-          className="flex h-7 w-7 items-center justify-center text-grafito-500 hover:bg-brand-500/10 hover:text-brand-500 transition-colors"
-        >
-          <Minus className="h-3 w-3" />
-        </button>
-        <input
-          type="number" min={1} max={item.stock}
-          value={inputValue}
-          onChange={e => {
-            setInputValue(e.target.value)
-            const v = parseInt(e.target.value)
-            if (!isNaN(v) && v > 0) {
-              if (v > item.stock) {
-                toast.error(`Solo hay ${item.stock} ud${item.stock !== 1 ? 's' : ''} de "${item.name}".`, { duration: 3000 })
-                sendBrowserPush('Stock máximo', `Solo hay ${item.stock} unidades de "${item.name}" disponibles.`, `stock-max-${item.id}`)
-                updateQuantity(item.id, item.stock)
-                setInputValue(item.stock.toString())
-              } else {
-                updateQuantity(item.id, v)
-              }
-            }
-          }}
-          onBlur={() => {
-            const v = parseInt(inputValue)
-            if (isNaN(v) || v < 1) { updateQuantity(item.id, 1); setInputValue('1') }
-            else if (v > item.stock) setInputValue(item.stock.toString())
-          }}
-          className="w-10 text-center text-xs font-bold text-grafito-900 dark:text-white bg-transparent outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-        />
-        <button
-          onClick={() => {
-            if (item.quantity >= item.stock) {
-              toast.error(`Solo hay ${item.stock} ud${item.stock !== 1 ? 's' : ''} de "${item.name}".`, { duration: 3000 })
-              sendBrowserPush('Stock máximo', `Solo hay ${item.stock} unidades de "${item.name}" disponibles.`, `stock-max-${item.id}`)
-              return
-            }
-            updateQuantity(item.id, item.quantity + 1)
-          }}
-          className={cn(
-            'flex h-7 w-7 items-center justify-center transition-colors',
-            item.quantity >= item.stock
-              ? 'text-grafito-300 dark:text-grafito-700 cursor-not-allowed'
-              : 'text-grafito-500 hover:bg-brand-500/10 hover:text-brand-500'
-          )}
-        >
-          <Plus className="h-3 w-3" />
-        </button>
-      </div>
-
-      {/* Total + delete */}
-      <div className="flex items-center gap-1.5 shrink-0">
-        <span className="text-sm font-black text-grafito-900 dark:text-white w-16 text-right">
-          {formatCurrency(item.total)}
-        </span>
-        <button
-          onClick={() => removeItem(item.id)}
-          className="opacity-0 group-hover:opacity-100 rounded-lg p-1 text-grafito-400 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-500 transition-all"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
-      </div>
+      {/* Detail panel */}
+      <AnimatePresence>
+        {expanded && hasDetail && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="overflow-hidden"
+          >
+            <div className="px-3 pb-2.5 space-y-1 border-t border-grafito-100 dark:border-white/5 pt-2">
+              {item.addedByName && (
+                <div className="flex items-center gap-1.5 text-xs text-grafito-500">
+                  <User className="h-3 w-3 shrink-0" />
+                  <span>Agregado por <span className="font-semibold text-grafito-700 dark:text-grafito-300">{item.addedByName}</span></span>
+                </div>
+              )}
+              {item.notes && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 pl-4">• {item.notes}</p>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   )
 }
@@ -280,7 +317,8 @@ export default function POSPage() {
 
   // Cargar cuenta de mesa en el POS
   const handleLoadTableOrder = useCallback((order: RestaurantOrderRow) => {
-    const posItems = (order.order_items ?? []).map(item => ({
+    const orderItems = order.order_items ?? []
+    const posItems = orderItems.map(item => ({
       productId:      item.product_id,
       sku:            item.products?.sku   ?? item.sku   ?? '',
       name:           item.products?.name  ?? item.name  ?? 'Producto',
@@ -291,12 +329,15 @@ export default function POSPage() {
       discountAmount: 0,
       tax:            0,
       taxAmount:      0,
+      addedByName:    (item as any).added_by_name ?? undefined,
     }))
-    const tableLabel = `Mesa ${order.tables?.number ?? '?'}${order.tables?.name ? ` · ${order.tables.name}` : ''}`
+    const waiterName = orderItems.map(i => (i as any).added_by_name).find(Boolean) ?? undefined
+    const tableLabel = `${order.tables?.number ?? '?'}${order.tables?.name ? ` · ${order.tables.name}` : ''}`
     loadTableOrder({
       tableId:           order.table_id!,
       restaurantOrderId: order.id,
       label:             tableLabel,
+      waiterName,
       items:             posItems,
     })
     toast.success(`${tableLabel} cargada en POS`)
@@ -354,7 +395,7 @@ export default function POSPage() {
         branchName:    branch?.branchName ?? '',
         nit:           '',
         orderNumber:   sale?.order_number ?? String(Date.now()),
-        cashierName:   profile?.full_name ?? 'Cajero',
+        cashierName:   profile?.fullName ?? 'Cajero',
         date:          new Date(),
         items:         items.map(it => ({
           name:     it.name,
@@ -609,7 +650,7 @@ export default function POSPage() {
           {tableOrders
             .filter(o => !tabs.some(t => t.restaurantOrderId === o.id))
             .map(order => {
-              const mesaLabel = `Mesa ${order.tables?.number ?? '?'}${order.tables?.name ? ` · ${order.tables.name}` : ''}`
+              const mesaLabel = `${order.tables?.number ?? '?'}${order.tables?.name ? ` · ${order.tables.name}` : ''}`
               const mesaTotal = (order.order_items ?? []).reduce(
                 (s, i) => s + (i.unit_price ?? i.products?.price ?? 0) * i.quantity, 0,
               )
@@ -687,20 +728,23 @@ export default function POSPage() {
 
         {/* Header carrito */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-grafito-100 dark:border-white/5">
-          <div className="flex items-center gap-2 min-w-0">
-            <ShoppingCart className="h-4 w-4 text-brand-500 shrink-0" />
-            <span className="text-sm font-bold text-grafito-900 dark:text-white truncate">
-              {tabs.find(t => t.id === activeTabId)?.label ?? 'Venta actual'}
-            </span>
-            {activeTab?.tableId && (
-              <span className="shrink-0 rounded-full bg-red-500/15 text-red-600 dark:text-red-400 px-2 py-0.5 text-[10px] font-bold">
-                Mesa
+          <div className="flex flex-col min-w-0 gap-0.5">
+            <div className="flex items-center gap-2">
+              <ShoppingCart className="h-4 w-4 text-brand-500 shrink-0" />
+              <span className="text-sm font-bold text-grafito-900 dark:text-white">
+                {tabs.find(t => t.id === activeTabId)?.label ?? 'Venta actual'}
               </span>
-            )}
-            {itemCount > 0 && (
-              <span className="shrink-0 rounded-full bg-brand-500 px-2 py-0.5 text-[10px] font-bold text-white">
-                {itemCount}
-              </span>
+              {itemCount > 0 && (
+                <span className="shrink-0 rounded-full bg-grafito-200 dark:bg-white/10 px-2 py-0.5 text-[10px] font-bold text-grafito-600 dark:text-grafito-300">
+                  {itemCount}
+                </span>
+              )}
+            </div>
+            {activeTab?.waiterName && (
+              <div className="flex items-center gap-1 pl-6 text-[11px] text-grafito-500 dark:text-grafito-400">
+                <User className="h-3 w-3 shrink-0" />
+                <span>{activeTab.waiterName}</span>
+              </div>
             )}
           </div>
           <div className="flex items-center gap-1">
@@ -909,13 +953,6 @@ export default function POSPage() {
         onSelect={(id, name) => { setCustomer(id); setCustomerName(name); setCustomerPickerOpen(false) }}
       />
 
-      {/* Receipt print */}
-      {lastReceipt && createPortal(
-        <div id="pos-receipt" style={{ display: 'none' }}>
-          <ReceiptTemplate data={lastReceipt} />
-        </div>,
-        document.body,
-      )}
     </div>
   )
 }

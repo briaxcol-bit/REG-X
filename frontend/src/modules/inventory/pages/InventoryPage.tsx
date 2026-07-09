@@ -1,13 +1,11 @@
 import { useState, useEffect } from 'react'
-import { Package, Loader2, Search, Tag, X, Pencil, Plus, Minus, CheckCircle2, Settings2 } from 'lucide-react'
+import { Package, Loader2, Search, Tag, X, Pencil, Plus, Minus, CheckCircle2, Trash2, AlertTriangle } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { getInventory, updateStock } from '@lib/db'
+import { getInventory, updateStock, deleteProduct } from '@lib/db'
 import { useAuthStore } from '@store/auth.store'
 import { cn } from '@shared/utils/cn'
 import { toast } from 'sonner'
 import type { InventoryRow } from '@lib/db'
-import ProductFormPage from '@modules/products/pages/ProductFormPage'
-
 // ── Modal edición de stock ──────────────────────────────────────
 interface EditStockModalProps {
   row: InventoryRow
@@ -155,14 +153,50 @@ function EditStockModal({ row, onClose, onSaved }: EditStockModalProps) {
   )
 }
 
+// ── Modal confirmación eliminar ────────────────────────────────
+interface DeleteConfirmProps {
+  name: string
+  onConfirm: () => void
+  onCancel: () => void
+  deleting: boolean
+}
+function DeleteConfirmModal({ name, onConfirm, onCancel, deleting }: DeleteConfirmProps) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div className="relative w-full max-w-sm rounded-2xl border border-red-200 dark:border-red-500/20 bg-white dark:bg-grafito-900 shadow-2xl p-6 space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-100 dark:bg-red-500/10 shrink-0">
+            <AlertTriangle className="h-5 w-5 text-red-500" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-grafito-900 dark:text-white">Eliminar producto</h3>
+            <p className="text-sm text-grafito-500 dark:text-grafito-400 mt-0.5 line-clamp-2">¿Eliminar <span className="font-semibold text-grafito-700 dark:text-grafito-200">"{name}"</span>? Esta acción no se puede deshacer.</p>
+          </div>
+        </div>
+        <div className="flex gap-2 pt-1">
+          <button onClick={onCancel} disabled={deleting} className="flex-1 rounded-xl border border-grafito-200 dark:border-white/10 py-2.5 text-sm font-semibold text-grafito-600 dark:text-grafito-300 hover:bg-grafito-100 dark:hover:bg-white/5 transition-all disabled:opacity-50">
+            Cancelar
+          </button>
+          <button onClick={onConfirm} disabled={deleting} className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-red-500 py-2.5 text-sm font-bold text-white hover:bg-red-600 transition-all disabled:opacity-50">
+            {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+            {deleting ? 'Eliminando...' : 'Sí, eliminar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Page ───────────────────────────────────────────────────────
 export default function InventoryPage() {
-  const { tenant, branch } = useAuthStore()
+  const { tenant, branch, hasRole } = useAuthStore()
+  const isOwner = hasRole('OWNER')
   const [inventory, setInventory] = useState<InventoryRow[]>([])
   const [loading, setLoading]     = useState(true)
   const [search, setSearch]       = useState('')
   const [editing, setEditing]           = useState<InventoryRow | null>(null)
-  const [editingProductId, setEditingProductId] = useState<string | null>(null)
+const [deletingRow, setDeletingRow]   = useState<InventoryRow | null>(null)
+  const [deletingLoading, setDeletingLoading] = useState(false)
   const [searchParams, setSearchParams] = useSearchParams()
   const categoryId = searchParams.get('category')
 
@@ -177,6 +211,24 @@ export default function InventoryPage() {
 
   useEffect(() => { load() }, [tenant?.tenantId, branch?.branchId])
 
+  const handleDelete = async () => {
+    if (!deletingRow || !tenant?.tenantId) return
+    const p = deletingRow.products as any
+    const productId = deletingRow.product_id
+    const productName = p?.name ?? 'Producto'
+    setDeletingLoading(true)
+    try {
+      await deleteProduct(tenant.tenantId, productId)
+      toast.success(`"${productName}" eliminado del catálogo.`)
+      setDeletingRow(null)
+      load()
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Error al eliminar el producto.')
+    } finally {
+      setDeletingLoading(false)
+    }
+  }
+
   const filtered = inventory.filter(row => {
     const p = row.products as any
     if (categoryId && p?.category_id !== categoryId) return false
@@ -187,6 +239,16 @@ export default function InventoryPage() {
 
   return (
     <div className="space-y-6 p-6">
+      {/* Delete confirm modal */}
+      {deletingRow && (
+        <DeleteConfirmModal
+          name={(deletingRow.products as any)?.name ?? ''}
+          onConfirm={handleDelete}
+          onCancel={() => setDeletingRow(null)}
+          deleting={deletingLoading}
+        />
+      )}
+
       {/* Edit stock modal */}
       {editing && (
         <EditStockModal
@@ -196,16 +258,7 @@ export default function InventoryPage() {
         />
       )}
 
-      {/* Edit full product — modal usando ProductFormPage */}
-      {editingProductId && (
-        <ProductFormPage
-          modalProductId={editingProductId}
-          onClose={() => setEditingProductId(null)}
-          onSaved={load}
-        />
-      )}
-
-      {/* Header */}
+{/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-grafito-900 dark:text-white tracking-tight">Inventario</h1>
         <p className="text-sm text-grafito-500 dark:text-grafito-400">Control de stock de productos.</p>
@@ -318,13 +371,15 @@ export default function InventoryPage() {
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
-                        <button
-                          onClick={() => setEditingProductId(p?.id ?? null)}
-                          className="flex h-8 w-8 items-center justify-center rounded-lg bg-grafito-50 dark:bg-white/5 text-grafito-500 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-colors"
-                          title="Editar producto"
-                        >
-                          <Settings2 className="h-3.5 w-3.5" />
-                        </button>
+{isOwner && (
+                          <button
+                            onClick={() => setDeletingRow(row)}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg bg-grafito-50 dark:bg-white/5 text-grafito-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                            title="Eliminar producto"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>

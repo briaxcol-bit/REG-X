@@ -251,7 +251,7 @@ export function SalesHistoryModal({ open, onClose, activeRegister }: Props) {
   const [filterStatus, setFilterStatus] = useState<string>('ALL')
   const [selectedRegisterId, setSelectedRegisterId] = useState<string | null>(null)
 
-  const { tenant, branch, hasRole } = useAuthStore()
+  const { tenant, branch, hasRole, profile } = useAuthStore()
   const { setLastReceipt } = usePOSStore()
   const qc = useQueryClient()
 
@@ -319,7 +319,7 @@ export function SalesHistoryModal({ open, onClose, activeRegister }: Props) {
       businessName:  tenant?.tenantName ?? 'Mi Negocio',
       branchName:    branch?.branchName ?? '',
       nit:           '000.000.000-0',
-      cashierName:   'Cajero',
+      cashierName:   profile?.fullName ?? 'Cajero',
       date:          new Date(sale.created_at),
       orderNumber:   sale.order_number,
       customer:      sale.customers ? { name: sale.customers.full_name } : undefined,

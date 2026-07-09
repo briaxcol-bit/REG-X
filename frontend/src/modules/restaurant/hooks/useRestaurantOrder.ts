@@ -42,6 +42,7 @@ export function useRestaurantOrder() {
       // Refresh order from DB
       const updated = await getActiveOrderForTable(tenantId, tableId)
       setOrder(updated)
+      return updated
     } finally {
       setSubmitting(false)
     }

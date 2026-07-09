@@ -3,19 +3,20 @@
  * Se monta via portal para escapar el canvas de TablesPage.
  */
 
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import {
   X, Search, Plus, Minus, ChefHat, Loader2,
   Users, ChevronDown, ChevronUp, ShoppingCart,
-  CheckCircle2, Clock, AlertCircle, Trash2, MessageSquare,
+  CheckCircle2, Clock, AlertCircle, Trash2, MessageSquare, Printer,
 } from 'lucide-react'
 import { getProducts, getCategories, updateTableStatus, type ProductRow, type CategoryRow, type TableRow } from '@lib/db'
-import type { RestaurantOrderItemInput } from '@lib/db'
+import type { RestaurantOrderItemInput, RestaurantOrderItemRow } from '@lib/db'
 import { useRestaurantOrder } from '../hooks/useRestaurantOrder'
 import { useAuthStore } from '@store/auth.store'
 import { cn } from '@shared/utils/cn'
 import { toast } from 'sonner'
+import { ReceiptTemplate, type ReceiptData, type ReceiptItem } from '../../pos/components/ReceiptTemplate'
 
 // ── Tipos locales ──────────────────────────────────────────────
 
@@ -206,6 +207,79 @@ export function TableOrderPanel({ table, onClose, onTableUpdated }: TableOrderPa
   const [cart,        setCart]        = useState<CartItem[]>([])
   const [orderExpanded, setOrderExpanded] = useState(true)
 
+  // ── Comanda print ───────────────────────────────────────────
+  const [comandaData, setComandaData] = useState<ReceiptData | null>(null)
+  const printPending = useRef(false)
+
+  // Dispara window.print() justo después de que el DOM se actualice con el recibo
+  useEffect(() => {
+    if (!comandaData || printPending.current) return
+    printPending.current = true
+    const id = setTimeout(() => {
+      window.print()
+      setComandaData(null)
+      printPending.current = false
+    }, 120)
+    return () => clearTimeout(id)
+  }, [comandaData])
+
+  const buildComanda = useCallback((
+    items: { name: string; qty: number; price: number; notes?: string | null }[],
+    orderNumber: string,
+  ) => {
+    const receiptItems: ReceiptItem[] = items.map(i => ({
+      name:     i.name,
+      qty:      i.qty,
+      price:    i.price,
+      total:    i.price * i.qty,
+      discount: 0,
+      tax:      0,
+      taxAmt:   0,
+      notes:    i.notes ?? undefined,
+    }))
+    const total = receiptItems.reduce((s, i) => s + i.total, 0)
+
+    setComandaData({
+      businessName:  (tenant as any)?.name ?? 'Restaurante',
+      branchName:    (branch as any)?.name ?? '',
+      nit:           '',
+      orderNumber,
+      cashierName:   profile?.fullName ?? 'Mesero',
+      date:          new Date(),
+      customer:      { name: table.name ? `${table.number} · ${table.name}` : String(table.number) },
+      items:         receiptItems,
+      subtotal:      total,
+      discountTotal: 0,
+      taxBase:       0,
+      taxTotal:      0,
+      total,
+      paymentMethod: 'Comanda',
+      currency:      'COP',
+      isComanda:     true,
+    })
+  }, [tenant, branch, profile, table])
+
+  const printFromOrder = useCallback(() => {
+    if (!order) return
+    const items = (order.order_items ?? []) as RestaurantOrderItemRow[]
+    buildComanda(
+      items.map(i => ({
+        name:  i.name ?? i.products?.name ?? 'Producto',
+        qty:   i.quantity,
+        price: i.unit_price ?? i.products?.price ?? 0,
+        notes: i.notes,
+      })),
+      order.order_number,
+    )
+  }, [order, buildComanda])
+
+  const printFromCart = useCallback((cartItems: CartItem[], orderNum: string) => {
+    buildComanda(
+      cartItems.map(i => ({ name: i.name, qty: i.quantity, price: i.unit_price, notes: i.notes || null })),
+      orderNum,
+    )
+  }, [buildComanda])
+
   // ── Cargar datos al montar ──────────────────────────────────
   useEffect(() => {
     if (!tenant?.tenantId || !branch?.branchId) return
@@ -298,7 +372,7 @@ export function TableOrderPanel({ table, onClose, onTableUpdated }: TableOrderPa
     }))
 
     try {
-      await sendItems(
+      const updatedOrder = await sendItems(
         tenant.tenantId,
         branch.branchId,
         table.id,
@@ -306,6 +380,10 @@ export function TableOrderPanel({ table, onClose, onTableUpdated }: TableOrderPa
         profile?.fullName ?? 'Mesero',
         items,
       )
+      // Imprimir comanda automáticamente antes de limpiar el carrito
+      const orderNum = updatedOrder?.order_number ?? order?.order_number ?? Date.now().toString(36).toUpperCase()
+      printFromCart(cart, orderNum)
+
       setCart([])
       try {
         await updateTableStatus(table.id, 'OCCUPIED')
@@ -317,10 +395,11 @@ export function TableOrderPanel({ table, onClose, onTableUpdated }: TableOrderPa
     }
   }
 
+
   // ── Render ──────────────────────────────────────────────────
   const statusBadge = STATUS_BADGE[table.status] ?? STATUS_BADGE.AVAILABLE
 
-  return createPortal(
+  const panel = (
     <div className="fixed inset-0 z-[300] flex">
       {/* Overlay */}
       <div className="flex-1 bg-black/50 backdrop-blur-sm" onClick={onClose} />
@@ -365,19 +444,30 @@ export function TableOrderPanel({ table, onClose, onTableUpdated }: TableOrderPa
             </div>
           ) : order ? (
             <div className="border-b border-grafito-100 dark:border-white/5">
-              <button
-                onClick={() => setOrderExpanded(v => !v)}
-                className="w-full flex items-center justify-between px-5 py-3 text-xs font-semibold text-grafito-700 dark:text-grafito-200 hover:bg-grafito-50 dark:hover:bg-white/5 transition-colors"
-              >
-                <span className="flex items-center gap-2">
-                  <ChefHat className="h-3.5 w-3.5 text-brand-500" />
-                  Pedido activo — #{order.order_number}
-                  <span className="bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
-                    {order.order_items?.length ?? 0} ítems
+              <div className="flex items-center">
+                <button
+                  onClick={() => setOrderExpanded(v => !v)}
+                  className="flex-1 flex items-center justify-between px-5 py-3 text-xs font-semibold text-grafito-700 dark:text-grafito-200 hover:bg-grafito-50 dark:hover:bg-white/5 transition-colors"
+                >
+                  <span className="flex items-center gap-2">
+                    <ChefHat className="h-3.5 w-3.5 text-brand-500" />
+                    Pedido activo — #{order.order_number}
+                    <span className="bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                      {order.order_items?.length ?? 0} ítems
+                    </span>
                   </span>
-                </span>
-                {orderExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-              </button>
+                  {orderExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                </button>
+                {/* Botón imprimir comanda */}
+                <button
+                  onClick={printFromOrder}
+                  title="Imprimir comanda"
+                  className="flex items-center gap-1 mr-3 px-2.5 py-1.5 rounded-lg border border-grafito-200 dark:border-white/10 text-grafito-500 dark:text-grafito-400 hover:bg-grafito-100 dark:hover:bg-white/10 hover:text-grafito-800 dark:hover:text-white text-[10px] font-semibold transition-colors shrink-0"
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                  Comanda
+                </button>
+              </div>
 
               {orderExpanded && (
                 <div className="px-5 pb-3 space-y-1.5">
@@ -396,10 +486,10 @@ export function TableOrderPanel({ table, onClose, onTableUpdated }: TableOrderPa
                           {item.notes && (
                             <p className="text-[10px] text-grafito-400 italic truncate">{item.notes}</p>
                           )}
-                          {item.added_by_name && (
+                          {(item as any).added_by_name && (
                             <p className="text-[10px] text-brand-500/90 truncate flex items-center gap-1">
                               <Users className="h-2.5 w-2.5 shrink-0" />
-                              {item.added_by_name}
+                              {(item as any).added_by_name}
                             </p>
                           )}
                         </div>
@@ -509,13 +599,11 @@ export function TableOrderPanel({ table, onClose, onTableUpdated }: TableOrderPa
                             : 'border-grafito-200 dark:border-white/10 bg-white dark:bg-grafito-800 hover:border-brand-500/50 hover:bg-brand-500/5',
                       )}
                     >
-                      {/* Badge cantidad en carrito */}
                       {inCart && !outOfStock && (
                         <span className="absolute top-2 right-2 h-5 w-5 rounded-full bg-brand-500 text-white text-[10px] font-bold flex items-center justify-center">
                           {inCart.quantity}
                         </span>
                       )}
-                      {/* Badge stock */}
                       {!inCart && !outOfStock && (
                         <span className={cn(
                           'absolute top-2 right-2 text-[9px] font-bold px-1.5 py-0.5 rounded-full',
@@ -531,7 +619,6 @@ export function TableOrderPanel({ table, onClose, onTableUpdated }: TableOrderPa
                           Agotado
                         </span>
                       )}
-
                       {product.categories && (
                         <span
                           className="self-start text-[9px] font-bold px-1.5 py-0.5 rounded-full text-white mb-0.5"
@@ -565,7 +652,6 @@ export function TableOrderPanel({ table, onClose, onTableUpdated }: TableOrderPa
                 </span>
               </div>
 
-              {/* Lista del carrito */}
               <div className="space-y-1.5 max-h-52 overflow-y-auto pr-0.5">
                 {cart.map(item => (
                   <CartRow
@@ -578,7 +664,6 @@ export function TableOrderPanel({ table, onClose, onTableUpdated }: TableOrderPa
                 ))}
               </div>
 
-              {/* Total */}
               <div className="flex justify-between pt-1 text-sm font-bold text-grafito-900 dark:text-white border-t border-grafito-100 dark:border-white/5">
                 <span>Total nuevo pedido</span>
                 <span className="text-brand-500">{fmt(cartTotal)}</span>
@@ -601,7 +686,18 @@ export function TableOrderPanel({ table, onClose, onTableUpdated }: TableOrderPa
           </div>
         )}
       </div>
-    </div>,
-    document.body,
+    </div>
+  )
+
+  return (
+    <>
+      {comandaData && createPortal(
+        <div id="pos-receipt">
+          <ReceiptTemplate data={comandaData} />
+        </div>,
+        document.body,
+      )}
+      {createPortal(panel, document.body)}
+    </>
   )
 }

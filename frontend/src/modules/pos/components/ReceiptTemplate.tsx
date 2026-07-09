@@ -11,6 +11,7 @@ export interface ReceiptItem {
   discount: number   // monto descuento
   tax:      number   // porcentaje IVA
   taxAmt:   number   // monto IVA
+  notes?:   string   // nota/comentario del mesero (comanda)
 }
 
 export interface ReceiptCustomer {
@@ -32,6 +33,7 @@ export interface ReceiptData {
   // Venta
   orderNumber:     string
   cashierName:     string
+  waiterName?:     string   // Mesero que atendió la mesa (si aplica)
   date:            Date
   customer?:       ReceiptCustomer
   // Items
@@ -54,7 +56,7 @@ export interface ReceiptData {
 
 // ── Helpers ───────────────────────────────────────────────────
 
-const W = 42
+const W = 36
 
 function lineChar(char = '─') { return char.repeat(W) }
 
@@ -99,7 +101,7 @@ export function ReceiptTemplate({ data }: { data: ReceiptData }) {
   const {
     businessName, branchName, nit, address, phone,
     dianResolution, dianFrom, dianTo,
-    orderNumber, cashierName, date, customer,
+    orderNumber, cashierName, waiterName, date, customer,
     items, subtotal, discountTotal, taxBase, taxTotal, total,
     paymentMethod, cashReceived, change, currency,
     isComanda,
@@ -113,44 +115,33 @@ export function ReceiptTemplate({ data }: { data: ReceiptData }) {
   const nl = () => rows.push('')
 
   if (isComanda) {
-    // ── TICKET COMANDA (simple, sin datos fiscales) ────────
+    // ── TICKET COMANDA (cocina / barra) ────────────────────
     nl()
     push(center(businessName.toUpperCase()))
     if (branchName) push(center(branchName))
     nl()
-    push(center('*** PEDIDO / COMANDA ***'))
+    push(center('*** COMANDA ***'))
     push(lineChar())
-    push(`No.:   ${orderNumber}`)
-    push(`Fecha: ${dateStr}  ${timeStr}`)
-    if (cashierName) push(`Atendió: ${cashierName}`)
-    if (customer) push(`Cliente: ${customer.name}`)
+    push(`No.:      ${orderNumber}`)
+    push(`Fecha:    ${dateStr}  ${timeStr}`)
+    if (cashierName) push(`Mesero:   ${cashierName}`)
+    if (customer)    push(`Mesa:     ${customer.name}`)
     push(lineChar())
 
-    // Items — solo nombre, cantidad y total (sin precio unitario)
-    push(pad('CANT  PRODUCTO', 'TOTAL'))
+    // Items — solo cantidad y nombre (sin precios)
+    push('CANT  PRODUCTO')
     push(lineChar('·'))
     for (const it of items) {
-      const totalStr = fmt(it.total, currency)
-      const prefix   = `${it.qty}x  `
-      const maxName  = W - totalStr.length - prefix.length - 1
+      const prefix    = `${it.qty}x  `
+      const maxName   = W - prefix.length
       const nameLines = wrapText(it.name, maxName)
-      push(pad(prefix + nameLines[0], totalStr))
-      for (let i = 1; i < nameLines.length; i++) push('     ' + nameLines[i])
-      if (it.discount > 0) push(pad('     Desc:', `-${fmt(it.discount, currency)}`))
+      push(prefix + nameLines[0])
+      for (let i = 1; i < nameLines.length; i++) push('      ' + nameLines[i])
+      if (it.notes) wrapText(`   * ${it.notes}`, W).forEach(l => push(l))
     }
     push(lineChar('·'))
-
-    // Total
     nl()
-    if (discountTotal > 0) push(pad('Descuento:', `-${fmt(discountTotal, currency)}`))
-    push(lineChar())
-    push(pad('TOTAL:', fmt(total, currency)))
-    push(lineChar())
-    nl()
-    push(center('Este ticket NO es factura'))
-    push(center('La factura se entrega al pagar'))
-    nl()
-    push(center('¡Gracias!'))
+    push(center('-- Cocina / Barra --'))
     nl()
     nl()
     nl()
@@ -185,7 +176,8 @@ export function ReceiptTemplate({ data }: { data: ReceiptData }) {
     // DATOS
     push(`No.:    ${orderNumber}`)
     push(`Fecha:  ${dateStr}  ${timeStr}`)
-    push(`Cajero: ${cashierName.length > 28 ? cashierName.slice(0, 27) + '…' : cashierName}`)
+    if (waiterName) push(`Mesero:  ${waiterName.length > 27 ? waiterName.slice(0, 26) + '…' : waiterName}`)
+    push(`Cajero:  ${cashierName.length > 27 ? cashierName.slice(0, 26) + '…' : cashierName}`)
     push(lineChar())
 
     // CLIENTE
@@ -210,6 +202,7 @@ export function ReceiptTemplate({ data }: { data: ReceiptData }) {
       for (let i = 1; i < nameLines.length; i++) push(nameLines[i])
       const taxTag = it.tax > 0 ? `IVA ${it.tax}%` : 'Excl.'
       push(pad(`  ${it.qty} und x ${fmt(it.price, currency)}`, taxTag))
+      if (it.notes)    wrapText(`  * ${it.notes}`, W).forEach(l => push(l))
       if (it.discount > 0) push(pad('  Descuento:', `-${fmt(it.discount, currency)}`))
     }
     push(lineChar('·'))
@@ -265,14 +258,20 @@ export function ReceiptTemplate({ data }: { data: ReceiptData }) {
   return (
     <div
       style={{
-        fontFamily: "'Courier New', Courier, monospace",
-        fontSize:   '10.5px',
-        lineHeight: '1.45',
-        width:      '302px',
-        padding:    '8px 4px 0',
-        color:      '#000',
-        background: '#fff',
-        whiteSpace: 'pre',
+        fontFamily:             "'Courier New', Courier, monospace",
+        fontSize:               '13px',
+        fontWeight:             '900',
+        lineHeight:             '1.35',
+        width:                  '80mm',
+        boxSizing:              'border-box',
+        padding:                '3mm 2mm 0',
+        color:                  '#000000',
+        background:             '#ffffff',
+        whiteSpace:             'pre',
+        WebkitFontSmoothing:    'none',
+        textRendering:          'optimizeSpeed' as const,
+        fontVariantLigatures:   'none',
+        fontSynthesis:          'none',
       }}
     >
       {rows.join('\n')}

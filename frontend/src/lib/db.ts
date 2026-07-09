@@ -571,7 +571,7 @@ export async function getProducts(
   let q = supabase
     .from('products')
     .select(`
-      id, tenant_id, name, sku, barcode, price, cost_price, tax, image_url, status,
+      id, tenant_id, name, sku, price, cost_price, tax, image_url, status,
       track_inventory, category_id,
       categories(name, color),
       inventory(quantity)
@@ -586,7 +586,7 @@ export async function getProducts(
   if (params?.categoryId) q = q.eq('category_id', params.categoryId)
 
   if (params?.search) {
-    q = q.or(`name.ilike.%${params.search}%,sku.ilike.%${params.search}%,barcode.ilike.%${params.search}%`)
+    q = q.or(`name.ilike.%${params.search}%,sku.ilike.%${params.search}%`)
   }
 
   const { data, error } = await q
@@ -689,6 +689,16 @@ export async function createCustomer(
     .single()
   if (error) throw error
   return row
+}
+
+export async function getCustomerById(customerId: string): Promise<CustomerRow | null> {
+  const { data, error } = await supabase
+    .from('customers')
+    .select(CUSTOMER_SELECT)
+    .eq('id', customerId)
+    .single()
+  if (error) return null
+  return data as CustomerRow
 }
 
 export async function updateCustomer(
@@ -945,14 +955,16 @@ export async function getInventory(
     .from('inventory')
     .select(`
       id, product_id, warehouse_id, quantity, reserved,
-      products(name, sku, price, cost_price, min_stock, status, image_url, category_id, categories(name, color))
+      products(name, sku, price, cost_price, min_stock, status, image_url, category_id, deleted_at, categories(name, color))
     `)
     .eq('tenant_id', tenantId)
     .eq('branch_id', branchId)
     .order('quantity', { ascending: true })
 
   if (error) throw error
-  return (data ?? []) as unknown as InventoryRow[]
+  // Excluir filas cuyo producto fue eliminado (soft-delete o RLS lo oculta → products=null)
+  const active = (data ?? []).filter((row: any) => row.products != null && row.products.deleted_at == null)
+  return active as unknown as InventoryRow[]
 }
 
 // ── Tables (restaurant) ────────────────────────────────────────
@@ -1139,22 +1151,19 @@ export async function createRestaurantOrder(
 
   // Insertar ítems — unit_price es NOT NULL en el esquema original.
   // added_by / added_by_name registran quién agregó cada ítem (migración 023).
-  // Si esas columnas aún no existen, reintentamos sin ellas.
-  const baseRows = items.map(item => ({
-    order_id:    order.id,
-    product_id:  item.product_id,
-    quantity:    item.quantity,
-    unit_price:  item.unit_price,
-    status:      'PENDING' as any,
-    destination: item.destination ?? 'KITCHEN',
-    notes:       item.notes ?? null,
-  }))
-  const rowsWithAuthor = baseRows.map(r => ({ ...r, added_by: waiterId, added_by_name: waiterName }))
-
-  let { error: itemsErr } = await supabase.from('order_items').insert(rowsWithAuthor as any)
-  if (itemsErr) {
-    ;({ error: itemsErr } = await supabase.from('order_items').insert(baseRows as any))
-  }
+  const { error: itemsErr } = await supabase.from('order_items').insert(
+    items.map(item => ({
+      order_id:      order.id,
+      product_id:    item.product_id,
+      quantity:      item.quantity,
+      unit_price:    item.unit_price,
+      status:        'PENDING' as any,
+      destination:   item.destination ?? 'KITCHEN',
+      notes:         item.notes ?? null,
+      added_by:      waiterId,
+      added_by_name: waiterName,
+    } as any)),
+  )
   if (itemsErr) throw itemsErr
 
   // Guardar campos denormalizados si la migración ya fue aplicada (name, sku)
@@ -1183,30 +1192,22 @@ export async function getActiveOrderForTable(
 ): Promise<RestaurantOrderRow | null> {
   // Status válidos del enum actual: PENDING | PREPARING | READY | SERVED | CANCELLED
   // Usamos SERVED como estado "cerrado" (orden cobrada/finalizada)
-  const run = (itemCols: string) =>
-    supabase
-      .from('orders')
-      .select(`
-        id, order_number, status, notes, created_at, table_id, waiter_id,
-        tables(number, name),
-        order_items(${itemCols})
-      `)
-      .eq('tenant_id', tenantId)
-      .eq('table_id', tableId)
-      .not('status', 'in', '(SERVED,CANCELLED)')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+  const { data, error } = await supabase
+    .from('orders')
+    .select(`
+      id, order_number, status, notes, created_at, table_id, waiter_id,
+      tables(number, name),
+      order_items(id, product_id, quantity, unit_price, status, destination, notes, created_at,
+        added_by, added_by_name,
+        products(name, sku, price))
+    `)
+    .eq('tenant_id', tenantId)
+    .eq('table_id', tableId)
+    .not('status', 'in', '(SERVED,CANCELLED)')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
 
-  // Intento con trazabilidad por ítem (migración 023). Si las columnas no
-  // existen todavía, reintento sin ellas para no romper la carga del pedido.
-  const WITH_ADDED_BY = 'id, product_id, quantity, unit_price, status, destination, notes, created_at, added_by, added_by_name, products(name, sku, price)'
-  const BASE          = 'id, product_id, quantity, unit_price, status, destination, notes, created_at, products(name, sku, price)'
-
-  let { data, error } = await run(WITH_ADDED_BY)
-  if (error) {
-    ;({ data, error } = await run(BASE))
-  }
   if (error) throw error
   return data as unknown as RestaurantOrderRow | null
 }
@@ -1221,6 +1222,7 @@ export async function getActiveTableOrders(
       id, order_number, status, notes, created_at, table_id,
       tables(number, name),
       order_items(id, product_id, quantity, unit_price, status, destination,
+        added_by_name,
         products(name, sku, price))
     `)
     .eq('tenant_id', tenantId)
@@ -1240,22 +1242,19 @@ export async function addItemsToOrder(
   addedByName?: string,
 ): Promise<void> {
   // added_by / added_by_name registran quién agregó cada ítem (migración 023).
-  // Si esas columnas aún no existen, reintentamos sin ellas.
-  const baseRows = items.map(item => ({
-    order_id:    orderId,
-    product_id:  item.product_id,
-    quantity:    item.quantity,
-    unit_price:  item.unit_price,
-    status:      'PENDING' as any,
-    destination: item.destination ?? 'KITCHEN',
-    notes:       item.notes ?? null,
-  }))
-  const rowsWithAuthor = baseRows.map(r => ({ ...r, added_by: addedById ?? null, added_by_name: addedByName ?? null }))
-
-  let { error } = await supabase.from('order_items').insert(rowsWithAuthor as any)
-  if (error) {
-    ;({ error } = await supabase.from('order_items').insert(baseRows as any))
-  }
+  const { error } = await supabase.from('order_items').insert(
+    items.map(item => ({
+      order_id:      orderId,
+      product_id:    item.product_id,
+      quantity:      item.quantity,
+      unit_price:    item.unit_price,
+      status:        'PENDING' as any,
+      destination:   item.destination ?? 'KITCHEN',
+      notes:         item.notes ?? null,
+      added_by:      addedById ?? null,
+      added_by_name: addedByName ?? null,
+    } as any)),
+  )
   if (error) throw error
 
   // Guardar campos denormalizados si la migración ya fue aplicada (name, sku)

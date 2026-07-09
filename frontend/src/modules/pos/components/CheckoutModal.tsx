@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Banknote, CreditCard, Smartphone, CheckCircle2, Printer, ChevronRight, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
@@ -9,7 +9,7 @@ import { cn } from '@shared/utils/cn'
 import { useCreateSale } from '@modules/pos/hooks/useCreateSale'
 import { useCashSession } from '@modules/pos/hooks/useCashSession'
 import { ReceiptTemplate, type ReceiptData } from './ReceiptTemplate'
-import { closeRestaurantOrder } from '@lib/db'
+import { closeRestaurantOrder, getCustomerById, type CustomerRow } from '@lib/db'
 
 // ── Métodos de pago ────────────────────────────────────────────────────────────
 type PaymentMethod = 'CASH' | 'CARD' | 'NEQUI' | 'DAVIPLATA' | 'TRANSFER'
@@ -84,20 +84,28 @@ interface CheckoutModalProps {
 }
 
 export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId, restaurantOrderId }: CheckoutModalProps) {
-  const [method, setMethod]       = useState<PaymentMethod>('CASH')
-  const [cashInput, setCashInput] = useState('')
-  const [success, setSuccess]     = useState(false)
+  const [method, setMethod]             = useState<PaymentMethod>('CASH')
+  const [cashInput, setCashInput]       = useState('')
+  const [success, setSuccess]           = useState(false)
+  const [customerData, setCustomerData] = useState<CustomerRow | null>(null)
 
   const { tabs, activeTabId, clearCart, lastReceipt, setLastReceipt } = usePOSStore()
   const activeTab  = tabs.find(t => t.id === activeTabId) ?? tabs[0]
   const items      = activeTab?.items      ?? []
   const discounts  = activeTab?.discounts  ?? []
   const payments   = activeTab?.payments   ?? []
-  const customerId = activeTab?.customerId
-  const notes      = activeTab?.notes      ?? ''
+  const customerId  = activeTab?.customerId
+  const waiterName  = activeTab?.waiterName
+  const notes       = activeTab?.notes      ?? ''
   const { tenant, branch, profile } = useAuthStore()
   const { mutateAsync: createSale, isPending } = useCreateSale()
   const { activeRegister } = useCashSession()
+
+  // Cargar datos del cliente cuando hay uno seleccionado
+  useEffect(() => {
+    if (!customerId) { setCustomerData(null); return }
+    getCustomerById(customerId).then(setCustomerData)
+  }, [customerId])
 
   const receipt = success ? lastReceipt : null
 
@@ -168,13 +176,19 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
 
       const taxBaseAmt       = subtotalAmt - discountAmt
 
+      const customerReceipt = customerData
+        ? { name: customerData.full_name, docId: customerData.tax_id ?? undefined, phone: customerData.phone ?? undefined }
+        : undefined
+
       setLastReceipt({
         businessName:   tenant?.tenantName ?? 'Mi Negocio',
         branchName:     branch?.branchName ?? '',
         nit:            '000.000.000-0',
         orderNumber:    `ORD-${Date.now().toString(36).toUpperCase()}`,
-        cashierName:    profile?.full_name ?? 'Cajero',
+        cashierName:    profile?.fullName ?? 'Cajero',
+        waiterName:     waiterName,
         date:           new Date(),
+        customer:       customerReceipt,
         items: items.map(it => ({
           name:     it.name,
           qty:      it.quantity,
@@ -183,6 +197,7 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
           discount: it.discountAmount,
           tax:      it.tax,
           taxAmt:   it.taxAmount,
+          notes:    it.notes,
         })),
         subtotal:       subtotalAmt,
         discountTotal:  discountAmt,
@@ -208,14 +223,21 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
     const dateStr = r.date.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' })
     const timeStr = r.date.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 
+    const customerBlock = r.customer
+      ? '<div style="padding-left:6px">' + r.customer.name + '</div>'
+        + (r.customer.docId ? '<div style="padding-left:6px">CC/NIT: ' + r.customer.docId + '</div>' : '')
+        + (r.customer.phone ? '<div style="padding-left:6px">Tel: ' + r.customer.phone + '</div>' : '')
+      : '<div style="padding-left:6px">Consumidor final</div><div style="padding-left:6px">CC/NIT: 222222222222</div>'
+
     const itemRows = r.items.map(it => `
       <tr>
         <td style="padding:3px 0;vertical-align:top">
           <div>${it.name}</div>
-          <div style="color:#555;font-size:10px">${it.qty} und × ${fmt(it.price)}${it.tax > 0 ? ` · IVA ${it.tax}%` : ''}</div>
-          ${it.discount > 0 ? `<div style="color:#555;font-size:10px">Desc: -${fmt(it.discount)}</div>` : ''}
+          <div>${it.qty} und × ${fmt(it.price)}${it.tax > 0 ? ' · IVA ' + it.tax + '%' : ''}</div>
+          ${it.notes ? '<div style="padding-left:8px">* ' + it.notes + '</div>' : ''}
+          ${it.discount > 0 ? '<div>Desc: -' + fmt(it.discount) + '</div>' : ''}
         </td>
-        <td style="padding:3px 0;text-align:right;vertical-align:top;white-space:nowrap">${fmt(it.total)}</td>
+        <td style="padding:3px 0;text-align:right;vertical-align:top;width:30%">${fmt(it.total)}</td>
       </tr>`).join('')
 
     const html = `<!DOCTYPE html>
@@ -223,35 +245,47 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
 <meta charset="utf-8">
 <title>Recibo ${r.orderNumber}</title>
 <style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family:'Courier New',Courier,monospace; font-size:11px; width:302px; padding:8px 6px; color:#000; background:#fff; }
+  * { margin:0; padding:0; box-sizing:border-box;
+      -webkit-font-smoothing:none; font-smooth:never;
+      text-rendering:optimizeSpeed; font-synthesis:none; }
+  body {
+    font-family:'Courier New',Courier,monospace;
+    font-size:12px; font-weight:900;
+    width:72mm; padding:2mm 0 0;
+    color:#000000; background:#ffffff;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+    word-break:break-word;
+  }
   .center { text-align:center; }
-  .bold { font-weight:bold; }
-  .sep-solid { border:none; border-top:1px solid #000; margin:5px 0; }
-  .sep-dot   { border:none; border-top:1px dashed #555; margin:4px 0; }
-  table { width:100%; border-collapse:collapse; }
-  td { font-size:11px; }
-  .row-total td { font-weight:bold; font-size:12px; border-top:1px solid #000; padding-top:4px; }
-  @media print { @page { margin:4mm; } body { width:302px; } }
+  .bold   { font-weight:900; }
+  .sep-solid { border:none; border-top:2px solid #000; margin:5px 0; }
+  .sep-dot   { border:none; border-top:1px dashed #000; margin:4px 0; }
+  table { width:100%; border-collapse:collapse; table-layout:fixed; }
+  td { font-size:12px; font-weight:900; word-break:break-word; }
+  .row-total td { font-weight:900; font-size:13px; border-top:2px solid #000; padding-top:4px; }
+  @media print {
+    @page { size:80mm auto; margin:0 4mm; }
+    body  { width:72mm; filter:contrast(999); }
+  }
 </style>
 </head><body>
-  <div class="center bold" style="font-size:14px">${r.businessName.toUpperCase()}</div>
-  ${r.branchName ? `<div class="center" style="font-size:10px">${r.branchName}</div>` : ''}
-  <div class="center" style="font-size:10px">NIT: ${r.nit}</div>
+  <div class="center bold" style="font-size:15px">${r.businessName.toUpperCase()}</div>
+  ${r.branchName ? '<div class="center">' + r.branchName + '</div>' : ''}
+  <div class="center">NIT: ${r.nit}</div>
   <div class="center bold" style="margin:4px 0">* FACTURA DE VENTA *</div>
   <hr class="sep-solid">
   <div>No.: ${r.orderNumber}</div>
   <div>Fecha: ${dateStr} ${timeStr}</div>
+  ${r.waiterName ? '<div>Mesero: ' + r.waiterName + '</div>' : ''}
   <div>Cajero: ${r.cashierName}</div>
   <hr class="sep-solid">
   <div class="bold">CLIENTE:</div>
-  <div style="padding-left:6px">Consumidor final</div>
-  <div style="padding-left:6px">CC/NIT: 222222222222</div>
+  ${customerBlock}
   <hr class="sep-solid">
   <table>
     <thead><tr>
-      <th style="text-align:left;font-size:10px;padding-bottom:3px">DESCRIPCIÓN</th>
-      <th style="text-align:right;font-size:10px;padding-bottom:3px">TOTAL</th>
+      <th style="text-align:left;padding-bottom:3px">DESCRIPCIÓN</th>
+      <th style="text-align:right;padding-bottom:3px">TOTAL</th>
     </tr></thead>
     <hr class="sep-dot">
     <tbody>${itemRows}</tbody>
@@ -259,26 +293,25 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
   <hr class="sep-dot">
   <table style="margin-top:4px">
     <tr><td>Subtotal (sin IVA)</td><td style="text-align:right">${fmt(r.subtotal - r.taxTotal)}</td></tr>
-    ${r.discountTotal > 0 ? `<tr><td>Descuento</td><td style="text-align:right">-${fmt(r.discountTotal)}</td></tr>` : ''}
-    ${r.taxTotal > 0 ? `<tr><td>Base gravable</td><td style="text-align:right">${fmt(r.taxBase)}</td></tr><tr><td>IVA</td><td style="text-align:right">${fmt(r.taxTotal)}</td></tr>` : `<tr><td>IVA</td><td style="text-align:right">${fmt(0)} (Excluido)</td></tr>`}
-    ${r.tip ? `<tr><td>Propina voluntaria</td><td style="text-align:right">${fmt(r.tip)}</td></tr>` : ''}
+    ${r.discountTotal > 0 ? '<tr><td>Descuento</td><td style="text-align:right">-' + fmt(r.discountTotal) + '</td></tr>' : ''}
+    ${r.taxTotal > 0 ? '<tr><td>Base gravable</td><td style="text-align:right">' + fmt(r.taxBase) + '</td></tr><tr><td>IVA</td><td style="text-align:right">' + fmt(r.taxTotal) + '</td></tr>' : '<tr><td>IVA</td><td style="text-align:right">' + fmt(0) + ' (Excluido)</td></tr>'}
+    ${r.tip ? '<tr><td>Propina voluntaria</td><td style="text-align:right">' + fmt(r.tip) + '</td></tr>' : ''}
     <tr class="row-total"><td>TOTAL A PAGAR</td><td style="text-align:right">${fmt(r.total)}</td></tr>
   </table>
   <hr class="sep-solid">
   <div class="bold">FORMA DE PAGO:</div>
   <table>
     <tr><td style="padding-left:6px">${r.paymentMethod}</td><td style="text-align:right">${fmt(r.total)}</td></tr>
-    ${r.cashReceived ? `<tr><td style="padding-left:6px">Efectivo recibido</td><td style="text-align:right">${fmt(r.cashReceived)}</td></tr>` : ''}
-    ${r.change ? `<tr><td style="padding-left:6px">Cambio entregado</td><td style="text-align:right">${fmt(r.change)}</td></tr>` : ''}
+    ${r.cashReceived ? '<tr><td style="padding-left:6px">Efectivo recibido</td><td style="text-align:right">' + fmt(r.cashReceived) + '</td></tr>' : ''}
+    ${r.change ? '<tr><td style="padding-left:6px">Cambio entregado</td><td style="text-align:right">' + fmt(r.change) + '</td></tr>' : ''}
   </table>
   <hr class="sep-dot" style="margin-top:8px">
-  <div class="center" style="margin-top:6px;font-size:10px">Régimen Común — Responsable IVA</div>
-  <div class="center" style="font-size:10px;margin-top:4px">Esta factura es título valor según Art. 616-1 E.T.</div>
+  <div class="center" style="margin-top:6px">Régimen Común — Responsable IVA</div>
+  <div class="center" style="margin-top:4px">Esta factura es título valor según Art. 616-1 E.T.</div>
   <div class="center bold" style="margin-top:8px">¡Gracias por su compra!</div>
-  <div class="center" style="font-size:10px">Conserve esta factura</div>
-  <div class="center" style="font-size:10px;margin-top:6px">www.reg-x.com</div>
+  <div class="center">Conserve esta factura</div>
+  <div class="center" style="margin-top:6px">www.reg-x.com</div>
 </body></html>`
-
     // Blob URL: Chrome lo renderiza completamente antes de mostrar el diálogo
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
     const url  = URL.createObjectURL(blob)

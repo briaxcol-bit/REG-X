@@ -23,6 +23,7 @@ export interface CartItem {
   notes?: string
   isKitchen?: boolean
   isBar?: boolean
+  addedByName?: string   // Mesero que agregó el ítem (órdenes de restaurante)
 }
 
 export interface CartDiscount {
@@ -57,6 +58,7 @@ export interface CartTab {
   customerId?: string
   tableId?: string
   restaurantOrderId?: string   // ID de la orden de restaurante vinculada
+  waiterName?: string          // Mesero principal de la mesa
   tip: number                  // Propina (no impositiva)
   notes: string
 }
@@ -130,6 +132,7 @@ interface POSActions {
     tableId:           string
     restaurantOrderId: string
     label:             string
+    waiterName?:       string
     items:             Omit<CartItem, 'id' | 'total' | 'taxAmount' | 'discountAmount'>[]
   }) => void
 
@@ -252,13 +255,14 @@ export const usePOSStore = create<POSState & POSActions>()(
         setNotes:    (notes)      => mutateActive(tab => { tab.notes = notes }),
         setTip:      (amount)     => mutateActive(tab => { tab.tip = Math.max(0, amount) }),
 
-        loadTableOrder: ({ tableId, restaurantOrderId, label, items }) => set(state => {
+        loadTableOrder: ({ tableId, restaurantOrderId, label, waiterName, items }) => set(state => {
           // Reusar tab existente si ya está abierta para esa mesa
           const existing = state.tabs.find(t => t.tableId === tableId)
           if (existing) {
             // Actualizar ítems y activar
             existing.restaurantOrderId = restaurantOrderId
             existing.label             = label
+            existing.waiterName        = waiterName
             existing.items             = items.map(it => {
               const calc = calcItemTotal(it)
               return { ...it, id: nanoid(), ...calc }
@@ -279,6 +283,7 @@ export const usePOSStore = create<POSState & POSActions>()(
             customerId:        undefined,
             tableId,
             restaurantOrderId,
+            waiterName,
             tip:               0,
             notes:             '',
           }
