@@ -366,15 +366,26 @@ export function useTableMap() {
   }, [])
 
   // ── orderInfoMap: table_id → TableOrderInfo ───────────────────
+  // Agrega TODAS las comandas activas de cada mesa (puede haber varias).
   const orderInfoMap = useMemo(() => {
     const map = new Map<string, TableOrderInfo>()
     for (const order of orders) {
       if (!order.table_id) continue
-      const items     = order.order_items ?? []
-      const itemCount = items.reduce((s, i) => s + i.quantity, 0)
-      const total     = items.reduce((s, i) => s + (i.unit_price ?? 0) * i.quantity, 0)
+      const items      = order.order_items ?? []
+      const itemCount  = items.reduce((s, i) => s + i.quantity, 0)
+      const total      = items.reduce((s, i) => s + (i.unit_price ?? 0) * i.quantity, 0)
       const waiterName = (order as any).waiter_name ?? null
-      map.set(order.table_id, { itemCount, total, waiterName, createdAt: order.created_at })
+      const existing   = map.get(order.table_id)
+      if (existing) {
+        map.set(order.table_id, {
+          itemCount:   existing.itemCount + itemCount,
+          total:       existing.total + total,
+          waiterName:  existing.waiterName ?? waiterName,
+          createdAt:   existing.createdAt,   // conserva la hora de la primera comanda
+        })
+      } else {
+        map.set(order.table_id, { itemCount, total, waiterName, createdAt: order.created_at })
+      }
     }
     return map
   }, [orders])
@@ -527,7 +538,6 @@ export function TableMapCanvas({
           </div>
         </>
       )}
-
     </div>
   )
 }

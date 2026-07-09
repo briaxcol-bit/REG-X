@@ -1212,6 +1212,48 @@ export async function getActiveOrderForTable(
   return data as unknown as RestaurantOrderRow | null
 }
 
+/** Todas las comandas activas (no SERVED ni CANCELLED) para una mesa concreta. */
+export async function getAllActiveOrdersForTable(
+  tenantId: string,
+  tableId:  string,
+): Promise<RestaurantOrderRow[]> {
+  const { data, error } = await supabase
+    .from('orders')
+    .select(`
+      id, order_number, status, notes, created_at, table_id, waiter_id,
+      tables(number, name),
+      order_items(id, product_id, quantity, unit_price, status, destination, notes, created_at,
+        added_by, added_by_name,
+        products(name, sku, price))
+    `)
+    .eq('tenant_id', tenantId)
+    .eq('table_id', tableId)
+    .not('status', 'in', '(SERVED,CANCELLED)')
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return (data ?? []) as unknown as RestaurantOrderRow[]
+}
+
+/** Cierra (SERVED) TODAS las comandas activas de una mesa y la deja AVAILABLE. */
+export async function closeAllOrdersForTable(
+  tenantId: string,
+  tableId:  string,
+): Promise<void> {
+  const { error: orderErr } = await supabase
+    .from('orders')
+    .update({ status: 'SERVED' as any })
+    .eq('tenant_id', tenantId)
+    .eq('table_id', tableId)
+    .not('status', 'in', '(SERVED,CANCELLED)')
+  if (orderErr) throw orderErr
+
+  const { error: tableErr } = await supabase
+    .from('tables')
+    .update({ status: 'AVAILABLE' })
+    .eq('id', tableId)
+  if (tableErr) throw tableErr
+}
+
 export async function getActiveTableOrders(
   tenantId: string,
   branchId: string,
@@ -1284,6 +1326,30 @@ export async function getKDSOrders(
     .eq('branch_id', branchId)
     .in('status', ['PENDING', 'PREPARING'] as any[])
     .order('created_at', { ascending: true })
+
+  if (error) throw error
+  return (data ?? []) as unknown as RestaurantOrderRow[]
+}
+
+export async function getKDSHistory(
+  tenantId: string,
+  branchId: string,
+  hoursBack = 4,
+): Promise<RestaurantOrderRow[]> {
+  const since = new Date(Date.now() - hoursBack * 60 * 60 * 1000).toISOString()
+  const { data, error } = await supabase
+    .from('orders')
+    .select(`
+      id, order_number, status, notes, created_at, table_id,
+      tables(number, name),
+      order_items(id, product_id, quantity, unit_price, status, destination, notes, created_at,
+        products(name, sku, price))
+    `)
+    .eq('tenant_id', tenantId)
+    .eq('branch_id', branchId)
+    .eq('status', 'READY' as any)
+    .gte('created_at', since)
+    .order('created_at', { ascending: false })
 
   if (error) throw error
   return (data ?? []) as unknown as RestaurantOrderRow[]
@@ -2135,7 +2201,8 @@ export async function getSalesHistory(
   return (data ?? []) as unknown as SaleHistoryRow[]
 }
 
-// ── Update Stock ──────────────────────
+// ── Update Stock ──────────────────────────────────────────────
+
 export async function updateStock(
   tenantId: string,
   branchId: string,

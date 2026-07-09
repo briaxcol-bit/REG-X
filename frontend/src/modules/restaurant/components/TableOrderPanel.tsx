@@ -10,8 +10,9 @@ import {
   Users, ChevronDown, ChevronUp, ShoppingCart,
   CheckCircle2, Clock, AlertCircle, Trash2, MessageSquare, Printer,
 } from 'lucide-react'
-import { getProducts, getCategories, updateTableStatus, type ProductRow, type CategoryRow, type TableRow } from '@lib/db'
-import type { RestaurantOrderItemInput, RestaurantOrderItemRow } from '@lib/db'
+import { getProducts, getCategories, updateTableStatus, getAllActiveOrdersForTable, type ProductRow, type CategoryRow, type TableRow } from '@lib/db'
+import type { RestaurantOrderRow, RestaurantOrderItemInput, RestaurantOrderItemRow } from '@lib/db'
+import { supabase } from '@lib/supabase'
 import { useRestaurantOrder } from '../hooks/useRestaurantOrder'
 import { useAuthStore } from '@store/auth.store'
 import { cn } from '@shared/utils/cn'
@@ -197,7 +198,11 @@ function CartRow({
 
 export function TableOrderPanel({ table, onClose, onTableUpdated }: TableOrderPanelProps) {
   const { tenant, branch, user, profile } = useAuthStore()
-  const { order, loading, submitting, loadOrder, sendItems } = useRestaurantOrder()
+  const { submitting, sendItems } = useRestaurantOrder()
+
+  // Todas las comandas activas de la mesa (puede haber varias)
+  const [allOrders,   setAllOrders]   = useState<RestaurantOrderRow[]>([])
+  const [loading,     setLoading]     = useState(false)
 
   const [products,    setProducts]    = useState<ProductRow[]>([])
   const [categories,  setCategories]  = useState<CategoryRow[]>([])
@@ -206,6 +211,14 @@ export function TableOrderPanel({ table, onClose, onTableUpdated }: TableOrderPa
   const [activeCat,   setActiveCat]   = useState<string | null>(null)
   const [cart,        setCart]        = useState<CartItem[]>([])
   const [orderExpanded, setOrderExpanded] = useState(true)
+
+  // ── Ítems y total consolidados de TODAS las comandas ──────────
+  const allItems = useMemo(() => allOrders.flatMap(o => o.order_items ?? []), [allOrders])
+  const allTotal = useMemo(
+    () => allItems.reduce((s, i) => s + (i.unit_price ?? (i.products as any)?.price ?? 0) * i.quantity, 0),
+    [allItems],
+  )
+  const hasOrders = allOrders.length > 0
 
   // ── Comanda print ───────────────────────────────────────────
   const [comandaData, setComandaData] = useState<ReceiptData | null>(null)
@@ -260,18 +273,17 @@ export function TableOrderPanel({ table, onClose, onTableUpdated }: TableOrderPa
   }, [tenant, branch, profile, table])
 
   const printFromOrder = useCallback(() => {
-    if (!order) return
-    const items = (order.order_items ?? []) as RestaurantOrderItemRow[]
+    if (allItems.length === 0) return
     buildComanda(
-      items.map(i => ({
-        name:  i.name ?? i.products?.name ?? 'Producto',
+      allItems.map(i => ({
+        name:  (i as any).name ?? i.products?.name ?? 'Producto',
         qty:   i.quantity,
         price: i.unit_price ?? i.products?.price ?? 0,
         notes: i.notes,
       })),
-      order.order_number,
+      allOrders[0]?.order_number ?? '',
     )
-  }, [order, buildComanda])
+  }, [allItems, allOrders, buildComanda])
 
   const printFromCart = useCallback((cartItems: CartItem[], orderNum: string) => {
     buildComanda(
@@ -280,10 +292,22 @@ export function TableOrderPanel({ table, onClose, onTableUpdated }: TableOrderPa
     )
   }, [buildComanda])
 
-  // ── Cargar datos al montar ──────────────────────────────────
+  // ── Cargar todas las comandas activas de la mesa ─────────────
+  const loadAllOrders = useCallback(async () => {
+    if (!tenant?.tenantId) return
+    setLoading(true)
+    try {
+      const orders = await getAllActiveOrdersForTable(tenant.tenantId, table.id)
+      setAllOrders(orders)
+    } catch { /* ignore */ } finally {
+      setLoading(false)
+    }
+  }, [tenant?.tenantId, table.id])
+
+  // ── Cargar datos al montar ────────────────────────────────────
   useEffect(() => {
     if (!tenant?.tenantId || !branch?.branchId) return
-    loadOrder(tenant.tenantId, table.id)
+    loadAllOrders()
     Promise.all([
       getProducts(tenant.tenantId),
       getCategories(tenant.tenantId),
@@ -292,6 +316,22 @@ export function TableOrderPanel({ table, onClose, onTableUpdated }: TableOrderPa
       setCategories(cats)
     }).catch(() => {}).finally(() => setProdLoading(false))
   }, [tenant?.tenantId, branch?.branchId, table.id])
+
+  // ── Realtime: refrescar cuando cambian orders o order_items ──
+  useEffect(() => {
+    if (!tenant?.tenantId) return
+    const channel = supabase
+      .channel(`table-panel-${table.id}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'orders',
+        filter: `table_id=eq.${table.id}`,
+      }, () => { loadAllOrders() })
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'order_items',
+      }, () => { loadAllOrders() })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [tenant?.tenantId, table.id, loadAllOrders])
 
   // ── Filtro de productos ─────────────────────────────────────
   const filtered = useMemo(() => {
@@ -381,8 +421,10 @@ export function TableOrderPanel({ table, onClose, onTableUpdated }: TableOrderPa
         items,
       )
       // Imprimir comanda automáticamente antes de limpiar el carrito
-      const orderNum = updatedOrder?.order_number ?? order?.order_number ?? Date.now().toString(36).toUpperCase()
+      const orderNum = updatedOrder?.order_number ?? Date.now().toString(36).toUpperCase()
       printFromCart(cart, orderNum)
+      // Refrescar todas las comandas activas (el Realtime puede tardar)
+      await loadAllOrders()
 
       setCart([])
       try {
@@ -397,7 +439,7 @@ export function TableOrderPanel({ table, onClose, onTableUpdated }: TableOrderPa
 
 
   // ── Render ──────────────────────────────────────────────────
-  const statusBadge = STATUS_BADGE[table.status] ?? STATUS_BADGE.AVAILABLE
+  const statusBadge = (STATUS_BADGE[table.status] ?? STATUS_BADGE['AVAILABLE'])!
 
   const panel = (
     <div className="fixed inset-0 z-[300] flex">
@@ -416,7 +458,7 @@ export function TableOrderPanel({ table, onClose, onTableUpdated }: TableOrderPa
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-sm font-bold text-grafito-900 dark:text-white">
-                  Mesa {table.number}{table.name ? ` · ${table.name}` : ''}
+                  {table.number}{table.name ? ` · ${table.name}` : ''}
                 </h2>
                 <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-full', statusBadge.cls)}>
                   {statusBadge.label}
@@ -437,12 +479,12 @@ export function TableOrderPanel({ table, onClose, onTableUpdated }: TableOrderPa
 
         <div className="flex-1 overflow-y-auto">
 
-          {/* ── Orden activa ── */}
+          {/* ── Órdenes activas (todas las comandas de la mesa) ── */}
           {loading ? (
             <div className="flex items-center justify-center py-6">
               <Loader2 className="h-5 w-5 animate-spin text-grafito-400" />
             </div>
-          ) : order ? (
+          ) : hasOrders ? (
             <div className="border-b border-grafito-100 dark:border-white/5">
               <div className="flex items-center">
                 <button
@@ -451,9 +493,14 @@ export function TableOrderPanel({ table, onClose, onTableUpdated }: TableOrderPa
                 >
                   <span className="flex items-center gap-2">
                     <ChefHat className="h-3.5 w-3.5 text-brand-500" />
-                    Pedido activo — #{order.order_number}
+                    Pedido activo
+                    {allOrders.length > 1 && (
+                      <span className="text-[9px] text-grafito-400 font-normal">
+                        ({allOrders.length} comandas)
+                      </span>
+                    )}
                     <span className="bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
-                      {order.order_items?.length ?? 0} ítems
+                      {allItems.length} ítem{allItems.length !== 1 ? 's' : ''}
                     </span>
                   </span>
                   {orderExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
@@ -470,48 +517,57 @@ export function TableOrderPanel({ table, onClose, onTableUpdated }: TableOrderPa
               </div>
 
               {orderExpanded && (
-                <div className="px-5 pb-3 space-y-1.5">
-                  {(order.order_items ?? []).map(item => {
-                    const st = ITEM_STATUS[item.status] ?? ITEM_STATUS.PENDING
-                    const Icon = st.icon
-                    const itemName  = item.name ?? item.products?.name ?? 'Producto'
-                    const itemPrice = item.unit_price ?? item.products?.price ?? 0
+                <div className="px-5 pb-3 space-y-3">
+                  {allOrders.map((ord, ordIdx) => {
+                    const ordItems = ord.order_items ?? []
                     return (
-                      <div key={item.id} className="flex items-center gap-2 py-1.5 border-b border-grafito-50 dark:border-white/5 last:border-0">
-                        <span className="text-xs font-bold text-grafito-500 dark:text-grafito-400 w-5 shrink-0 text-center">
-                          {item.quantity}×
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs text-grafito-800 dark:text-grafito-100 truncate">{itemName}</p>
-                          {item.notes && (
-                            <p className="text-[10px] text-grafito-400 italic truncate">{item.notes}</p>
-                          )}
-                          {(item as any).added_by_name && (
-                            <p className="text-[10px] text-brand-500/90 truncate flex items-center gap-1">
-                              <Users className="h-2.5 w-2.5 shrink-0" />
-                              {(item as any).added_by_name}
-                            </p>
-                          )}
+                      <div key={ord.id}>
+                        {/* Separador de comanda si hay más de una */}
+                        {allOrders.length > 1 && (
+                          <p className="text-[10px] font-semibold text-grafito-400 uppercase tracking-wide mb-1.5">
+                            #{ord.order_number}
+                            {ordIdx === 0 ? ' · primera comanda' : ''}
+                          </p>
+                        )}
+                        <div className="space-y-0">
+                          {ordItems.map(item => {
+                            const st = (ITEM_STATUS[item.status] ?? ITEM_STATUS['PENDING'])!
+                            const Icon = st.icon
+                            const itemName  = (item as any).name ?? item.products?.name ?? 'Producto'
+                            const itemPrice = item.unit_price ?? item.products?.price ?? 0
+                            return (
+                              <div key={item.id} className="flex items-center gap-2 py-1.5 border-b border-grafito-50 dark:border-white/5 last:border-0">
+                                <span className="text-xs font-bold text-grafito-500 dark:text-grafito-400 w-5 shrink-0 text-center">
+                                  {item.quantity}×
+                                </span>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs text-grafito-800 dark:text-grafito-100 truncate">{itemName}</p>
+                                  {item.notes && (
+                                    <p className="text-[10px] text-grafito-400 italic truncate">{item.notes}</p>
+                                  )}
+                                  {(item as any).added_by_name && (
+                                    <p className="text-[10px] text-brand-500/90 truncate flex items-center gap-1">
+                                      <Users className="h-2.5 w-2.5 shrink-0" />
+                                      {(item as any).added_by_name}
+                                    </p>
+                                  )}
+                                </div>
+                                <span className="text-xs font-semibold text-grafito-700 dark:text-grafito-200 shrink-0">
+                                  {fmt(itemPrice * item.quantity)}
+                                </span>
+                                <Icon className={cn('h-3.5 w-3.5 shrink-0', st.cls)} title={st.label} />
+                              </div>
+                            )
+                          })}
                         </div>
-                        <span className="text-xs font-semibold text-grafito-700 dark:text-grafito-200 shrink-0">
-                          {fmt(itemPrice * item.quantity)}
-                        </span>
-                        <Icon className={cn('h-3.5 w-3.5 shrink-0', st.cls)} title={st.label} />
                       </div>
                     )
                   })}
-                  {order.order_items?.length === 0 && (
-                    <p className="text-xs text-grafito-400 py-2 text-center">Sin ítems registrados.</p>
-                  )}
-                  {(order.order_items?.length ?? 0) > 0 && (
-                    <div className="flex justify-between pt-2 text-xs font-bold text-grafito-900 dark:text-white">
-                      <span>Subtotal pedido</span>
-                      <span>
-                        {fmt((order.order_items ?? []).reduce((s, i) =>
-                          s + (i.unit_price ?? i.products?.price ?? 0) * i.quantity, 0))}
-                      </span>
-                    </div>
-                  )}
+                  {/* Subtotal total de la mesa */}
+                  <div className="flex justify-between pt-2 text-xs font-bold text-grafito-900 dark:text-white border-t border-grafito-100 dark:border-white/5">
+                    <span>Subtotal mesa</span>
+                    <span>{fmt(allTotal)}</span>
+                  </div>
                 </div>
               )}
             </div>
@@ -520,7 +576,7 @@ export function TableOrderPanel({ table, onClose, onTableUpdated }: TableOrderPa
           {/* ── Selector de productos ── */}
           <div className="px-5 pt-4 space-y-3">
             <p className="text-xs font-semibold text-grafito-500 dark:text-grafito-400 uppercase tracking-wide">
-              {order ? 'Agregar más productos' : 'Seleccionar productos'}
+              {hasOrders ? 'Agregar más productos' : 'Seleccionar productos'}
             </p>
 
             {/* Search */}

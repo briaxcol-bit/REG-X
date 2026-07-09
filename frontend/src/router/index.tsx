@@ -79,8 +79,19 @@ function NoWaiter({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+// -- Guard: el chef/cocinero SOLO puede acceder al KDS ----------
+// Cualquier intento de entrar al AppLayout lo devuelve a /kds.
+function NoChef({ children }: { children: React.ReactNode }) {
+  const profile   = useAuthStore((s) => s.profile)
+  const isLoading = useAuthStore((s) => s.isLoading)
+  if (isLoading) return <FullscreenLoader />
+  if (profile?.businessRole === 'CHEF') return <Navigate to="/kds" replace />
+  return <>{children}</>
+}
+
 // -- Smart home redirect --------------------------------------
-// SUPER_ADMIN -> /admin  |  todos los demas -> /dashboard
+// SUPER_ADMIN -> /admin  |  CASHIER -> /pos  |  WAITER -> /restaurant/tables
+// CHEF -> /kds           |  todos los demás  -> /dashboard
 function SmartHome() {
   const profile   = useAuthStore((s) => s.profile)
   const isLoading = useAuthStore((s) => s.isLoading)
@@ -91,7 +102,8 @@ function SmartHome() {
     let dest = '/dashboard'
     if (profile?.platformRole === 'SUPER_ADMIN') dest = '/admin'
     else if (profile?.businessRole === 'CASHIER') dest = '/pos'
-    else if (profile?.businessRole === 'WAITER') dest = '/restaurant/tables'
+    else if (profile?.businessRole === 'WAITER')  dest = '/restaurant/tables'
+    else if (profile?.businessRole === 'CHEF')    dest = '/kds'
     navigate(dest, { replace: true })
   }, [profile, isLoading, navigate])
 
@@ -144,12 +156,14 @@ export const router = createBrowserRouter([
     ],
   },
 
-  // Main App
+  // Main App (CHEF is blocked here — redirected to /kds)
   {
     path: '/',
     element: (
       <RequireAuth>
-        <AppLayout><Outlet /></AppLayout>
+        <NoChef>
+          <AppLayout><Outlet /></AppLayout>
+        </NoChef>
       </RequireAuth>
     ),
     children: [
