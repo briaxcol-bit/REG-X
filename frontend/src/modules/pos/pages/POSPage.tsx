@@ -8,7 +8,7 @@ import {
   UtensilsCrossed, ChevronDown, User,
 } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { usePOSStore } from '@store/pos.store'
+import { usePOSStore, type CartItem } from '@store/pos.store'
 import { useAuthStore } from '@store/auth.store'
 import { supabase } from '@lib/supabase'
 import { ReceiptTemplate } from '@modules/pos/components/ReceiptTemplate'
@@ -26,7 +26,8 @@ import { CompleteComandaModal } from '@modules/pos/components/CompleteComandaMod
 import { useCashSession } from '@modules/pos/hooks/useCashSession'
 import { usePOSTerminal } from '@modules/pos/hooks/usePOSTerminal'
 import { useCreateSale } from '@modules/pos/hooks/useCreateSale'
-import { getPendingSales, getPOSTerminals, getActiveTableOrders, type SaleHistoryRow, type RestaurantOrderRow } from '@lib/db'
+import { getPendingSales, getPOSTerminals, getActiveTableOrders, getActiveOrderForTable, type SaleHistoryRow, type RestaurantOrderRow, type TableRow } from '@lib/db'
+import { TableMapModal } from '@modules/pos/components/TableMapModal'
 import { toast } from 'sonner'
 
 // Función global — disponible para CartRow y handleAddProduct sin pasar props
@@ -98,7 +99,7 @@ function ProductCard({ product, onAdd }: {
 }
 
 // ── Cart row ──────────────────────────────────────────────────
-function CartRow({ item }: { item: ReturnType<typeof usePOSStore.getState>['items'][0] }) {
+function CartRow({ item }: { item: CartItem }) {
   const { updateQuantity, removeItem } = usePOSStore()
   const [inputValue, setInputValue] = useState(item.quantity.toString())
   const [expanded, setExpanded]     = useState(false)
@@ -243,6 +244,7 @@ export default function POSPage() {
   const [editingLabel, setEditingLabel]       = useState('')
   const [historyOpen, setHistoryOpen]         = useState(false)
   const [terminalsOpen, setTerminalsOpen]     = useState(false)
+  const [mesasOpen,     setMesasOpen]         = useState(false)
   const [selectedComanda, setSelectedComanda] = useState<SaleHistoryRow | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
 
@@ -342,6 +344,27 @@ export default function POSPage() {
     })
     toast.success(`${tableLabel} cargada en POS`)
   }, [loadTableOrder])
+
+  // Selección desde el mapa de mesas en el modal
+  const handleTableSelectFromMap = useCallback(async (table: TableRow) => {
+    const tableLabel = `${table.number ?? '?'}${table.name ? ` · ${table.name}` : ''}`
+    if (table.status === 'OCCUPIED') {
+      try {
+        const order = await getActiveOrderForTable(tenant!.tenantId, table.id)
+        if (order) {
+          handleLoadTableOrder(order)
+          return
+        }
+      } catch {}
+    }
+    // Mesa disponible / sin orden: abrir una tab vacía para esa mesa
+    loadTableOrder({
+      tableId:    table.id,
+      label:      tableLabel,
+      items:      [],
+    })
+    toast.success(`${tableLabel} abierta en POS`)
+  }, [tenant, loadTableOrder, handleLoadTableOrder])
 
   const { data: allCategories = [] } = useCategories()
 
@@ -494,6 +517,12 @@ export default function POSPage() {
         sale={selectedComanda}
         currency={currency}
       />
+      {mesasOpen && (
+        <TableMapModal
+          onClose={() => setMesasOpen(false)}
+          onTableSelect={handleTableSelectFromMap}
+        />
+      )}
 
       {/* ══════════════ LEFT: Productos ══════════════════════ */}
       <div className="flex flex-1 flex-col overflow-hidden">
@@ -748,6 +777,14 @@ export default function POSPage() {
             )}
           </div>
           <div className="flex items-center gap-1">
+            <button
+              onClick={() => setMesasOpen(true)}
+              className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold text-grafito-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 hover:text-brand-600 dark:hover:text-brand-400 transition-colors"
+              title="Ver mapa de mesas"
+            >
+              <UtensilsCrossed className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Mesas</span>
+            </button>
             {isManager && (
               <button
                 onClick={() => setTerminalsOpen(true)}
@@ -931,28 +968,6 @@ export default function POSPage() {
           </div>
         </div>
       </div>
-
-      {/* ── Modals (CheckoutModal / Scanner / CustomerPicker) ── */}
-      <CheckoutModal
-        open={checkoutOpen}
-        onClose={() => setCheckoutOpen(false)}
-        total={grandTotal}
-        tip={tipAmount}
-        currency={currency}
-        tableId={activeTab?.tableId}
-        restaurantOrderId={activeTab?.restaurantOrderId}
-      />
-      <BarcodeScanner
-        open={scannerOpen}
-        onScan={handleBarcodeScanned}
-        onClose={() => setScannerOpen(false)}
-      />
-      <CustomerPicker
-        open={customerPickerOpen}
-        onClose={() => setCustomerPickerOpen(false)}
-        onSelect={(id, name) => { setCustomer(id); setCustomerName(name); setCustomerPickerOpen(false) }}
-      />
-
     </div>
   )
 }

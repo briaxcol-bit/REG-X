@@ -1,149 +1,18 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, Users, Lock, Unlock, RotateCcw, Loader2,
-  Plus, X, ImageIcon, Trash2, Minus, Maximize,
+  ArrowLeft, Lock, Unlock, RotateCcw, Loader2,
+  Plus, X, ImageIcon, Trash2,
 } from 'lucide-react'
-import { getTables, createTable, type TableRow } from '@lib/db'
-import { supabase } from '@lib/supabase'
+import { createTable, type TableRow } from '@lib/db'
 import { useAuthStore } from '@store/auth.store'
 import { TableOrderPanel } from '../components/TableOrderPanel'
+import {
+  CANVAS_W, CANVAS_H, TABLE_W, TABLE_H, STORAGE_KEY, STATUS_MAP,
+  snap, defaultPos, TableMapCanvas, useTableMap,
+} from '../components/TableMapCanvas'
 import { toast } from 'sonner'
 import { cn } from '@shared/utils/cn'
-
-// ── Constantes ─────────────────────────────────────────────────
-const CANVAS_W    = 2400   // amplio para muchas mesas
-const CANVAS_H    = 1600
-const TABLE_W     = 110
-const TABLE_H     = 80
-const GRID        = 20
-const DEFAULT_ZOOM = 0.55  // cabe en pantalla por defecto
-
-const STORAGE_KEY    = 'regx_table_positions'
-const CANVAS_CFG_KEY = 'regx_canvas_config'
-
-const ZOOM_STEPS = [0.25, 0.33, 0.5, 0.67, 0.75, 1, 1.25, 1.5, 2]
-
-const STATUS_MAP: Record<TableRow['status'], { label: string; bg: string; border: string; dot: string }> = {
-  AVAILABLE:   { label: 'Disponible',    bg: 'bg-emerald-50 dark:bg-emerald-500/10',  border: 'border-emerald-300 dark:border-emerald-500/40', dot: 'bg-emerald-500' },
-  OCCUPIED:    { label: 'Ocupada',       bg: 'bg-red-50    dark:bg-red-500/10',       border: 'border-red-300    dark:border-red-500/40',      dot: 'bg-red-500'     },
-  RESERVED:    { label: 'Reservada',     bg: 'bg-amber-50  dark:bg-amber-500/10',     border: 'border-amber-300  dark:border-amber-500/40',    dot: 'bg-amber-500'   },
-  MAINTENANCE: { label: 'Mantenimiento', bg: 'bg-grafito-100 dark:bg-white/5',        border: 'border-grafito-300 dark:border-white/10',       dot: 'bg-grafito-400' },
-}
-
-const snap = (v: number) => Math.round(v / GRID) * GRID
-
-const defaultPos = (index: number) => ({
-  x: snap(40 + (index % 8) * 280),
-  y: snap(40 + Math.floor(index / 8) * 160),
-})
-
-// ── TableCard ──────────────────────────────────────────────────
-
-interface TableCardProps {
-  table:     TableRow
-  pos:       { x: number; y: number }
-  editMode:  boolean
-  zoom:      number
-  onDragEnd: (id: string, x: number, y: number) => void
-  onClick:   (table: TableRow) => void
-}
-
-function TableCard({ table, pos, editMode, zoom, onDragEnd, onClick }: TableCardProps) {
-  const s        = STATUS_MAP[table.status] ?? STATUS_MAP.AVAILABLE
-  const dragging = useRef(false)
-  const didMove  = useRef(false)
-  const offset   = useRef({ x: 0, y: 0 })
-  const elRef    = useRef<HTMLDivElement>(null)
-
-  const onMouseDown = (e: React.MouseEvent) => {
-    if (!editMode) return
-    e.preventDefault()
-    dragging.current = true
-    didMove.current  = false
-    // Capture offset in visual (scaled) pixels
-    const rect = elRef.current!.getBoundingClientRect()
-    offset.current = { x: e.clientX - rect.left, y: e.clientY - rect.top }
-
-    const onMove = (ev: MouseEvent) => {
-      if (!dragging.current || !elRef.current) return
-      didMove.current = true
-      const parent = elRef.current.parentElement!.getBoundingClientRect()
-      // Divide by zoom to convert visual pixels → canvas coordinates
-      const nx = snap(Math.max(0, Math.min(
-        (ev.clientX - parent.left - offset.current.x) / zoom,
-        CANVAS_W - TABLE_W,
-      )))
-      const ny = snap(Math.max(0, Math.min(
-        (ev.clientY - parent.top  - offset.current.y) / zoom,
-        CANVAS_H - TABLE_H,
-      )))
-      elRef.current.style.left = `${nx}px`
-      elRef.current.style.top  = `${ny}px`
-    }
-    const onUp = (ev: MouseEvent) => {
-      dragging.current = false
-      document.removeEventListener('mousemove', onMove)
-      document.removeEventListener('mouseup',   onUp)
-      if (!elRef.current) return
-      const parent = elRef.current.parentElement!.getBoundingClientRect()
-      const nx = snap(Math.max(0, Math.min(
-        (ev.clientX - parent.left - offset.current.x) / zoom,
-        CANVAS_W - TABLE_W,
-      )))
-      const ny = snap(Math.max(0, Math.min(
-        (ev.clientY - parent.top  - offset.current.y) / zoom,
-        CANVAS_H - TABLE_H,
-      )))
-      onDragEnd(table.id, nx, ny)
-    }
-    document.addEventListener('mousemove', onMove)
-    document.addEventListener('mouseup',   onUp)
-  }
-
-  const handleClick = () => {
-    if (editMode || didMove.current) return
-    onClick(table)
-  }
-
-  return (
-    <div
-      ref={elRef}
-      onMouseDown={onMouseDown}
-      onClick={handleClick}
-      style={{ left: pos.x, top: pos.y, width: TABLE_W, height: TABLE_H, position: 'absolute' }}
-      className={cn(
-        'rounded-xl border-2 flex flex-col justify-between p-2.5 select-none transition-shadow',
-        s.bg, s.border,
-        editMode
-          ? 'cursor-grab active:cursor-grabbing shadow-lg ring-2 ring-brand-500/30'
-          : 'cursor-pointer shadow-sm hover:shadow-lg hover:scale-105 transition-transform',
-      )}
-    >
-      <div className="flex items-center justify-between gap-1">
-        <span className="text-xs font-black text-grafito-900 dark:text-white truncate leading-tight">
-          {table.name ?? table.number}
-        </span>
-        <span className={cn('h-2 w-2 rounded-full shrink-0', s.dot)} />
-      </div>
-
-      <div className="flex items-center gap-1 text-[10px] text-grafito-500 dark:text-grafito-400">
-        <Users className="h-3 w-3 shrink-0" />
-        <span>{table.capacity} personas</span>
-      </div>
-
-      <span className={cn(
-        'self-start text-[9px] font-bold px-1.5 py-0.5 rounded-full',
-        table.status === 'AVAILABLE'   ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' :
-        table.status === 'OCCUPIED'    ? 'bg-red-500/15 text-red-600 dark:text-red-400'             :
-        table.status === 'RESERVED'    ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'       :
-                                         'bg-grafito-200 text-grafito-500',
-      )}>
-        {s.label}
-      </span>
-    </div>
-  )
-}
 
 // ── Modal nueva mesa ───────────────────────────────────────────
 
@@ -267,73 +136,59 @@ function AddTableModal({ onClose, onSaved }: AddTableModalProps) {
 // ── Página principal ────────────────────────────────────────────
 
 export default function TablesPage() {
-  const navigate            = useNavigate()
-  const { tenant, branch, hasPermission }  = useAuthStore()
-  // El mesero puede abrir cuentas pero NO crear/editar mesas ni el layout.
+  const navigate = useNavigate()
+  const { hasPermission } = useAuthStore()
   const canManageTables = hasPermission('restaurant.tables.manage')
 
-  const [tables,    setTables]    = useState<TableRow[]>([])
-  const [loading,   setLoading]   = useState(true)
-  const [editMode,  setEditMode]  = useState(false)
-  const [addOpen,   setAddOpen]   = useState(false)
-  const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({})
+  const [editMode,       setEditMode]       = useState(false)
+  const [addOpen,        setAddOpen]        = useState(false)
+  const [selectedTable,  setSelectedTable]  = useState<TableRow | null>(null)
+  const bgInputRef = useRef<HTMLInputElement>(null)
 
-  // Zoom
-  const [zoom,    setZoom]    = useState(DEFAULT_ZOOM)
-  // Background image
-  const [bgImage, setBgImage] = useState<string | null>(null)
-  const bgInputRef  = useRef<HTMLInputElement>(null)
-  const scrollRef   = useRef<HTMLDivElement>(null)
+  // ── Shared hook (SST) ────────────────────────────────────────
+  const {
+    tables, loading, positions, orderInfoMap,
+    zoom, changeZoom, fitToScreen,
+    bgImage, setBgImage, saveCfg,
+    scrollRef,
+    handleDragEnd,
+    handleTableUpdated: updateTableInStore,
+    handleTableCreated: addTableToStore,
+  } = useTableMap()
 
-  const [selectedTable, setSelectedTable] = useState<TableRow | null>(null)
-
-  // ── Cargar config persistida ──────────────────────────────────
+  // Sync selectedTable when realtime updates come in via hook
   useEffect(() => {
-    try {
-      const cfg = JSON.parse(localStorage.getItem(CANVAS_CFG_KEY) ?? '{}')
-      if (cfg.zoom && cfg.zoom >= 0.25 && cfg.zoom <= 2) setZoom(cfg.zoom)
-      if (cfg.bg) setBgImage(cfg.bg)
-    } catch {}
-  }, [])
+    if (!selectedTable) return
+    const updated = tables.find(t => t.id === selectedTable.id)
+    if (updated) setSelectedTable(updated)
+  }, [tables]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const saveCfg = useCallback((z: number, bg: string | null) => {
-    localStorage.setItem(CANVAS_CFG_KEY, JSON.stringify({ zoom: z, bg }))
-  }, [])
+  // ── Handlers locales ─────────────────────────────────────────
 
-  // ── Zoom helpers ──────────────────────────────────────────────
-  const changeZoom = useCallback((delta: number) => {
-    setZoom(prev => {
-      const idx  = ZOOM_STEPS.findIndex(s => s >= prev)
-      const next = delta > 0
-        ? ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, idx + 1)]
-        : ZOOM_STEPS[Math.max(0, idx - 1)]
-      saveCfg(next, bgImage)
-      return next
-    })
-  }, [bgImage, saveCfg])
+  const handleTableClick = useCallback((table: TableRow) => {
+    if (editMode) return
+    setSelectedTable(table)
+  }, [editMode])
 
-  const fitToScreen = useCallback(() => {
-    if (!scrollRef.current) return
-    const { clientWidth, clientHeight } = scrollRef.current
-    const zw = (clientWidth  - 48) / CANVAS_W
-    const zh = (clientHeight - 48) / CANVAS_H
-    const z  = parseFloat(Math.min(2, Math.max(0.25, Math.min(zw, zh))).toFixed(2))
-    setZoom(z)
-    saveCfg(z, bgImage)
-  }, [bgImage, saveCfg])
+  const handleTableUpdated = useCallback((updated: TableRow) => {
+    updateTableInStore(updated)
+    setSelectedTable(updated)
+  }, [updateTableInStore])
 
-  // ── Zoom con rueda del ratón (Ctrl + scroll) ──────────────────
-  useEffect(() => {
-    const el = scrollRef.current
-    if (!el) return
-    const onWheel = (e: WheelEvent) => {
-      if (!e.ctrlKey && !e.metaKey) return
-      e.preventDefault()
-      changeZoom(e.deltaY < 0 ? 1 : -1)
-    }
-    el.addEventListener('wheel', onWheel, { passive: false })
-    return () => el.removeEventListener('wheel', onWheel)
-  }, [changeZoom])
+  const handleTableCreated = (table: TableRow, pos: { x: number; y: number }) => {
+    addTableToStore(table, pos)
+    setAddOpen(false)
+    setEditMode(true)
+  }
+
+  const resetLayout = () => {
+    const merged: Record<string, { x: number; y: number }> = {}
+    tables.forEach((t, i) => { merged[t.id] = defaultPos(i) })
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(merged))
+    // Force re-read by temporarily clearing and re-setting positions
+    // useTableMap handles positions, so trigger re-load
+    window.location.reload()
+  }
 
   // ── Background image ─────────────────────────────────────────
   const handleBgUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -355,92 +210,6 @@ export default function TablesPage() {
     setBgImage(null)
     saveCfg(zoom, null)
   }
-
-  // ── Click en mesa ─────────────────────────────────────────────
-  const handleTableClick = useCallback((table: TableRow) => {
-    if (editMode) return
-    setSelectedTable(table)
-  }, [editMode])
-
-  // ── Cargar mesas ─────────────────────────────────────────────
-  useEffect(() => {
-    if (!tenant?.tenantId || !branch?.branchId) return
-    setLoading(true)
-    getTables(tenant.tenantId, branch.branchId)
-      .then(rows => {
-        setTables(rows)
-        try {
-          const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}')
-          const merged: Record<string, { x: number; y: number }> = {}
-          rows.forEach((t, i) => { merged[t.id] = saved[t.id] ?? defaultPos(i) })
-          setPositions(merged)
-        } catch {
-          const merged: Record<string, { x: number; y: number }> = {}
-          rows.forEach((t, i) => { merged[t.id] = defaultPos(i) })
-          setPositions(merged)
-        }
-      })
-      .catch(() => setTables([]))
-      .finally(() => setLoading(false))
-  }, [tenant?.tenantId, branch?.branchId])
-
-  // ── Supabase Realtime ────────────────────────────────────────
-  useEffect(() => {
-    if (!tenant?.tenantId) return
-    const channel = supabase
-      .channel('tables-realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'tables', filter: `tenant_id=eq.${tenant.tenantId}` },
-        payload => {
-          if (payload.eventType === 'UPDATE') {
-            const updated = payload.new as TableRow
-            setTables(prev => prev.map(t => t.id === updated.id ? { ...t, ...updated } : t))
-            setSelectedTable(prev => prev?.id === updated.id ? { ...prev, ...updated } : prev)
-          } else if (payload.eventType === 'INSERT') {
-            if (tenant?.tenantId && branch?.branchId) {
-              getTables(tenant.tenantId, branch.branchId).then(setTables).catch(() => {})
-            }
-          } else if (payload.eventType === 'DELETE') {
-            setTables(prev => prev.filter(t => t.id !== (payload.old as any).id))
-          }
-        },
-      )
-      .subscribe()
-    return () => { supabase.removeChannel(channel) }
-  }, [tenant?.tenantId, branch?.branchId])
-
-  // ── Drag & drop ──────────────────────────────────────────────
-  const handleDragEnd = useCallback((id: string, x: number, y: number) => {
-    setPositions(prev => {
-      const next = { ...prev, [id]: { x, y } }
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
-      return next
-    })
-  }, [])
-
-  const handleTableCreated = (table: TableRow, pos: { x: number; y: number }) => {
-    setTables(prev => [...prev, table])
-    setPositions(prev => {
-      const next = { ...prev, [table.id]: pos }
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
-      return next
-    })
-    setAddOpen(false)
-    setEditMode(true)
-  }
-
-  const resetLayout = () => {
-    const merged: Record<string, { x: number; y: number }> = {}
-    tables.forEach((t, i) => { merged[t.id] = defaultPos(i) })
-    setPositions(merged)
-    localStorage.removeItem(STORAGE_KEY)
-  }
-
-  const handleTableUpdated = useCallback((updated: TableRow) => {
-    setTables(prev => prev.map(t => t.id === updated.id ? updated : t))
-    setSelectedTable(updated)
-  }, [])
 
   const legend = Object.entries(STATUS_MAP).map(([k, v]) => ({ key: k, ...v }))
 
@@ -561,128 +330,32 @@ export default function TablesPage() {
         </div>
       )}
 
-      {/* Área de scroll con canvas */}
-      <div ref={scrollRef} className="flex-1 overflow-auto p-6 relative">
-        {loading ? (
-          <div className="flex items-center justify-center h-full gap-2 text-grafito-400">
-            <Loader2 className="h-5 w-5 animate-spin" />
-            <span className="text-sm">Cargando mesas...</span>
-          </div>
-        ) : tables.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-3">
-            <p className="text-sm text-grafito-400">No hay mesas configuradas.</p>
-            {canManageTables && (
-              <button
-                onClick={() => setAddOpen(true)}
-                className="flex items-center gap-1.5 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 transition-colors"
-              >
-                <Plus className="h-4 w-4" />
-                Crear primera mesa
-              </button>
-            )}
-          </div>
-        ) : (
-          <>
-            {/* Wrapper que ocupa el espacio del canvas escalado, habilitando el scroll correcto */}
-            <div style={{ width: CANVAS_W * zoom, height: CANVAS_H * zoom }}>
-              {/* Canvas escalado desde la esquina superior izquierda */}
-              <div
-                style={{ width: CANVAS_W, height: CANVAS_H, transform: `scale(${zoom})`, transformOrigin: 'top left' }}
-                className={cn(
-                  'relative rounded-2xl border-2 overflow-hidden',
-                  editMode
-                    ? 'border-brand-400/50 dark:border-brand-500/30'
-                    : 'border-dashed border-grafito-200 dark:border-white/10',
-                )}
-              >
-                {/* Fondo sólido base */}
-                <div className="absolute inset-0 bg-white dark:bg-grafito-900" />
-
-                {/* Imagen de fondo */}
-                {bgImage && (
-                  <>
-                    <img
-                      src={bgImage}
-                      alt="plano del local"
-                      className="absolute inset-0 w-full h-full object-cover"
-                      draggable={false}
-                    />
-                    <div className="absolute inset-0 bg-black/15 dark:bg-black/35" />
-                  </>
-                )}
-
-                {/* Grid SVG */}
-                <svg
-                  className={cn('absolute inset-0 pointer-events-none', bgImage ? 'opacity-20' : 'opacity-100')}
-                  width={CANVAS_W}
-                  height={CANVAS_H}
-                >
-                  <defs>
-                    <pattern id="grid" width={GRID} height={GRID} patternUnits="userSpaceOnUse">
-                      <path d={`M ${GRID} 0 L 0 0 0 ${GRID}`} fill="none" stroke="currentColor" strokeWidth="0.4" className="text-grafito-200 dark:text-white/10" />
-                    </pattern>
-                    <pattern id="grid-lg" width={GRID * 5} height={GRID * 5} patternUnits="userSpaceOnUse">
-                      <rect width={GRID * 5} height={GRID * 5} fill="url(#grid)" />
-                      <path d={`M ${GRID * 5} 0 L 0 0 0 ${GRID * 5}`} fill="none" stroke="currentColor" strokeWidth="0.8" className="text-grafito-200 dark:text-white/10" />
-                    </pattern>
-                  </defs>
-                  <rect width="100%" height="100%" fill="url(#grid-lg)" />
-                </svg>
-
-                <span className="absolute bottom-3 right-4 text-xs font-semibold text-grafito-300 dark:text-white/15 uppercase tracking-widest pointer-events-none select-none">
-                  Salón
-                </span>
-
-                {/* Mesas */}
-                {tables.map(t => (
-                  <TableCard
-                    key={t.id}
-                    table={t}
-                    pos={positions[t.id] ?? defaultPos(tables.indexOf(t))}
-                    editMode={editMode}
-                    zoom={zoom}
-                    onDragEnd={handleDragEnd}
-                    onClick={handleTableClick}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {/* ── Control de zoom flotante ── */}
-            <div className="fixed bottom-6 right-6 z-30 flex items-center gap-0.5 rounded-xl bg-white dark:bg-grafito-800 border border-grafito-200 dark:border-white/10 shadow-xl p-1">
-              <button
-                onClick={() => changeZoom(-1)}
-                title="Alejar"
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-grafito-500 dark:text-grafito-400 hover:bg-grafito-100 dark:hover:bg-white/10 transition-colors"
-              >
-                <Minus className="h-3.5 w-3.5" />
-              </button>
-              <button
-                onClick={fitToScreen}
-                title="Ajustar a pantalla"
-                className="px-2.5 py-1 text-xs font-mono font-semibold text-grafito-700 dark:text-grafito-200 hover:bg-grafito-100 dark:hover:bg-white/10 rounded-lg transition-colors min-w-[3.5rem] text-center"
-              >
-                {Math.round(zoom * 100)}%
-              </button>
-              <button
-                onClick={() => changeZoom(1)}
-                title="Acercar"
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-grafito-500 dark:text-grafito-400 hover:bg-grafito-100 dark:hover:bg-white/10 transition-colors"
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </button>
-              <div className="w-px h-4 bg-grafito-200 dark:bg-white/10 mx-0.5" />
-              <button
-                onClick={fitToScreen}
-                title="Ajustar a pantalla"
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-grafito-500 dark:text-grafito-400 hover:bg-grafito-100 dark:hover:bg-white/10 transition-colors"
-              >
-                <Maximize className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </>
-        )}
-      </div>
+      {/* Canvas — componente compartido */}
+      <TableMapCanvas
+        tables={tables}
+        positions={positions}
+        zoom={zoom}
+        bgImage={bgImage}
+        editMode={editMode}
+        loading={loading}
+        scrollRef={scrollRef}
+        orderInfoMap={orderInfoMap}
+        onTableClick={handleTableClick}
+        onDragEnd={handleDragEnd}
+        changeZoom={changeZoom}
+        fitToScreen={fitToScreen}
+        emptySlot={
+          canManageTables ? (
+            <button
+              onClick={() => setAddOpen(true)}
+              className="flex items-center gap-1.5 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 transition-colors"
+            >
+              <Plus className="h-4 w-4" />
+              Crear primera mesa
+            </button>
+          ) : undefined
+        }
+      />
     </div>
   )
 }

@@ -1441,19 +1441,22 @@ export async function getEmployees(tenantId: string): Promise<EmployeeRow[]> {
   if (profErr) throw profErr
 
   // Fetch emails via RPC (email lives in auth.users, not accessible via RLS)
-  const { data: emailRows } = await (supabase.rpc as any)('get_employee_emails', {
+  const { data: emailRows, error: emailErr } = await (supabase.rpc as any)('get_employee_emails', {
     p_tenant_id: tenantId,
   })
+  if (emailErr) console.error('[getEmployees] get_employee_emails RPC error:', emailErr)
   const emailMap = new Map<string, string>(
     ((emailRows ?? []) as Array<{ user_id: string; email: string }>)
       .map(e => [e.user_id, e.email])
   )
 
   const profileMap = new Map((profiles ?? []).map(p => [p.id, p]))
+  console.log('[getEmployees] profiles raw:', profiles)
+  console.log('[getEmployees] emailRows raw:', emailRows)
 
   return roles.map(r => {
     const p = profileMap.get(r.user_id)
-    return {
+    const result = {
       userId:    r.user_id,
       role:      r.role,
       isActive:  r.is_active,
@@ -1463,9 +1466,11 @@ export async function getEmployees(tenantId: string): Promise<EmployeeRow[]> {
       email:      emailMap.get(r.user_id) ?? null,
       phone:      p?.phone       ?? null,
       cedula:     p?.cedula      ?? null,
-      customRole: null, // disponible tras ejecutar FIX_employee_rpcs.sql
+      customRole: null,
       createdAt:  r.created_at,
     }
+    console.log('[getEmployees] mapped employee:', result)
+    return result
   })
 }
 

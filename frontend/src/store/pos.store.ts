@@ -130,10 +130,10 @@ interface POSActions {
   /** Carga los ítems de una orden de restaurante en una nueva tab del POS */
   loadTableOrder: (params: {
     tableId:           string
-    restaurantOrderId: string
-    label:             string
-    waiterName?:       string
-    items:             Omit<CartItem, 'id' | 'total' | 'taxAmount' | 'discountAmount'>[]
+    restaurantOrderId?: string
+    label:              string
+    waiterName?:        string
+    items:              Omit<CartItem, 'id' | 'total' | 'taxAmount' | 'discountAmount'>[]
   }) => void
 
   // Session / misc
@@ -161,7 +161,7 @@ export const usePOSStore = create<POSState & POSActions>()(
       // helper: get active tab (with fallback)
       const activeTab = (): CartTab => {
         const { tabs, activeTabId } = get()
-        return tabs.find(t => t.id === activeTabId) ?? tabs[0]
+        return tabs.find(t => t.id === activeTabId) ?? tabs[0] ?? emptyMain()
       }
 
       // helper: mutate active tab
@@ -355,6 +355,6 @@ export const usePOSStore = create<POSState & POSActions>()(
         session:     state.session,
         pendingSync: state.pendingSync,
       }),
-    },
+      },
   ),
 )
