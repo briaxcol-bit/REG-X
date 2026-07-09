@@ -4,7 +4,7 @@ import { motion } from 'framer-motion'
 import {
   LayoutDashboard, Package, Boxes,
   Users, BarChart3, Settings, ChefHat, CreditCard,
-  Store, Puzzle, ChevronLeft, ChevronRight,
+  Puzzle, ChevronLeft, ChevronRight,
   Zap, Building2, ShieldCheck, ChevronDown, AlertTriangle, DollarSign,
   UserCog, TrendingUp,
 } from 'lucide-react'
@@ -55,7 +55,6 @@ const NAV_ITEMS: NavItem[] = [
     ]
   },
   { to: '/subscriptions', icon: CreditCard, label: 'Suscripcion', group: 'Sistema' },
-  { to: '/marketplace',   icon: Puzzle,     label: 'Marketplace', group: 'Sistema' },
   { to: '/settings',      icon: Settings,   label: 'Ajustes',     group: 'Sistema' },
 ]
 
@@ -65,6 +64,7 @@ const PLATFORM_NAV_ITEMS: NavItem[] = [
   { to: '/admin/tenants', icon: Building2,       label: 'Tenants',       group: 'Plataforma' },
   { to: '/admin/users',   icon: Users,           label: 'Usuarios',      group: 'Plataforma' },
   { to: '/admin/plans',   icon: CreditCard,      label: 'Suscripciones', group: 'Plataforma' },
+  { to: '/admin/modules', icon: Puzzle,          label: 'Módulos',       group: 'Plataforma' },
   { to: '/settings',      icon: Settings,        label: 'Ajustes',       group: 'Sistema' },
 ]
 

@@ -24,6 +24,7 @@ const PlatformDashboard = lazy(() => import('@modules/platform/pages/PlatformDas
 const PlatformTenants   = lazy(() => import('@modules/platform/pages/TenantsPage'))
 const PlatformUsers     = lazy(() => import('@modules/platform/pages/PlatformUsersPage'))
 const PlatformPlans     = lazy(() => import('@modules/platform/pages/PlatformPlansPage'))
+const PlatformModules   = lazy(() => import('@modules/platform/pages/PlatformModulesPage'))
 
 const POSPage          = lazy(() => import('@modules/pos/pages/POSPage'))
 
@@ -168,6 +169,7 @@ export const router = createBrowserRouter([
           { path: 'tenants',  element: <Page><PlatformTenants /></Page> },
           { path: 'users',    element: <Page><PlatformUsers /></Page> },
           { path: 'plans',    element: <Page><PlatformPlans /></Page> },
+          { path: 'modules',  element: <Page><PlatformModules /></Page> },
         ],
       },
 

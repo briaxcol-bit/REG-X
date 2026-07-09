@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, createContext, useContext } from 'react'
 import {
   Users, Search, Loader2, UserPlus, Pencil,
   ChevronDown, CheckCircle2, XCircle, RefreshCw,
@@ -8,15 +8,22 @@ import {
 import { PhoneField } from '@shared/components/PhoneField'
 import {
   getEmployees, updateEmployeeRole, toggleEmployeeActive,
-  addEmployee, updateEmployeeProfile, deleteEmployee,
+  addEmployee, updateEmployeeProfile, deleteEmployee, getMyModuleSlugs,
   ROLE_CONFIG,
 } from '@lib/db'
 import { useAuthStore } from '@store/auth.store'
 import { cn } from '@shared/utils/cn'
+import { filterRoleEntries } from '@shared/utils/roles'
 import type { EmployeeRow, BusinessRole } from '@lib/db'
 
 // ── Role options (excludes OWNER/ADMIN per requirement) ──────
-const ROLES = Object.entries(ROLE_CONFIG) as [BusinessRole, typeof ROLE_CONFIG[BusinessRole]][]
+type RoleEntry = [BusinessRole, typeof ROLE_CONFIG[BusinessRole]]
+const ROLES = Object.entries(ROLE_CONFIG) as RoleEntry[]
+
+// Los roles disponibles dependen de los módulos activos del tenant.
+// El provider (en la página) inyecta la lista ya filtrada; por defecto, todos.
+const AvailableRolesContext = createContext<RoleEntry[]>(ROLES)
+const useAvailableRoles = () => useContext(AvailableRolesContext)
 
 // ── Role badge ───────────────────────────────────────────────
 function RoleBadge({ role, customRole }: { role: string; customRole?: string | null }) {
@@ -47,6 +54,7 @@ function Avatar({ name, src }: { name: string | null; src: string | null }) {
 function RoleSelect({
   value, onChange, disabled,
 }: { value: string; onChange: (r: BusinessRole) => void; disabled?: boolean }) {
+  const roles = useAvailableRoles()
   return (
     <div className="relative">
       <select
@@ -55,7 +63,7 @@ function RoleSelect({
         disabled={disabled}
         className="appearance-none rounded-xl border border-grafito-200 dark:border-white/10 bg-white dark:bg-grafito-900 pl-3 pr-7 py-1.5 text-sm text-grafito-700 dark:text-grafito-200 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {ROLES.map(([key, cfg]) => (
+        {roles.map(([key, cfg]) => (
           <option key={key} value={key}>{cfg.label}</option>
         ))}
       </select>
@@ -147,6 +155,7 @@ interface EditModalProps {
 }
 
 function EditEmployeeModal({ employee, tenantId, onClose, onSaved }: EditModalProps) {
+  const roles = useAvailableRoles()
   const [fullName, setFullName]       = useState(employee.fullName ?? '')
   const [email, setEmail]             = useState(employee.email    ?? '')
   const [cedula, setCedula]           = useState(employee.cedula   ?? '')
@@ -281,7 +290,7 @@ function EditEmployeeModal({ employee, tenantId, onClose, onSaved }: EditModalPr
                 onChange={e => setRole(e.target.value as BusinessRole)}
                 className="appearance-none w-full rounded-xl border border-grafito-200 dark:border-white/10 bg-grafito-50 dark:bg-grafito-800 pl-3.5 pr-8 py-2.5 text-sm text-grafito-900 dark:text-white focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all cursor-pointer"
               >
-                {ROLES.map(([key, cfg]) => (
+                {roles.map(([key, cfg]) => (
                   <option key={key} value={key}>{cfg.label}</option>
                 ))}
               </select>
@@ -410,6 +419,7 @@ interface AddModalProps {
 }
 
 function AddEmployeeModal({ tenantId, branchId, onClose, onCreated }: AddModalProps) {
+  const roles = useAvailableRoles()
   const [fullName, setFullName]       = useState('')
   const [email, setEmail]             = useState('')
   const [password, setPassword]       = useState('')
@@ -535,7 +545,7 @@ function AddEmployeeModal({ tenantId, branchId, onClose, onCreated }: AddModalPr
             <div className="relative">
               <select value={role} onChange={e => setRole(e.target.value as BusinessRole)}
                 className="appearance-none w-full rounded-xl border border-grafito-200 dark:border-white/10 bg-grafito-50 dark:bg-grafito-800 pl-3.5 pr-8 py-2.5 text-sm text-grafito-900 dark:text-white focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 outline-none transition-all cursor-pointer">
-                {ROLES.map(([key, cfg]) => (
+                {roles.map(([key, cfg]) => (
                   <option key={key} value={key}>{cfg.label}</option>
                 ))}
               </select>
@@ -656,14 +666,23 @@ export default function EmployeesPage() {
     setEmployees(prev => prev.map(e => e.userId === userId ? { ...e, ...updated } : e))
   }
 
+  // Roles disponibles según los módulos activos del tenant
+  const [moduleSlugs, setModuleSlugs] = useState<string[] | undefined>(undefined)
+  useEffect(() => {
+    if (!tenant?.tenantId) return
+    getMyModuleSlugs(tenant.tenantId).then(setModuleSlugs).catch(() => setModuleSlugs(undefined))
+  }, [tenant?.tenantId])
+  const availableRoles = useMemo(() => filterRoleEntries(ROLES, moduleSlugs), [moduleSlugs])
+
   // Stats
   const totalActive   = employees.filter(e => e.isActive).length
   const totalInactive = employees.filter(e => !e.isActive).length
-  const byRole = ROLES.map(([key, cfg]) => ({
+  const byRole = availableRoles.map(([key, cfg]) => ({
     key, label: cfg.label, count: employees.filter(e => e.role === key).length,
   })).filter(r => r.count > 0)
 
   return (
+    <AvailableRolesContext.Provider value={availableRoles}>
     <div className="space-y-6 p-6">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -731,7 +750,7 @@ export default function EmployeesPage() {
             className="appearance-none w-full rounded-xl border border-grafito-200 dark:border-white/10 bg-white dark:bg-grafito-900 pl-3.5 pr-8 py-2.5 text-sm text-grafito-700 dark:text-grafito-200 outline-none cursor-pointer"
           >
             <option value="ALL">Todos los roles</option>
-            {ROLES.map(([key, cfg]) => (
+            {availableRoles.map(([key, cfg]) => (
               <option key={key} value={key}>{cfg.label}</option>
             ))}
           </select>
@@ -898,7 +917,7 @@ export default function EmployeesPage() {
         <div className="rounded-2xl border border-grafito-200 dark:border-white/5 bg-white dark:bg-grafito-900/60 p-5">
           <p className="text-xs font-semibold text-grafito-500 uppercase mb-3">Roles disponibles</p>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {ROLES.map(([key, cfg]) => (
+            {availableRoles.map(([key, cfg]) => (
               <div key={key} className="flex items-start gap-2">
                 <span className={cn('mt-0.5 text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap', cfg.color)}>
                   {cfg.label}
@@ -940,5 +959,6 @@ export default function EmployeesPage() {
         />
       )}
     </div>
+    </AvailableRolesContext.Provider>
   )
 }
