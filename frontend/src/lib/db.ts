@@ -2157,6 +2157,57 @@ export async function getPublicPlans(): Promise<PublicPlanRow[]> {
   }))
 }
 
+// ── Wompi (pasarela de pago) ──────────────────────────────────
+
+export interface WompiCheckoutResult {
+  checkoutUrl: string
+  reference: string
+  amountInCents: number
+  currency: string
+  publicKey: string
+}
+
+/**
+ * Inicia un pago de suscripción con Wompi. Llama a la Edge Function
+ * `wompi-checkout`, que firma la transacción server-side y devuelve la
+ * URL del Web Checkout a la que hay que redirigir al usuario.
+ */
+export async function startWompiCheckout(
+  tenantId: string,
+  planCode: string,
+  redirectUrl: string,
+): Promise<WompiCheckoutResult> {
+  const { data, error } = await supabase.functions.invoke('wompi-checkout', {
+    body: { tenantId, planCode, redirectUrl },
+  })
+  if (error) throw error
+  if ((data as any)?.error) throw new Error((data as any).error)
+  return data as WompiCheckoutResult
+}
+
+export interface PaymentTxRow {
+  id: string
+  reference: string
+  plan_code: string
+  amount_in_cents: number
+  currency: string
+  status: 'PENDING' | 'APPROVED' | 'DECLINED' | 'VOIDED' | 'ERROR'
+  wompi_transaction_id: string | null
+  created_at: string
+}
+
+/** Historial de pagos del tenant (para mostrar en la suscripción). */
+export async function getMyPayments(tenantId: string, limit = 10): Promise<PaymentTxRow[]> {
+  const { data, error } = await supabase
+    .from('payment_transactions')
+    .select('id, reference, plan_code, amount_in_cents, currency, status, wompi_transaction_id, created_at')
+    .eq('tenant_id', tenantId)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  if (error) throw error
+  return (data ?? []) as unknown as PaymentTxRow[]
+}
+
 /** Devuelve los slugs de los módulos ACTIVOS del tenant (tenant_modules habilitados). */
 export async function getMyModuleSlugs(tenantId: string): Promise<string[]> {
   const { data, error } = await supabase

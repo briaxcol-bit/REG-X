@@ -1,13 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import {
   CreditCard, Check, Loader2, CalendarClock, AlertTriangle, X,
-  MessageCircle, Mail, Copy, Sparkles,
+  MessageCircle, Mail, Copy, Sparkles, CreditCard as CardIcon,
 } from 'lucide-react'
 import { cn } from '@shared/utils/cn'
 import { useAuthStore } from '@store/auth.store'
-import { getMySubscription, getPublicPlans, type PublicPlanRow, type MySubscriptionRow } from '@lib/db'
-import { BILLING } from '@/config/billing'
+import { getMySubscription, getPublicPlans, startWompiCheckout, type PublicPlanRow, type MySubscriptionRow } from '@lib/db'
+import { BILLING, WOMPI } from '@/config/billing'
 
 const STATUS_CFG: Record<string, { label: string; cls: string }> = {
   ACTIVE:    { label: 'Activa',     cls: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' },
@@ -32,7 +33,7 @@ export default function SubscriptionsPage() {
   const tenantName = useAuthStore((s) => s.tenant?.tenantName)
   const [payFor, setPayFor] = useState<PublicPlanRow | null>(null)
 
-  const { data: sub, isLoading: loadingSub } = useQuery({
+  const { data: sub, isLoading: loadingSub, refetch: refetchSub } = useQuery({
     queryKey: ['my-subscription', tenantId],
     queryFn: () => getMySubscription(tenantId!),
     enabled: !!tenantId,
@@ -41,6 +42,27 @@ export default function SubscriptionsPage() {
     queryKey: ['public-plans'],
     queryFn: getPublicPlans,
   })
+
+  // Retorno desde Wompi: la URL trae ?id=<transacción>. Mostramos "verificando"
+  // y refrescamos la suscripción unas cuantas veces (el webhook la activa).
+  const [verifying, setVerifying] = useState(
+    () => new URLSearchParams(window.location.search).has('id'),
+  )
+  useEffect(() => {
+    if (!verifying) return
+    let tries = 0
+    const iv = setInterval(async () => {
+      tries += 1
+      await refetchSub()
+      if (tries >= 6) {
+        clearInterval(iv)
+        setVerifying(false)
+        // Limpia el ?id= de la URL
+        window.history.replaceState({}, '', window.location.pathname)
+      }
+    }, 4000)
+    return () => clearInterval(iv)
+  }, [verifying, refetchSub])
 
   const dl = daysLeft(sub?.current_period_end ?? null)
   const effectiveStatus = useMemo(() => {
@@ -62,6 +84,17 @@ export default function SubscriptionsPage() {
         <h1 className="text-2xl font-bold text-grafito-900 dark:text-white tracking-tight">Mi Suscripción</h1>
         <p className="text-sm text-grafito-500 dark:text-grafito-400">Tu plan, estado de pago y renovación.</p>
       </div>
+
+      {/* Verificando pago (retorno de Wompi) */}
+      {verifying && (
+        <div className="flex items-center gap-3 rounded-2xl border border-blue-500/20 bg-blue-500/10 px-5 py-4">
+          <Loader2 className="h-5 w-5 animate-spin text-blue-500 shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-blue-500">Estamos confirmando tu pago…</p>
+            <p className="text-xs text-blue-500/80 mt-0.5">Esto puede tardar unos segundos. No cierres esta página.</p>
+          </div>
+        </div>
+      )}
 
       {/* Aviso de vencimiento */}
       {needsAttention && (
@@ -145,7 +178,7 @@ export default function SubscriptionsPage() {
       </div>
 
       {payFor && (
-        <PaymentModal plan={payFor} tenantName={tenantName} onClose={() => setPayFor(null)} />
+        <PaymentModal plan={payFor} tenantId={tenantId} tenantName={tenantName} onClose={() => setPayFor(null)} />
       )}
     </div>
   )
@@ -191,12 +224,26 @@ function CurrentPlanCard({ sub, status, dl }: { sub: MySubscriptionRow | null | 
 }
 
 // ── Modal de pago manual ──────────────────────────────────────────────────────
-function PaymentModal({ plan, tenantName, onClose }: { plan: PublicPlanRow; tenantName?: string; onClose: () => void }) {
+function PaymentModal({ plan, tenantId, tenantName, onClose }: { plan: PublicPlanRow; tenantId?: string; tenantName?: string; onClose: () => void }) {
   const msg = `Hola, quiero activar el plan ${plan.name} (${money(plan.price, plan.currency)}/mes) para mi negocio "${tenantName ?? ''}". Adjunto el comprobante de pago.`
   const waUrl = `https://wa.me/${BILLING.whatsapp}?text=${encodeURIComponent(msg)}`
   const mailUrl = `mailto:${BILLING.email}?subject=${encodeURIComponent('Activación de plan ' + plan.name)}&body=${encodeURIComponent(msg)}`
 
   const copy = (t: string) => { navigator.clipboard?.writeText(t); }
+
+  const wompiOn = WOMPI.enabled && !!tenantId
+  const [paying, setPaying] = useState(false)
+  const payWithWompi = async () => {
+    if (!tenantId) return
+    setPaying(true)
+    try {
+      const res = await startWompiCheckout(tenantId, plan.code, `${window.location.origin}/subscriptions`)
+      window.location.href = res.checkoutUrl
+    } catch (e: any) {
+      setPaying(false)
+      toast.error(e?.message ?? 'No se pudo iniciar el pago en línea')
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(3,7,18,0.75)', backdropFilter: 'blur(6px)' }} onClick={onClose}>
@@ -208,6 +255,25 @@ function PaymentModal({ plan, tenantName, onClose }: { plan: PublicPlanRow; tena
           <button onClick={onClose} className="rounded-lg p-1.5 text-grafito-400 hover:bg-grafito-100 dark:hover:bg-white/5"><X className="h-4 w-4" /></button>
         </div>
         <p className="text-2xl font-extrabold text-grafito-900 dark:text-white">{money(plan.price, plan.currency)}<span className="text-sm font-normal text-grafito-400"> /mes</span></p>
+
+        {wompiOn && (
+          <div className="mt-4 space-y-2">
+            <button
+              onClick={payWithWompi}
+              disabled={paying}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-brand-500 py-3 text-sm font-bold text-white hover:bg-brand-600 disabled:opacity-60 transition-colors"
+            >
+              {paying ? <Loader2 className="h-4 w-4 animate-spin" /> : <CardIcon className="h-4 w-4" />}
+              Pagar en línea con Wompi
+            </button>
+            <p className="text-[11px] text-grafito-400 text-center">Tarjeta, PSE, Nequi o Bancolombia. Activación automática.</p>
+            <div className="flex items-center gap-3 pt-1">
+              <div className="h-px flex-1 bg-grafito-200 dark:bg-white/10" />
+              <span className="text-[10px] uppercase tracking-wide text-grafito-400">o paga manual</span>
+              <div className="h-px flex-1 bg-grafito-200 dark:bg-white/10" />
+            </div>
+          </div>
+        )}
 
         <div className="mt-4 rounded-xl bg-grafito-50 dark:bg-white/5 border border-grafito-200 dark:border-white/10 p-4 space-y-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-grafito-400">Cómo pagar</p>
@@ -240,7 +306,9 @@ function PaymentModal({ plan, tenantName, onClose }: { plan: PublicPlanRow; tena
           </a>
         </div>
         <p className="mt-3 text-[11px] text-grafito-400 text-center">
-          Pago manual verificado por el equipo. Pronto habilitaremos pago con tarjeta/PSE en línea.
+          {wompiOn
+            ? 'El pago en línea se activa solo; el pago manual lo verifica el equipo.'
+            : 'Pago manual verificado por el equipo. Pronto habilitaremos pago con tarjeta/PSE en línea.'}
         </p>
       </div>
     </div>

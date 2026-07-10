@@ -32,3 +32,17 @@ export const BILLING = {
    */
   gatewayEnabled: false,
 }
+
+/**
+ * Configuración de Wompi (Checkout por período).
+ * - La llave PÚBLICA va en el frontend (VITE_WOMPI_PUBLIC_KEY).
+ * - La llave privada, el secreto de integridad y el de eventos van en
+ *   los secretos de las Edge Functions, NUNCA aquí.
+ * - `enabled` se activa solo si hay llave pública configurada.
+ */
+export const WOMPI = {
+  enabled: Boolean(import.meta.env['VITE_WOMPI_PUBLIC_KEY']),
+  publicKey: (import.meta.env['VITE_WOMPI_PUBLIC_KEY'] as string) ?? '',
+  // 'sandbox' | 'production' (solo informativo; el prefijo de la llave manda)
+  env: (import.meta.env['VITE_WOMPI_ENV'] as string) ?? 'sandbox',
+}
