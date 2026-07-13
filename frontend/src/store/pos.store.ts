@@ -10,6 +10,7 @@ export interface CartItem {
   id: string
   productId: string
   variantId?: string
+  categoryId?: string | null
   sku: string
   name: string
   price: number
@@ -34,7 +35,7 @@ export interface CartDiscount {
 }
 
 export interface PaymentLine {
-  method: 'CASH' | 'CARD' | 'TRANSFER' | 'QR' | 'GIFT_CARD' | 'MIXED'
+  method: 'CASH' | 'CARD' | 'TRANSFER' | 'QR' | 'GIFT_CARD' | 'CREDIT' | 'MIXED'
   amount: number
   reference?: string
 }
@@ -97,12 +98,25 @@ const calcItemTotal = (item: Omit<CartItem, 'id' | 'total' | 'taxAmount' | 'disc
 
 // ── Store state / actions ─────────────────────────────────────
 
+/** Venta hecha sin internet, pendiente de sincronizar (ADR-003) */
+export interface PendingSale {
+  id:         string   // id local de la cola
+  tenantId:   string
+  branchId:   string
+  userId:     string
+  /** payload completo de createSale, con order_number FIJO (idempotencia) */
+  payload:    Record<string, unknown> & { order_number: string }
+  createdAt:  string
+  status:     'PENDING' | 'REVIEW'
+  error?:     string
+}
+
 interface POSState {
   tabs:        CartTab[]
   activeTabId: string
   isOffline:   boolean
   session:     POSSession | null
-  pendingSync: CartItem[][]
+  pendingSync: PendingSale[]
   lastReceipt: ReceiptData | null
 }
 
@@ -118,6 +132,8 @@ interface POSActions {
   updateQuantity:     (id: string, quantity: number) => void
   removeItem:         (id: string) => void
   applyItemDiscount:  (id: string, discount: number) => void
+  /** Reaplica precios/promos: fn devuelve nuevos valores o null si no cambia */
+  repriceItems:       (fn: (item: CartItem) => { price?: number; discount?: number } | null) => void
   applyCartDiscount:  (discount: CartDiscount) => void
   removeCartDiscount: (index: number) => void
   addPayment:         (payment: PaymentLine) => void
@@ -135,6 +151,11 @@ interface POSActions {
     waiterName?:        string
     items:              Omit<CartItem, 'id' | 'total' | 'taxAmount' | 'discountAmount'>[]
   }) => void
+
+  // Cola de ventas offline
+  queuePendingSale:  (sale: PendingSale) => void
+  removePendingSale: (id: string) => void
+  markPendingReview: (id: string, error: string) => void
 
   // Session / misc
   setOffline:    (offline: boolean) => void
@@ -246,6 +267,22 @@ export const usePOSStore = create<POSState & POSActions>()(
           item.discountAmount = calc.discountAmount
         }),
 
+        repriceItems: (fn) => mutateActive(tab => {
+          for (const item of tab.items) {
+            const next = fn(item)
+            if (!next) continue
+            const newPrice    = next.price    ?? item.price
+            const newDiscount = next.discount ?? item.discount
+            if (newPrice === item.price && newDiscount === item.discount) continue
+            item.price    = newPrice
+            item.discount = newDiscount
+            const calc = calcItemTotal(item)
+            item.total = calc.total
+            item.taxAmount = calc.taxAmount
+            item.discountAmount = calc.discountAmount
+          }
+        }),
+
         applyCartDiscount:  (d)  => mutateActive(tab => { tab.discounts.push(d) }),
         removeCartDiscount: (i)  => mutateActive(tab => { tab.discounts.splice(i, 1) }),
         addPayment:         (p)  => mutateActive(tab => { tab.payments.push(p) }),
@@ -303,6 +340,15 @@ export const usePOSStore = create<POSState & POSActions>()(
         }),
 
         // ── Session / misc ─────
+        queuePendingSale:  (sale) => set(state => { state.pendingSync.push(sale) }),
+        removePendingSale: (id) => set(state => {
+          state.pendingSync = state.pendingSync.filter(p => p.id !== id)
+        }),
+        markPendingReview: (id, error) => set(state => {
+          const p = state.pendingSync.find(x => x.id === id)
+          if (p) { p.status = 'REVIEW'; p.error = error }
+        }),
+
         setOffline:     (offline) => set(state => { state.isOffline = offline }),
         setSession:     (session) => set(state => { state.session = session }),
         setLastReceipt: (receipt) => set(state => { state.lastReceipt = receipt }),

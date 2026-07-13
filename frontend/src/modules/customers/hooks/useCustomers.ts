@@ -16,6 +16,7 @@ export interface Customer {
   taxId:        string | null
   address:      { city?: string; department?: string; street?: string } | null
   loyaltyPoints: number
+  priceListId:  string | null
   createdAt:    string
 }
 
@@ -32,6 +33,7 @@ function toCustomer(row: CustomerRow): Customer {
     taxId:        row.tax_id ?? null,
     address:      (row.address as Customer['address']) ?? null,
     loyaltyPoints: row.loyalty_points,
+    priceListId:  row.price_list_id ?? null,
     createdAt:    row.created_at,
   }
 }

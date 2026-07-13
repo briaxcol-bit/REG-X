@@ -23,6 +23,7 @@ import { CloseCashModal } from '@modules/pos/components/CloseCashModal'
 import { SalesHistoryModal } from '@modules/pos/components/SalesHistoryModal'
 import { ManageTerminalsModal } from '@modules/pos/components/ManageTerminalsModal'
 import { CompleteComandaModal } from '@modules/pos/components/CompleteComandaModal'
+import { usePosPricing } from '@modules/pos/hooks/usePosPricing'
 import { useCashSession } from '@modules/pos/hooks/useCashSession'
 import { usePOSTerminal } from '@modules/pos/hooks/usePOSTerminal'
 import { useCreateSale } from '@modules/pos/hooks/useCreateSale'
@@ -269,6 +270,7 @@ export default function POSPage() {
   const queryClient = useQueryClient()
 
   const { activeRegister, isLoading: loadingSession, hasOpenSession } = useCashSession()
+  usePosPricing()   // promos + listas de precios aplicadas al carrito en vivo
   const { terminal, isCommandsOnly, allowedCategories } = usePOSTerminal()
   const { mutateAsync: createSaleCmd, isPending: sendingCmd } = useCreateSale()
 
@@ -460,7 +462,7 @@ export default function POSPage() {
       sendBrowserPush('Stock máximo', `Solo hay ${product.stock} unidad${product.stock !== 1 ? 'es' : ''} de "${product.name}".`, `stock-max-${product.id}`)
       return
     }
-    addItem({ productId: product.id, sku: product.sku, name: product.name, price: product.price, quantity: 1, stock: product.stock, discount: 0, tax: product.tax ?? 0 })
+    addItem({ productId: product.id, categoryId: (product as { category_id?: string | null }).category_id ?? null, sku: product.sku, name: product.name, price: product.price, quantity: 1, stock: product.stock, discount: 0, tax: product.tax ?? 0 })
   }, [addItem, items])
 
   const handleBarcodeScanned = useCallback((barcode: string) => {

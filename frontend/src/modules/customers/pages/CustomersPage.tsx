@@ -4,7 +4,10 @@ import {
   Building2, User, X, Pencil, FileText,
   CreditCard, MapPin, BadgeCheck,
 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { useCustomers, useCreateCustomer, useUpdateCustomer, type Customer, type CustomerInput } from '@modules/customers/hooks/useCustomers'
+import { getPriceLists } from '@lib/db'
+import { useAuthStore } from '@store/auth.store'
 import { cn } from '@shared/utils/cn'
 import { PhoneField } from '@shared/components/PhoneField'
 
@@ -40,6 +43,7 @@ function emptyForm(personType: PersonType = 'NATURAL'): CustomerInput {
     phone:         null,
     tax_id:        null,
     address:       null,
+    price_list_id: null,
   }
 }
 
@@ -54,6 +58,7 @@ function customerToInput(c: Customer): CustomerInput {
     phone:         c.phone,
     tax_id:        c.taxId,
     address:       c.address,
+    price_list_id: c.priceListId,
   }
 }
 
@@ -72,6 +77,15 @@ function CustomerModal({
   const [form, setForm]         = useState<CustomerInput>(initial)
   const [saving, setSaving]     = useState(false)
   const [err, setErr]           = useState<string | null>(null)
+
+  // Listas de precios del tenant (el POS aplica la asignada automáticamente)
+  const tenantId = useAuthStore((s) => s.tenant?.tenantId)
+  const { data: priceLists = [] } = useQuery({
+    queryKey: ['price-lists', tenantId],
+    queryFn:  () => getPriceLists(tenantId!),
+    enabled:  !!tenantId,
+    staleTime: 60_000,
+  })
 
   const set = (patch: Partial<CustomerInput>) => setForm(f => ({ ...f, ...patch }))
   const setAddr = (patch: Partial<NonNullable<CustomerInput['address']>>) =>
@@ -276,6 +290,26 @@ function CustomerModal({
               ))}
             </div>
           </div>
+
+          {/* Lista de precios (solo si el tenant tiene listas activas) */}
+          {priceLists.filter(l => l.is_active).length > 0 && (
+            <div>
+              <label className={labelCls}>Lista de precios</label>
+              <select
+                value={form.price_list_id ?? ''}
+                onChange={e => set({ price_list_id: e.target.value || null })}
+                className={inputCls + ' cursor-pointer'}
+              >
+                <option value="">— Precios normales —</option>
+                {priceLists.filter(l => l.is_active).map(l => (
+                  <option key={l.id} value={l.id}>{l.name} ({l.list_type})</option>
+                ))}
+              </select>
+              <p className="text-[11px] text-grafito-400 mt-1">
+                El POS aplica automáticamente estos precios cuando el cliente está seleccionado en la venta.
+              </p>
+            </div>
+          )}
 
           {err && (
             <div className="rounded-xl bg-red-500/10 border border-red-500/20 px-4 py-3 text-sm text-red-500">{err}</div>

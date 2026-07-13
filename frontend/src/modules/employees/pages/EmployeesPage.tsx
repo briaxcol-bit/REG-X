@@ -8,7 +8,7 @@ import {
 import { PhoneField } from '@shared/components/PhoneField'
 import {
   getEmployees, updateEmployeeRole, toggleEmployeeActive,
-  addEmployee, updateEmployeeProfile, deleteEmployee, getMyModuleSlugs,
+  addEmployee, updateEmployeeProfile, deleteEmployee, getMyModuleSlugs, setEmployeeBaseSalary,
   ROLE_CONFIG,
 } from '@lib/db'
 import { useAuthStore } from '@store/auth.store'
@@ -162,6 +162,7 @@ function EditEmployeeModal({ employee, tenantId, onClose, onSaved }: EditModalPr
   const [phone, setPhone]             = useState(employee.phone    ?? '')
   const [role, setRole]               = useState<BusinessRole>(employee.role as BusinessRole)
   const [customRole, setCustomRole]   = useState(employee.customRole ?? '')
+  const [baseSalary, setBaseSalary]   = useState(String(employee.baseSalary || ''))
   const [resetPwd, setResetPwd]       = useState(false)
   const [password, setPassword]     = useState('')
   const [confirmPwd, setConfirmPwd] = useState('')
@@ -194,6 +195,11 @@ function EditEmployeeModal({ employee, tenantId, onClose, onSaved }: EditModalPr
         customRole: role === 'CUSTOM' ? customRole.trim() || null : null,
         password:   resetPwd && password.length >= 6 ? password : undefined,
       })
+      // Salario base (alimenta la nómina automática)
+      const salaryNum = Number(baseSalary) || 0
+      if (salaryNum !== (employee.baseSalary || 0)) {
+        await setEmployeeBaseSalary(tenantId, employee.userId, salaryNum)
+      }
       onSaved({
         fullName:   fullName.trim(),
         role,
@@ -201,6 +207,7 @@ function EditEmployeeModal({ employee, tenantId, onClose, onSaved }: EditModalPr
         cedula:     cedula.trim()     || null,
         phone:      phone.trim()      || null,
         customRole: role === 'CUSTOM' ? customRole.trim() || null : null,
+        baseSalary: salaryNum,
       })
       onClose()
     } catch (ex: any) {
@@ -310,6 +317,24 @@ function EditEmployeeModal({ employee, tenantId, onClose, onSaved }: EditModalPr
                 {roleCfg.description}
               </p>
             )}
+          </div>
+
+          {/* Salario base */}
+          <div>
+            <label className="block text-xs font-semibold text-grafito-600 dark:text-grafito-300 mb-1.5">
+              Salario base (mensual)
+            </label>
+            <input
+              type="number"
+              min={0}
+              value={baseSalary}
+              onChange={e => setBaseSalary(e.target.value)}
+              placeholder="0"
+              className={inputCls}
+            />
+            <p className="text-[11px] text-grafito-400 mt-1">
+              Lo usa Nómina → "Generar automática" junto con comisiones y propinas.
+            </p>
           </div>
 
           {/* Restablecer contraseña */}

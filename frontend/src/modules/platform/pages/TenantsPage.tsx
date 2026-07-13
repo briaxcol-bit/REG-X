@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   getAllTenants, setTenantPlan, setTenantActive, deleteTenant,
@@ -120,8 +121,9 @@ function ActionsMenu({
     if (!open) return
     const rect = btnRef.current?.getBoundingClientRect()
     if (!rect) return
+    // position:fixed usa coordenadas de viewport — sin window.scrollY
     setPos({
-      top: rect.bottom + window.scrollY + 4,
+      top: rect.bottom + 4,
       right: window.innerWidth - rect.right,
     })
   }, [open])
@@ -136,7 +138,10 @@ function ActionsMenu({
       >
         <MoreVertical className="h-4 w-4" />
       </button>
-      {open && (
+      {/* Portal al body: el contenedor de la tabla tiene backdrop-filter,
+          que convierte position:fixed en relativo a él, y su overflow-hidden
+          recortaba el menú — por eso "desaparecía" al abrirse. */}
+      {open && createPortal(
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div
@@ -169,7 +174,8 @@ function ActionsMenu({
               Eliminar
             </button>
           </div>
-        </>
+        </>,
+        document.body,
       )}
     </div>
   )

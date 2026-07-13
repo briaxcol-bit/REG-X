@@ -6,10 +6,15 @@ import {
   Users, BarChart3, Settings, ChefHat, CreditCard,
   Puzzle, ChevronLeft, ChevronRight,
   Zap, Building2, ShieldCheck, ChevronDown, AlertTriangle, DollarSign,
-  UserCog, TrendingUp,
+  UserCog, TrendingUp, Truck, Wallet, Network, Landmark, Clock, Percent, Coins,
+  CalendarClock, Beer, Bike, QrCode, Split, Tag, Gift, Tags, ClipboardList, PiggyBank,
+  Pill, CalendarX, Stethoscope, FileText, Wrench, Layers, Ruler, ScanBarcode,
+  BookOpen, CircleDollarSign, Receipt, Banknote, Globe, Webhook,
 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { cn } from '@shared/utils/cn'
 import { useAuthStore } from '@store/auth.store'
+import { getMyModuleSlugs } from '@lib/db'
 
 interface NavItem {
   to: string
@@ -18,6 +23,7 @@ interface NavItem {
   permission?: string
   badge?: string | number
   group?: string
+  module?: string            // si está, el ítem solo aparece si el módulo está activo en el tenant
   cashierVisible?: boolean   // true = también aparece para el rol CASHIER
   waiterVisible?: boolean    // true = también aparece para el rol WAITER (mesero)
   subItems?: { to: string; label: string; icon?: React.ElementType; permission?: string }[]
@@ -42,8 +48,43 @@ const NAV_ITEMS: NavItem[] = [
     ]
   },
   { to: '/customers',     icon: Users,    label: 'Clientes',    group: 'Catalogo' },
+  { to: '/suppliers',     icon: Truck,    label: 'Proveedores', group: 'Catalogo', module: 'suppliers' },
   { to: '/employees',     icon: UserCog,  label: 'Empleados',   group: 'Catalogo' },
+  { to: '/attendance',    icon: Clock,    label: 'Asistencia',  group: 'Catalogo', module: 'attendance' },
+  { to: '/commissions',   icon: Percent,  label: 'Comisiones',  group: 'Catalogo', module: 'commissions' },
   { to: '/restaurant',    icon: ChefHat,  label: 'Restaurante', permission: 'restaurant.view', group: 'Servicio', waiterVisible: true },
+  { to: '/tips',          icon: Coins,    label: 'Propinas',    group: 'Servicio', module: 'tips' },
+  { to: '/reservations',  icon: CalendarClock, label: 'Reservas', group: 'Servicio', module: 'reservations' },
+  { to: '/bar-tabs',      icon: Beer,     label: 'Comandas Bar', group: 'Servicio', module: 'bar_tabs' },
+  { to: '/delivery',      icon: Bike,     label: 'Delivery',    group: 'Servicio', module: 'delivery' },
+  { to: '/menu-qr',       icon: QrCode,   label: 'Menú QR',     group: 'Servicio', module: 'menu_digital' },
+  { to: '/split-bill',    icon: Split,    label: 'Dividir Cuenta', group: 'Servicio', module: 'split_bill' },
+  { to: '/promotions',    icon: Tag,      label: 'Promociones', group: 'Retail', module: 'promotions' },
+  { to: '/loyalty',       icon: Gift,     label: 'Fidelización', group: 'Retail', module: 'loyalty' },
+  { to: '/labels',        icon: Tags,     label: 'Etiquetas',   group: 'Retail', module: 'label_printer' },
+  { to: '/expenses',      icon: Wallet,   label: 'Gastos',      group: 'Analisis', module: 'expenses' },
+  { to: '/purchase-orders', icon: ClipboardList, label: 'Órdenes de Compra', group: 'Catalogo', module: 'purchase_orders' },
+  { to: '/price-lists',   icon: Tags,     label: 'Listas de Precios', group: 'Catalogo', module: 'price_lists' },
+  { to: '/gift-cards',    icon: Gift,     label: 'Tarjetas Regalo', group: 'Servicio', module: 'gift_cards' },
+  { to: '/layaways',      icon: PiggyBank,label: 'Apartados',   group: 'Servicio', module: 'layaway' },
+  { to: '/drug-catalog',  icon: Pill,     label: 'Medicamentos', group: 'Farmacia', module: 'drug_catalog' },
+  { to: '/batches',       icon: Boxes,    label: 'Lotes',        group: 'Farmacia', module: 'batch_tracking' },
+  { to: '/expiry-control',icon: CalendarX,label: 'Vencimientos', group: 'Farmacia', module: 'expiry_control' },
+  { to: '/prescriptions', icon: Stethoscope, label: 'Recetas',   group: 'Farmacia', module: 'prescriptions' },
+  { to: '/quotes',        icon: FileText,   label: 'Cotizaciones', group: 'Ferretería', module: 'quotes' },
+  { to: '/work-orders',   icon: Wrench,     label: 'Órdenes Trabajo', group: 'Ferretería', module: 'work_orders' },
+  { to: '/assemblies',    icon: Layers,     label: 'Ensambles',   group: 'Ferretería', module: 'assemblies' },
+  { to: '/unit-conversion',icon: Ruler,     label: 'Unidades',    group: 'Ferretería', module: 'unit_conversion' },
+  { to: '/serials',       icon: ScanBarcode,label: 'Seriales',    group: 'Ferretería', module: 'serial_tracking' },
+  { to: '/accounting',    icon: BookOpen,   label: 'Contabilidad', group: 'Finanzas', module: 'accounting' },
+  { to: '/receivables',   icon: CircleDollarSign,  label: 'Cuentas x Cobrar', group: 'Finanzas', module: 'accounts_receivable' },
+  { to: '/payables',      icon: Receipt,    label: 'Cuentas x Pagar', group: 'Finanzas', module: 'accounts_payable' },
+  { to: '/tax-reports',   icon: Landmark,   label: 'Tributario',  group: 'Finanzas', module: 'tax_reports' },
+  { to: '/payroll',       icon: Banknote,   label: 'Nómina',      group: 'Finanzas', module: 'payroll' },
+  { to: '/branches',      icon: Building2,   label: 'Sucursales',  group: 'Avanzado', module: 'multi_branch' },
+  { to: '/ecommerce',     icon: Globe,       label: 'Tienda en Línea', group: 'Avanzado', module: 'ecommerce' },
+  { to: '/webhooks',      icon: Webhook,     label: 'Webhooks / API', group: 'Avanzado', module: 'webhooks' },
+  { to: '/audit',         icon: ShieldCheck, label: 'Auditoría',   group: 'Avanzado', module: 'audit_log' },
   {
     to: '/reports',
     icon: BarChart3,
@@ -64,7 +105,9 @@ const PLATFORM_NAV_ITEMS: NavItem[] = [
   { to: '/admin/tenants', icon: Building2,       label: 'Tenants',       group: 'Plataforma' },
   { to: '/admin/users',   icon: Users,           label: 'Usuarios',      group: 'Plataforma' },
   { to: '/admin/plans',   icon: CreditCard,      label: 'Suscripciones', group: 'Plataforma' },
+  { to: '/admin/payments', icon: Landmark,       label: 'Pasarela',      group: 'Plataforma' },
   { to: '/admin/modules', icon: Puzzle,          label: 'Módulos',       group: 'Plataforma' },
+  { to: '/admin/module-map', icon: Network,      label: 'Explorador',    group: 'Plataforma' },
   { to: '/settings',      icon: Settings,        label: 'Ajustes',       group: 'Sistema' },
 ]
 
@@ -82,13 +125,28 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const isCashier    = hasRole('CASHIER')
   const isWaiter     = hasRole('WAITER')
 
-  const visibleItems = isSuperAdmin
+  // Módulos activos del tenant, para gatear ítems que dependen de un módulo.
+  const { data: moduleSlugs } = useQuery({
+    queryKey: ['my-module-slugs', tenant?.tenantId],
+    queryFn: () => getMyModuleSlugs(tenant!.tenantId),
+    enabled: !!tenant?.tenantId && !isSuperAdmin,
+  })
+  // Fallback seguro: sin datos (cargando) o lista vacía => no ocultar.
+  const moduleOk = (mod?: string) => {
+    if (!mod) return true
+    if (!moduleSlugs || moduleSlugs.length === 0) return true
+    return moduleSlugs.includes(mod)
+  }
+
+  const baseItems = isSuperAdmin
     ? PLATFORM_NAV_ITEMS
     : isWaiter
       ? NAV_ITEMS.filter(i => i.waiterVisible)
       : isCashier
         ? NAV_ITEMS.filter(i => i.cashierVisible)
         : NAV_ITEMS.filter((item) => !item.permission || hasPermission(item.permission))
+
+  const visibleItems = baseItems.filter((item) => moduleOk(item.module))
 
   const groups = [...new Set(visibleItems.map((i) => i.group))]
 
@@ -150,7 +208,12 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               .filter((i) => i.group === group)
               .map((item) => {
                 const Icon = item.icon
-                const isActive = location.pathname === item.to || location.pathname.startsWith(item.to + '/')
+                // '/admin' es la ruta índice de plataforma: solo activa con match
+                // exacto (si no, "Panel General" queda encendido también en
+                // /admin/tenants, /admin/users, etc. junto al ítem real).
+                const isActive = item.to === '/admin'
+                  ? location.pathname === '/admin'
+                  : location.pathname === item.to || location.pathname.startsWith(item.to + '/')
                 const hasSubItems = item.subItems && item.subItems.length > 0
                 const isExpanded = expandedMenus[item.to] !== undefined ? expandedMenus[item.to] : isActive
 

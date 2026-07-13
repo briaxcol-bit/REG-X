@@ -8,7 +8,9 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      selfDestroying: true,
+      // PWA instalable como app de escritorio. selfDestroying estuvo activo
+      // mientras un SW viejo servía builds cacheados; con autoUpdate +
+      // skipWaiting + cleanupOutdatedCaches las actualizaciones aplican solas.
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'logo.svg'],
       manifest: {

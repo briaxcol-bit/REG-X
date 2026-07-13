@@ -4,17 +4,17 @@ import { getInventory } from '@lib/db'
 import { useAuthStore } from '@store/auth.store'
 import { supabase } from '@lib/supabase'
 
-export function useInventory() {
+export function useInventory(enabled = true) {
   const tenantId  = useAuthStore((s) => s.tenant?.tenantId)
   const branchId  = useAuthStore((s) => s.branch?.branchId)
   const queryClient = useQueryClient()
 
   const query = useQuery({
     queryKey: ['inventory', tenantId, branchId],
-    enabled:  !!tenantId && !!branchId,
+    enabled:  enabled && !!tenantId && !!branchId,
     queryFn:  () => getInventory(tenantId!, branchId!),
     staleTime: 5_000,
-    refetchInterval: 15_000,
+    refetchInterval: enabled ? 15_000 : false,
     refetchOnWindowFocus: true,
   })
 

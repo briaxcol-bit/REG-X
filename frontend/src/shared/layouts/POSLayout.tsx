@@ -14,6 +14,8 @@ interface POSLayoutProps {
 
 export function POSLayout({ children }: POSLayoutProps) {
   const isOffline = usePOSStore((s) => s.isOffline)
+  const pendingCount = usePOSStore((s) => s.pendingSync.filter(p => p.status === 'PENDING').length)
+  const reviewCount  = usePOSStore((s) => s.pendingSync.filter(p => p.status === 'REVIEW').length)
   const { branch, tenant, profile, hasRole, logout } = useAuthStore()
   const { isDark, toggle } = useTheme()
   const navigate = useNavigate()
@@ -72,6 +74,18 @@ export function POSLayout({ children }: POSLayoutProps) {
               <><Wifi className="h-3 w-3" /> En línea</>
             )}
           </div>
+
+          {/* Ventas offline pendientes de sincronizar */}
+          {pendingCount > 0 && (
+            <span className="rounded-full bg-yellow-500/15 px-2.5 py-1 text-xs font-semibold text-yellow-600 dark:text-yellow-400">
+              {pendingCount} venta{pendingCount !== 1 ? 's' : ''} por sincronizar
+            </span>
+          )}
+          {reviewCount > 0 && (
+            <span className="rounded-full bg-red-500/15 px-2.5 py-1 text-xs font-semibold text-red-500" title="Ventas offline rechazadas por el servidor (p.ej. stock insuficiente)">
+              {reviewCount} requiere{reviewCount !== 1 ? 'n' : ''} revisión
+            </span>
+          )}
 
           {/* Clock */}
           <ClockDisplay />

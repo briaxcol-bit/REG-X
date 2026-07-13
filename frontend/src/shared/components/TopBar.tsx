@@ -33,10 +33,14 @@ export function TopBar() {
   const navigate = useNavigate()
   const location = useLocation()
 
-  // Load inventory for alerts
-  const { data: inventory = [] } = useInventory()
+  // Vista de plataforma (/admin): el super admin gobierna tenants, no opera
+  // un negocio — ahí no aplican alertas de stock ni badges de sucursal/plan.
+  const isPlatformView = location.pathname.startsWith('/admin')
 
-  const alerts = inventory.filter(row => {
+  // Load inventory for alerts (en /admin ni siquiera se consulta)
+  const { data: inventory = [] } = useInventory(!isPlatformView)
+
+  const alerts = isPlatformView ? [] : inventory.filter(row => {
     const p = row.products as any
     const qty = Number(row.quantity)
     const min = Number(p?.min_stock ?? 0)
@@ -116,14 +120,14 @@ export function TopBar() {
       <div className="flex items-center gap-2">
 
         {/* Branch badge */}
-        {branch && (
+        {!isPlatformView && branch && (
           <span className="rounded-md border border-grafito-200 dark:border-white/10 bg-grafito-100 dark:bg-grafito-800 px-2.5 py-1 text-xs text-grafito-600 dark:text-grafito-300">
             {branch.branchName}
           </span>
         )}
 
         {/* Plan badge */}
-        {tenant && (
+        {!isPlatformView && tenant && (
           <span className={cn(
             'rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider',
             tenant.plan === 'ENTERPRISE'   && 'bg-brand-500/15 text-brand-600 dark:text-brand-400',
@@ -152,7 +156,8 @@ export function TopBar() {
           </motion.div>
         </motion.button>
 
-        {/* Notifications */}
+        {/* Notifications (solo en contexto de negocio) */}
+        {!isPlatformView && (
         <div className="relative">
           <button
             onClick={() => setNotifOpen((v) => !v)}
@@ -251,6 +256,7 @@ export function TopBar() {
             )}
           </AnimatePresence>
         </div>
+        )}
 
         {/* User menu */}
         <div className="relative">

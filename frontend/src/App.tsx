@@ -8,6 +8,7 @@ import { router } from '@/router'
 import { queryClient } from '@lib/query-client'
 import { supabase } from '@lib/supabase'
 import { resolveUserContext } from '@lib/db'
+import { startOfflineSalesSync } from '@lib/offline-sync'
 import { useAuthStore } from '@store/auth.store'
 import { usePOSStore } from '@store/pos.store'
 
@@ -106,10 +107,14 @@ function AuthInitializer() {
     window.addEventListener('offline', handleOffline)
     setOffline(!navigator.onLine)
 
+    // ── Sincronización de ventas offline (ADR-003) ─────
+    const stopSync = startOfflineSalesSync()
+
     return () => {
       subscription.unsubscribe()
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
+      stopSync()
     }
   }, [setUser, setSession, setProfile, setTenant, setBranch, setLoading, setInitialized, logout, setOffline])
 

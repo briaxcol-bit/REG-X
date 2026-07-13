@@ -25,6 +25,8 @@ const PlatformTenants   = lazy(() => import('@modules/platform/pages/TenantsPage
 const PlatformUsers     = lazy(() => import('@modules/platform/pages/PlatformUsersPage'))
 const PlatformPlans     = lazy(() => import('@modules/platform/pages/PlatformPlansPage'))
 const PlatformModules   = lazy(() => import('@modules/platform/pages/PlatformModulesPage'))
+const PlatformModuleMap = lazy(() => import('@modules/platform/pages/PlatformModuleMapPage'))
+const PlatformPayments  = lazy(() => import('@modules/platform/pages/PlatformPaymentsPage'))
 
 const POSPage          = lazy(() => import('@modules/pos/pages/POSPage'))
 
@@ -52,6 +54,42 @@ const KDSPage          = lazy(() => import('@modules/restaurant/pages/KDSPage'))
 const SubscriptionsPage = lazy(() => import('@modules/subscriptions/pages/SubscriptionsPage'))
 const MarketplacePage   = lazy(() => import('@modules/marketplace/pages/MarketplacePage'))
 const EmployeesPage     = lazy(() => import('@modules/employees/pages/EmployeesPage'))
+const SuppliersPage     = lazy(() => import('@modules/suppliers/pages/SuppliersPage'))
+const ExpensesPage      = lazy(() => import('@modules/expenses/pages/ExpensesPage'))
+const PurchaseOrdersPage = lazy(() => import('@modules/purchasing/pages/PurchaseOrdersPage'))
+const PriceListsPage     = lazy(() => import('@modules/pricelists/pages/PriceListsPage'))
+const GiftCardsPage      = lazy(() => import('@modules/giftcards/pages/GiftCardsPage'))
+const LayawaysPage       = lazy(() => import('@modules/layaways/pages/LayawaysPage'))
+const DrugCatalogPage    = lazy(() => import('@modules/pharmacy/pages/DrugCatalogPage'))
+const BatchTrackingPage  = lazy(() => import('@modules/pharmacy/pages/BatchTrackingPage'))
+const ExpiryControlPage  = lazy(() => import('@modules/pharmacy/pages/ExpiryControlPage'))
+const PrescriptionsPage  = lazy(() => import('@modules/pharmacy/pages/PrescriptionsPage'))
+const QuotesPage         = lazy(() => import('@modules/hardware/pages/QuotesPage'))
+const WorkOrdersPage     = lazy(() => import('@modules/hardware/pages/WorkOrdersPage'))
+const AssembliesPage     = lazy(() => import('@modules/hardware/pages/AssembliesPage'))
+const UnitConversionPage = lazy(() => import('@modules/hardware/pages/UnitConversionPage'))
+const SerialTrackingPage = lazy(() => import('@modules/hardware/pages/SerialTrackingPage'))
+const AccountingPage     = lazy(() => import('@modules/finance/pages/AccountingPage'))
+const ReceivablesPage    = lazy(() => import('@modules/finance/pages/ReceivablesPage'))
+const PayablesPage       = lazy(() => import('@modules/finance/pages/PayablesPage'))
+const TaxReportsPage     = lazy(() => import('@modules/finance/pages/TaxReportsPage'))
+const PayrollPage        = lazy(() => import('@modules/finance/pages/PayrollPage'))
+const BranchesPage       = lazy(() => import('@modules/advanced/pages/BranchesPage'))
+const EcommercePage      = lazy(() => import('@modules/advanced/pages/EcommercePage'))
+const WebhooksPage       = lazy(() => import('@modules/advanced/pages/WebhooksPage'))
+const AuditPage          = lazy(() => import('@modules/advanced/pages/AuditPage'))
+const AttendancePage    = lazy(() => import('@modules/attendance/pages/AttendancePage'))
+const CommissionsPage   = lazy(() => import('@modules/commissions/pages/CommissionsPage'))
+const TipsPage          = lazy(() => import('@modules/tips/pages/TipsPage'))
+const ReservationsPage  = lazy(() => import('@modules/reservations/pages/ReservationsPage'))
+const BarTabsPage       = lazy(() => import('@modules/bartabs/pages/BarTabsPage'))
+const DeliveryPage      = lazy(() => import('@modules/delivery/pages/DeliveryPage'))
+const MenuQRPage        = lazy(() => import('@modules/menu/pages/MenuQRPage'))
+const PublicMenuPage    = lazy(() => import('@modules/menu/pages/PublicMenuPage'))
+const SplitBillPage     = lazy(() => import('@modules/splitbill/pages/SplitBillPage'))
+const PromotionsPage    = lazy(() => import('@modules/promotions/pages/PromotionsPage'))
+const LoyaltyPage       = lazy(() => import('@modules/loyalty/pages/LoyaltyPage'))
+const LabelPrinterPage  = lazy(() => import('@modules/labels/pages/LabelPrinterPage'))
 
 const NotFoundPage = lazy(() => import('@shared/pages/NotFoundPage'))
 
@@ -115,6 +153,9 @@ export const router = createBrowserRouter([
     ],
   },
 
+  // Menú público (sin login) — destino del código QR
+  { path: '/m/:slug', element: <Page><PublicMenuPage /></Page> },
+
   // POS (touch UI - minimal chrome)
   {
     path: '/pos',
@@ -170,6 +211,8 @@ export const router = createBrowserRouter([
           { path: 'users',    element: <Page><PlatformUsers /></Page> },
           { path: 'plans',    element: <Page><PlatformPlans /></Page> },
           { path: 'modules',  element: <Page><PlatformModules /></Page> },
+          { path: 'module-map', element: <Page><PlatformModuleMap /></Page> },
+          { path: 'payments',   element: <Page><PlatformPayments /></Page> },
         ],
       },
 
@@ -203,6 +246,77 @@ export const router = createBrowserRouter([
 
       // Employees
       { path: 'employees', element: <NoWaiter><Page><EmployeesPage /></Page></NoWaiter> },
+
+      // Suppliers (módulo)
+      { path: 'suppliers', element: <NoWaiter><NoCashier><Page><SuppliersPage /></Page></NoCashier></NoWaiter> },
+
+      // Expenses (módulo)
+      { path: 'expenses', element: <NoWaiter><NoCashier><Page><ExpensesPage /></Page></NoCashier></NoWaiter> },
+
+      // Retail
+      { path: 'purchase-orders', element: <NoWaiter><NoCashier><Page><PurchaseOrdersPage /></Page></NoCashier></NoWaiter> },
+      { path: 'price-lists',     element: <NoWaiter><NoCashier><Page><PriceListsPage /></Page></NoCashier></NoWaiter> },
+      { path: 'gift-cards',      element: <NoWaiter><NoCashier><Page><GiftCardsPage /></Page></NoCashier></NoWaiter> },
+      { path: 'layaways',        element: <NoWaiter><NoCashier><Page><LayawaysPage /></Page></NoCashier></NoWaiter> },
+
+      // Farmacia
+      { path: 'drug-catalog',    element: <NoWaiter><NoCashier><Page><DrugCatalogPage /></Page></NoCashier></NoWaiter> },
+      { path: 'batches',         element: <NoWaiter><NoCashier><Page><BatchTrackingPage /></Page></NoCashier></NoWaiter> },
+      { path: 'expiry-control',  element: <NoWaiter><NoCashier><Page><ExpiryControlPage /></Page></NoCashier></NoWaiter> },
+      { path: 'prescriptions',   element: <NoWaiter><NoCashier><Page><PrescriptionsPage /></Page></NoCashier></NoWaiter> },
+
+      // Ferretería / Industrial
+      { path: 'quotes',          element: <NoWaiter><NoCashier><Page><QuotesPage /></Page></NoCashier></NoWaiter> },
+      { path: 'work-orders',     element: <NoWaiter><NoCashier><Page><WorkOrdersPage /></Page></NoCashier></NoWaiter> },
+      { path: 'assemblies',      element: <NoWaiter><NoCashier><Page><AssembliesPage /></Page></NoCashier></NoWaiter> },
+      { path: 'unit-conversion', element: <NoWaiter><NoCashier><Page><UnitConversionPage /></Page></NoCashier></NoWaiter> },
+      { path: 'serials',         element: <NoWaiter><NoCashier><Page><SerialTrackingPage /></Page></NoCashier></NoWaiter> },
+
+      // Finanzas
+      { path: 'accounting',      element: <NoWaiter><NoCashier><Page><AccountingPage /></Page></NoCashier></NoWaiter> },
+      { path: 'receivables',     element: <NoWaiter><NoCashier><Page><ReceivablesPage /></Page></NoCashier></NoWaiter> },
+      { path: 'payables',        element: <NoWaiter><NoCashier><Page><PayablesPage /></Page></NoCashier></NoWaiter> },
+      { path: 'tax-reports',     element: <NoWaiter><NoCashier><Page><TaxReportsPage /></Page></NoCashier></NoWaiter> },
+      { path: 'payroll',         element: <NoWaiter><NoCashier><Page><PayrollPage /></Page></NoCashier></NoWaiter> },
+
+      // Avanzado
+      { path: 'branches',        element: <NoWaiter><NoCashier><Page><BranchesPage /></Page></NoCashier></NoWaiter> },
+      { path: 'ecommerce',       element: <NoWaiter><NoCashier><Page><EcommercePage /></Page></NoCashier></NoWaiter> },
+      { path: 'webhooks',        element: <NoWaiter><NoCashier><Page><WebhooksPage /></Page></NoCashier></NoWaiter> },
+      { path: 'audit',           element: <NoWaiter><NoCashier><Page><AuditPage /></Page></NoCashier></NoWaiter> },
+
+      // Attendance (módulo)
+      { path: 'attendance', element: <NoWaiter><NoCashier><Page><AttendancePage /></Page></NoCashier></NoWaiter> },
+
+      // Commissions (módulo)
+      { path: 'commissions', element: <NoWaiter><NoCashier><Page><CommissionsPage /></Page></NoCashier></NoWaiter> },
+
+      // Tips (módulo)
+      { path: 'tips', element: <NoWaiter><NoCashier><Page><TipsPage /></Page></NoCashier></NoWaiter> },
+
+      // Reservations (módulo)
+      { path: 'reservations', element: <NoWaiter><Page><ReservationsPage /></Page></NoWaiter> },
+
+      // Bar tabs (módulo)
+      { path: 'bar-tabs', element: <NoWaiter><Page><BarTabsPage /></Page></NoWaiter> },
+
+      // Delivery (módulo)
+      { path: 'delivery', element: <NoWaiter><Page><DeliveryPage /></Page></NoWaiter> },
+
+      // Menú Digital QR (módulo)
+      { path: 'menu-qr', element: <NoWaiter><NoCashier><Page><MenuQRPage /></Page></NoCashier></NoWaiter> },
+
+      // Split bill (módulo)
+      { path: 'split-bill', element: <NoWaiter><Page><SplitBillPage /></Page></NoWaiter> },
+
+      // Promotions (módulo)
+      { path: 'promotions', element: <NoWaiter><NoCashier><Page><PromotionsPage /></Page></NoCashier></NoWaiter> },
+
+      // Loyalty (módulo)
+      { path: 'loyalty', element: <NoWaiter><Page><LoyaltyPage /></Page></NoWaiter> },
+
+      // Label printer (módulo)
+      { path: 'labels', element: <NoWaiter><NoCashier><Page><LabelPrinterPage /></Page></NoCashier></NoWaiter> },
 
       // Restaurant
       {

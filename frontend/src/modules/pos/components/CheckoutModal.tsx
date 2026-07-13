@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Banknote, CreditCard, Smartphone, CheckCircle2, Printer, ChevronRight, RotateCcw } from 'lucide-react'
+import { X, Banknote, CreditCard, Smartphone, CheckCircle2, Printer, ChevronRight, RotateCcw, CircleDollarSign, Gift } from 'lucide-react'
 import { toast } from 'sonner'
 import { usePOSStore } from '@store/pos.store'
 import { useAuthStore } from '@store/auth.store'
@@ -9,10 +9,11 @@ import { cn } from '@shared/utils/cn'
 import { useCreateSale } from '@modules/pos/hooks/useCreateSale'
 import { useCashSession } from '@modules/pos/hooks/useCashSession'
 import { ReceiptTemplate, type ReceiptData } from './ReceiptTemplate'
-import { closeRestaurantOrder, getCustomerById, type CustomerRow } from '@lib/db'
+import { closeRestaurantOrder, getCustomerById, createTip, type CustomerRow } from '@lib/db'
+import { openCashDrawer, linkCashDrawer, cashDrawerLinked, cashDrawerSupported } from '@lib/cash-drawer'
 
 // ── Métodos de pago ────────────────────────────────────────────────────────────
-type PaymentMethod = 'CASH' | 'CARD' | 'NEQUI' | 'DAVIPLATA' | 'TRANSFER'
+type PaymentMethod = 'CASH' | 'CARD' | 'NEQUI' | 'DAVIPLATA' | 'TRANSFER' | 'CREDIT' | 'GIFT_CARD'
 
 const METHODS: {
   method: PaymentMethod
@@ -68,6 +69,24 @@ const METHODS: {
     bg:     'bg-amber-50 dark:bg-amber-500/10',
     icon:   Smartphone,
   },
+  {
+    method: 'CREDIT',
+    label:  'Fiado',
+    sub:    'Cuenta por cobrar',
+    color:  'text-orange-600 dark:text-orange-400',
+    border: 'border-orange-500',
+    bg:     'bg-orange-50 dark:bg-orange-500/10',
+    icon:   CircleDollarSign,
+  },
+  {
+    method: 'GIFT_CARD',
+    label:  'Gift Card',
+    sub:    'Redimir por código',
+    color:  'text-pink-600 dark:text-pink-400',
+    border: 'border-pink-500',
+    bg:     'bg-pink-50 dark:bg-pink-500/10',
+    icon:   Gift,
+  },
 ]
 
 // Denominaciones rápidas para efectivo
@@ -86,6 +105,7 @@ interface CheckoutModalProps {
 export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId, restaurantOrderId }: CheckoutModalProps) {
   const [method, setMethod]             = useState<PaymentMethod>('CASH')
   const [cashInput, setCashInput]       = useState('')
+  const [giftCardCode, setGiftCardCode] = useState('')
   const [success, setSuccess]           = useState(false)
   const [customerData, setCustomerData] = useState<CustomerRow | null>(null)
 
@@ -111,7 +131,11 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
 
   const cashReceived = parseInt(cashInput.replace(/\D/g, ''), 10) || 0
   const change       = method === 'CASH' ? Math.max(0, cashReceived - total) : 0
-  const canComplete  = method !== 'CASH' || cashReceived >= total
+  const canComplete  =
+    method === 'CASH'      ? cashReceived >= total :
+    method === 'CREDIT'    ? !!customerId :
+    method === 'GIFT_CARD' ? giftCardCode.trim().length > 0 :
+    true
 
   const handleCashInput = (raw: string) => {
     const digits = raw.replace(/\D/g, '')
@@ -135,7 +159,7 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
       // El total de la venta (sin propina) — la propina se anota en notas
       const saleTotal    = total - tip
 
-      await createSale({
+      const createdSale = await createSale({
         items: items.map(it => ({
           product_id:      it.productId,
           name:            it.name,
@@ -148,7 +172,11 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
           tax_amount:      it.taxAmount,
           total:           it.total,
         })),
-        payments: [{ method: method === 'NEQUI' || method === 'DAVIPLATA' ? 'QR' : method, amount: paidAmount }],
+        payments: [{
+          method:    method === 'NEQUI' || method === 'DAVIPLATA' ? 'QR' : method,
+          amount:    paidAmount,
+          reference: method === 'GIFT_CARD' ? giftCardCode.trim().toUpperCase() : undefined,
+        }],
         customer_id:      customerId,
         notes:            tip > 0 ? `${notes ? notes + ' | ' : ''}Propina: ${tip}` : notes,
         subtotal:         subtotalAmt,
@@ -158,6 +186,25 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
         currency,
         cash_register_id: activeRegister?.id,
       })
+
+      // Abrir el cajón monedero en ventas en efectivo (silencioso si no está vinculado)
+      if (method === 'CASH') {
+        openCashDrawer().catch(() => {})
+      }
+
+      // Registrar la propina como dato real (además de la nota) para el módulo de Propinas
+      if (tip > 0 && tenant?.tenantId) {
+        try {
+          await createTip(tenant.tenantId, {
+            amount:    tip,
+            sale_id:   (createdSale as any)?.id ?? null,
+            waiter_id: profile?.id ?? null,
+            branch_id: branch?.branchId ?? null,
+          })
+        } catch (e) {
+          console.warn('No se pudo registrar la propina:', e)
+        }
+      }
 
       // Cerrar orden de restaurante si la venta viene de una mesa
       if (restaurantOrderId && tableId) {
@@ -330,6 +377,7 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
     clearCart()
     setSuccess(false)
     setCashInput('')
+    setGiftCardCode('')
     setMethod('CASH')
     onClose()
   }
@@ -400,6 +448,25 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
 
                   {/* Acciones */}
                   <div className="flex gap-3">
+                    {cashDrawerSupported() && (
+                      <button
+                        onClick={async () => {
+                          // Con puerto vinculado abre directo; si no, pide vincular (gesto de usuario)
+                          if (await cashDrawerLinked()) { openCashDrawer(); return }
+                          if (await linkCashDrawer()) {
+                            const ok = await openCashDrawer()
+                            toast[ok ? 'success' : 'error'](ok
+                              ? 'Cajón vinculado: se abrirá solo en ventas en efectivo'
+                              : 'No se pudo abrir el cajón por ese puerto')
+                          }
+                        }}
+                        title="Abrir cajón monedero"
+                        className="flex items-center justify-center gap-2 rounded-xl border border-grafito-200 dark:border-white/10 px-4 py-3 text-sm font-semibold text-grafito-700 dark:text-grafito-200 hover:bg-grafito-100 dark:hover:bg-white/5 transition-colors"
+                      >
+                        <CircleDollarSign className="h-4 w-4" />
+                        Cajón
+                      </button>
+                    )}
                     <button
                       onClick={handlePrint}
                       className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-grafito-200 dark:border-white/10 py-3 text-sm font-semibold text-grafito-700 dark:text-grafito-200 hover:bg-grafito-100 dark:hover:bg-white/5 transition-colors"
@@ -551,6 +618,50 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
                         <p className="text-xl font-black text-grafito-900 dark:text-white">{formatCurrency(total, currency)}</p>
                       </motion.div>
                     )}
+
+                    {method === 'CREDIT' && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="rounded-xl bg-orange-50 dark:bg-orange-500/10 border border-orange-200 dark:border-orange-500/20 p-4 space-y-1"
+                      >
+                        {customerId ? (
+                          <>
+                            <p className="text-sm font-semibold text-grafito-900 dark:text-white">
+                              Se creará una cuenta por cobrar {customerData ? `a ${customerData.full_name}` : 'al cliente'}
+                            </p>
+                            <p className="text-xs text-grafito-500">
+                              Por {formatCurrency(total, currency)} · vence en 30 días · se gestiona en Finanzas → Cuentas por Cobrar
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-sm font-semibold text-orange-600 dark:text-orange-400">
+                            Para fiar debes seleccionar primero un cliente en el carrito
+                          </p>
+                        )}
+                      </motion.div>
+                    )}
+
+                    {method === 'GIFT_CARD' && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="rounded-xl bg-pink-50 dark:bg-pink-500/10 border border-pink-200 dark:border-pink-500/20 p-4 space-y-2"
+                      >
+                        <p className="text-xs text-grafito-500">Código de la gift card</p>
+                        <input
+                          type="text"
+                          value={giftCardCode}
+                          onChange={e => setGiftCardCode(e.target.value)}
+                          placeholder="GC-XXXXXXXX"
+                          autoFocus
+                          className="w-full rounded-lg border border-grafito-200 dark:border-white/10 bg-white dark:bg-grafito-900 px-3 py-2.5 text-sm font-mono uppercase text-grafito-900 dark:text-white focus:border-pink-500 focus:outline-none"
+                        />
+                        <p className="text-xs text-grafito-400">
+                          El saldo se valida y descuenta automáticamente al confirmar
+                        </p>
+                      </motion.div>
+                    )}
                   </div>
 
                   {/* ── CONFIRM BUTTON ─────────────────── */}
@@ -568,7 +679,6 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
                     >
                       {isPending ? (
                         <motion.span
-    
                           animate={{ rotate: 360 }}
                           transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
                           className="h-5 w-5 rounded-full border-2 border-white/30 border-t-white inline-block"

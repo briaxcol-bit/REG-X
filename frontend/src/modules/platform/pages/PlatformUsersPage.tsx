@@ -27,7 +27,15 @@ export default function PlatformUsersPage() {
     queryFn: getAllPlatformUsers,
   })
 
-  const filtered = users.filter((u) =>
+  // La plataforma gobierna tenants: aquí solo interesan los DUEÑOS de cada
+  // tenant y el staff de plataforma. Los empleados (meseros, chefs, cajeros…)
+  // se gestionan dentro de cada negocio, no aquí.
+  const relevant = users.filter((u) =>
+    !!u.platform_role ||
+    (u.user_tenant_roles ?? []).some((r) => r.is_active && r.role === 'OWNER'),
+  )
+
+  const filtered = relevant.filter((u) =>
     (u.full_name ?? '').toLowerCase().includes(search.toLowerCase()),
   )
 
@@ -38,7 +46,8 @@ export default function PlatformUsersPage() {
           Usuarios de Plataforma
         </h1>
         <p className="text-sm text-grafito-500 dark:text-grafito-400">
-          {users.length} usuario{users.length !== 1 ? 's' : ''} registrados en total.
+          {relevant.length} owner{relevant.length !== 1 ? 's' : ''} / staff de plataforma
+          · los empleados se gestionan dentro de cada tenant.
         </p>
       </div>
 
@@ -77,7 +86,8 @@ export default function PlatformUsersPage() {
             </thead>
             <tbody className="divide-y divide-grafito-100 dark:divide-white/5">
               {filtered.map((u) => {
-                const activeRoles = (u.user_tenant_roles ?? []).filter((r) => r.is_active)
+                // Mostrar solo los tenants donde es OWNER (dueño)
+                const activeRoles = (u.user_tenant_roles ?? []).filter((r) => r.is_active && r.role === 'OWNER')
                 return (
                   <tr key={u.id} className="hover:bg-grafito-50 dark:hover:bg-white/5 transition-colors">
                     <td className="px-6 py-4">
