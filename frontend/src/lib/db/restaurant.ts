@@ -354,6 +354,140 @@ export async function closeRestaurantOrder(
   if (tableErr) throw tableErr
 }
 
+/** Todas las órdenes activas (no servidas/canceladas) de una mesa. */
+export async function getAllActiveOrdersForTable(
+  tenantId: string,
+  tableId:  string,
+): Promise<RestaurantOrderRow[]> {
+  const { data, error } = await supabase
+    .from('orders')
+    .select(`
+      id, order_number, status, notes, created_at, table_id, waiter_id,
+      tables(number, name),
+      order_items(id, product_id, quantity, unit_price, status, destination, notes, created_at,
+        added_by, added_by_name,
+        products(name, sku, price))
+    `)
+    .eq('tenant_id', tenantId)
+    .eq('table_id', tableId)
+    .not('status', 'in', '(SERVED,CANCELLED)')
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return (data ?? []) as unknown as RestaurantOrderRow[]
+}
+
+/** Cierra todas las órdenes activas de una mesa y la libera. */
+export async function closeAllOrdersForTable(
+  tenantId: string,
+  tableId:  string,
+): Promise<void> {
+  const { error: orderErr } = await supabase
+    .from('orders')
+    .update({ status: 'SERVED' as any })
+    .eq('tenant_id', tenantId)
+    .eq('table_id', tableId)
+    .not('status', 'in', '(SERVED,CANCELLED)')
+  if (orderErr) throw orderErr
+
+  const { error: tableErr } = await supabase
+    .from('tables')
+    .update({ status: 'AVAILABLE' })
+    .eq('tenant_id', tenantId)
+    .eq('id', tableId)
+  if (tableErr) throw tableErr
+}
+
+/** Historial reciente para la pantalla KDS (órdenes ya listas/servidas). */
+export async function getKDSHistory(
+  tenantId: string,
+  branchId: string,
+): Promise<RestaurantOrderRow[]> {
+  const { data, error } = await supabase
+    .from('orders')
+    .select(`
+      id, order_number, status, notes, created_at, table_id,
+      tables(number, name),
+      order_items(id, product_id, quantity, unit_price, status, destination, notes, created_at,
+        products(name, sku, price))
+    `)
+    .eq('tenant_id', tenantId)
+    .eq('branch_id', branchId)
+    .in('status', ['READY', 'SERVED'] as any[])
+    .order('created_at', { ascending: false })
+    .limit(50)
+  if (error) throw error
+  return (data ?? []) as unknown as RestaurantOrderRow[]
+}
+
+// ── Menú Digital QR (módulo menu_digital) ─────────────────────
+export interface PublicMenuItem {
+  id: string
+  name: string
+  price: number
+  category: string | null
+  description: string | null
+  image_url: string | null
+}
+export interface PublicMenu {
+  name: string | null
+  items: PublicMenuItem[]
+}
+/** Menú público por slug del negocio (para el QR). */
+export async function getPublicMenu(slug: string): Promise<PublicMenu> {
+  const { data: tenant } = await supabase
+    .from('tenants').select('id, name').eq('slug', slug).maybeSingle()
+  if (!tenant) return { name: null, items: [] }
+  const tId = (tenant as any).id as string
+  const { data, error } = await supabase
+    .from('products')
+    .select('id, name, price, image_url, categories(name)')
+    .eq('tenant_id', tId)
+    .eq('status', 'ACTIVE')
+    .order('name', { ascending: true })
+  if (error) throw error
+  const items: PublicMenuItem[] = (data ?? []).map((p: any) => ({
+    id: p.id,
+    name: p.name,
+    price: Number(p.price ?? 0),
+    category: p.categories?.name ?? null,
+    description: null,
+    image_url: p.image_url ?? null,
+  }))
+  return { name: (tenant as any).name ?? null, items }
+}
+
+// ── División de Cuenta (módulo split_bill) ────────────────────
+export interface BillSplitShare { label: string; amount: number }
+export interface BillSplitRow {
+  id: string
+  tenant_id: string
+  tab_id: string | null
+  branch_id: string | null
+  total: number
+  tip: number
+  method: string
+  people: number
+  detail: BillSplitShare[]
+  created_at: string
+}
+export async function saveBillSplit(
+  tenantId: string,
+  input: { tab_id?: string | null; branch_id?: string | null; total: number; tip: number; method: string; people: number; detail: BillSplitShare[] },
+): Promise<void> {
+  const { error } = await supabase.from('bill_splits').insert({ tenant_id: tenantId, ...input })
+  if (error) throw error
+}
+export async function getBillSplits(tenantId: string, limit = 50): Promise<BillSplitRow[]> {
+  const { data, error } = await supabase
+    .from('bill_splits')
+    .select('id, tenant_id, tab_id, branch_id, total, tip, method, people, detail, created_at')
+    .eq('tenant_id', tenantId)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  if (error) throw error
+  return (data ?? []) as unknown as BillSplitRow[]
+}
+
 // ── Reservas (módulo reservations) ────────────────────────────
 export type ReservationStatus = 'PENDING' | 'CONFIRMED' | 'SEATED' | 'CANCELLED' | 'NO_SHOW'
 
