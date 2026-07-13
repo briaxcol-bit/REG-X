@@ -2,7 +2,6 @@ import { useState, useCallback } from 'react'
 import {
   getActiveOrderForTable,
   createRestaurantOrder,
-  addItemsToOrder,
   closeRestaurantOrder,
   type RestaurantOrderRow,
   type RestaurantOrderItemInput,
@@ -33,20 +32,16 @@ export function useRestaurantOrder() {
   ) => {
     setSubmitting(true)
     try {
-      if (order) {
-        // Cualquier mesero puede agregar a una mesa ya abierta; se registra quién.
-        await addItemsToOrder(order.id, items, waiterId, waiterName)
-      } else {
-        await createRestaurantOrder(tenantId, branchId, tableId, waiterId, waiterName, items)
-      }
-      // Refresh order from DB
+      // Cada envío a cocina = ticket KDS independiente.
+      // El POS consolida todos los tickets de la mesa para el cobro.
+      await createRestaurantOrder(tenantId, branchId, tableId, waiterId, waiterName, items)
       const updated = await getActiveOrderForTable(tenantId, tableId)
       setOrder(updated)
       return updated
     } finally {
       setSubmitting(false)
     }
-  }, [order])
+  }, [])
 
   const closeOrder = useCallback(async (tableId: string) => {
     if (!order) return

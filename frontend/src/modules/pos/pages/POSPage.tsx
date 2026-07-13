@@ -27,7 +27,7 @@ import { usePosPricing } from '@modules/pos/hooks/usePosPricing'
 import { useCashSession } from '@modules/pos/hooks/useCashSession'
 import { usePOSTerminal } from '@modules/pos/hooks/usePOSTerminal'
 import { useCreateSale } from '@modules/pos/hooks/useCreateSale'
-import { getPendingSales, getPOSTerminals, getActiveTableOrders, getActiveOrderForTable, type SaleHistoryRow, type RestaurantOrderRow, type TableRow } from '@lib/db'
+import { getPendingSales, getPOSTerminals, getActiveTableOrders, getAllActiveOrdersForTable, closeAllOrdersForTable, type SaleHistoryRow, type RestaurantOrderRow, type TableRow } from '@lib/db'
 import { TableMapModal } from '@modules/pos/components/TableMapModal'
 import { toast } from 'sonner'
 
@@ -299,30 +299,57 @@ export default function POSPage() {
     refetchInterval: 5_000,   // polling cada 5s como fallback
   })
 
-  // Realtime: actualizar cuentas de mesa al instante cuando un mesero envía orden
-  // Escuchamos orders + order_items sin filtro (más compatible con RLS de Supabase)
+  // Refs para evitar closures stale en los callbacks de Realtime
+  const tabsRef                  = useRef(tabs)
+  const handleLoadTableOrdersRef = useRef<((orders: RestaurantOrderRow[]) => void) | null>(null)
+  useEffect(() => { tabsRef.current = tabs }, [tabs])
+
+  // Realtime: actualiza la sidebar Y recarga el tab abierto si la mesa tiene uno
   useEffect(() => {
     if (!tenant?.tenantId) return
+
     const invalidate = () =>
       queryClient.invalidateQueries({ queryKey: ['active-table-orders'] })
 
+    // Cuando llega un evento de orders, recarga el tab abierto para esa mesa
+    const refreshTabForTable = async (tableId: string | null | undefined) => {
+      if (!tableId || !tenant?.tenantId) return
+      const openTab = tabsRef.current.find(t => t.tableId === tableId)
+      if (!openTab) return
+      try {
+        const orders = await getAllActiveOrdersForTable(tenant.tenantId, tableId)
+        handleLoadTableOrdersRef.current?.(orders)
+      } catch { /* silent */ }
+    }
+
     const channel = supabase
       .channel(`pos-table-orders-${tenant.tenantId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, invalidate)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, invalidate)
-      .subscribe((status) => {
-        // Si la suscripción falló, forzar un refetch inmediato
-        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          invalidate()
-        }
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
+        invalidate()
+        const tableId = (payload.new as any)?.table_id ?? (payload.old as any)?.table_id
+        refreshTabForTable(tableId)
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, () => {
+        invalidate()
+        // Para order_items no tenemos table_id directo — refrescamos todos los tabs de mesa abiertos
+        const tableIds = [...new Set(
+          tabsRef.current.filter(t => t.tableId).map(t => t.tableId!)
+        )]
+        tableIds.forEach(refreshTabForTable)
+      })
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') invalidate()
+      })
+
     return () => { supabase.removeChannel(channel) }
   }, [tenant?.tenantId, queryClient])
 
-  // Cargar cuenta de mesa en el POS
-  const handleLoadTableOrder = useCallback((order: RestaurantOrderRow) => {
-    const orderItems = order.order_items ?? []
-    const posItems = orderItems.map(item => ({
+  // Cargar cuenta de mesa en el POS — consolida TODAS las comandas activas de la mesa
+  const handleLoadTableOrders = useCallback((orders: RestaurantOrderRow[]) => {
+    if (orders.length === 0) return
+    const firstOrder = orders[0]!
+    const allItems   = orders.flatMap(o => o.order_items ?? [])
+    const posItems   = allItems.map(item => ({
       productId:      item.product_id,
       sku:            item.products?.sku   ?? item.sku   ?? '',
       name:           item.products?.name  ?? item.name  ?? 'Producto',
@@ -335,38 +362,36 @@ export default function POSPage() {
       taxAmount:      0,
       addedByName:    (item as any).added_by_name ?? undefined,
     }))
-    const waiterName = orderItems.map(i => (i as any).added_by_name).find(Boolean) ?? undefined
-    const tableLabel = `${order.tables?.number ?? '?'}${order.tables?.name ? ` · ${order.tables.name}` : ''}`
+    const waiterName = allItems.map(i => (i as any).added_by_name).find(Boolean) ?? undefined
+    const tableLabel = `${firstOrder.tables?.number ?? '?'}${firstOrder.tables?.name ? ` · ${firstOrder.tables.name}` : ''}`
     loadTableOrder({
-      tableId:           order.table_id!,
-      restaurantOrderId: order.id,
-      label:             tableLabel,
+      tableId:    firstOrder.table_id!,
+      label:      tableLabel,
       waiterName,
-      items:             posItems,
+      items:      posItems,
     })
     toast.success(`${tableLabel} cargada en POS`)
   }, [loadTableOrder])
+
+  // Mantener el ref actualizado para que el callback de Realtime siempre use la versión más reciente
+  useEffect(() => { handleLoadTableOrdersRef.current = handleLoadTableOrders }, [handleLoadTableOrders])
 
   // Selección desde el mapa de mesas en el modal
   const handleTableSelectFromMap = useCallback(async (table: TableRow) => {
     const tableLabel = `${table.number ?? '?'}${table.name ? ` · ${table.name}` : ''}`
     if (table.status === 'OCCUPIED') {
       try {
-        const order = await getActiveOrderForTable(tenant!.tenantId, table.id)
-        if (order) {
-          handleLoadTableOrder(order)
+        const orders = await getAllActiveOrdersForTable(tenant!.tenantId, table.id)
+        if (orders.length > 0) {
+          handleLoadTableOrders(orders)
           return
         }
       } catch {}
     }
-    // Mesa disponible / sin orden: abrir una tab vacía para esa mesa
-    loadTableOrder({
-      tableId:    table.id,
-      label:      tableLabel,
-      items:      [],
-    })
+    // Mesa disponible / sin orden activa: abrir una tab vacía para esa mesa
+    loadTableOrder({ tableId: table.id, label: tableLabel, items: [] })
     toast.success(`${tableLabel} abierta en POS`)
-  }, [tenant, loadTableOrder, handleLoadTableOrder])
+  }, [tenant, loadTableOrder, handleLoadTableOrders])
 
   const { data: allCategories = [] } = useCategories()
 
@@ -677,19 +702,22 @@ export default function POSPage() {
             </button>
           ))}
 
-          {/* Cuentas de mesa activas — el cajero las carga para cobrar */}
+          {/* Cuentas de mesa activas — deduplicadas por mesa, totales consolidados */}
           {tableOrders
-            .filter(o => !tabs.some(t => t.restaurantOrderId === o.id))
-            .map(order => {
-              const mesaLabel = `${order.tables?.number ?? '?'}${order.tables?.name ? ` · ${order.tables.name}` : ''}`
-              const mesaTotal = (order.order_items ?? []).reduce(
-                (s, i) => s + (i.unit_price ?? i.products?.price ?? 0) * i.quantity, 0,
-              )
+            .filter((o, idx, arr) => arr.findIndex(x => x.table_id === o.table_id) === idx)
+            .filter(o => !tabs.some(t => t.tableId === o.table_id))
+            .map(representative => {
+              const mesaLabel   = `${representative.tables?.number ?? '?'}${representative.tables?.name ? ` · ${representative.tables.name}` : ''}`
+              // Sumar ítems de TODAS las comandas activas de esta mesa
+              const ordersForTable = tableOrders.filter(x => x.table_id === representative.table_id)
+              const mesaTotal   = ordersForTable
+                .flatMap(o => o.order_items ?? [])
+                .reduce((s, i) => s + (i.unit_price ?? i.products?.price ?? 0) * i.quantity, 0)
               return (
                 <button
-                  key={order.id}
-                  onClick={() => handleLoadTableOrder(order)}
-                  title={`Cargar ${mesaLabel} en POS`}
+                  key={representative.table_id}
+                  onClick={() => handleLoadTableOrders(ordersForTable)}
+                  title={`Cargar ${mesaLabel} en POS (${ordersForTable.length} comanda${ordersForTable.length !== 1 ? 's' : ''})`}
                   className="group flex items-center gap-2 shrink-0 border-b-2 border-transparent px-3 py-2.5 text-sm font-medium text-grafito-500 hover:text-grafito-900 dark:hover:text-white hover:border-brand-400 transition-colors whitespace-nowrap"
                 >
                   <UtensilsCrossed className="h-3.5 w-3.5 text-brand-500 shrink-0" />
@@ -925,9 +953,14 @@ export default function POSPage() {
           {/* Acciones */}
           <div className="px-3 pb-3 pt-1 space-y-2">
             {/* Cerrar pestaña de mesa — solo después de cobrar (carrito vacío y es una mesa) */}
-            {activeTab?.restaurantOrderId && items.length === 0 && (
+            {activeTab?.tableId && items.length === 0 && (
               <button
-                onClick={() => removeTab(activeTab.id)}
+                onClick={async () => {
+                  if (activeTab.tableId && tenant?.tenantId) {
+                    try { await closeAllOrdersForTable(tenant.tenantId, activeTab.tableId) } catch { /* silent */ }
+                  }
+                  removeTab(activeTab.id)
+                }}
                 className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-emerald-200 dark:border-emerald-500/30 py-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors"
               >
                 <X className="h-3.5 w-3.5" />
