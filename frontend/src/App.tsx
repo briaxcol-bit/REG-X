@@ -9,6 +9,7 @@ import { queryClient } from '@lib/query-client'
 import { supabase } from '@lib/supabase'
 import { resolveUserContext } from '@lib/db'
 import { startOfflineSalesSync } from '@lib/offline-sync'
+import '@lib/pwa-install' // captura beforeinstallprompt desde el arranque (botón en Ajustes → Aplicación)
 import { useAuthStore } from '@store/auth.store'
 import { usePOSStore } from '@store/pos.store'
 

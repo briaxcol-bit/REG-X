@@ -80,14 +80,29 @@ export function TopBar({ onMenuClick }: { onMenuClick?: () => void } = {}) {
       const isOut = qty === 0
       const min = Number(p?.min_stock ?? 0)
 
-      new Notification(isOut ? '🚨 Producto agotado — REG-X' : '⚠️ Stock bajo — REG-X', {
+      // En Android/PWA `new Notification()` es constructor ilegal: hay que usar
+      // el service worker. Nunca dejar que una notificación tumbe la app.
+      const title = isOut ? '🚨 Producto agotado — REG-X' : '⚠️ Stock bajo — REG-X'
+      const options = {
         body: isOut
           ? `"${p?.name ?? 'Producto'}" se ha agotado en ${branch?.branchName ?? 'tu sucursal'}.`
           : `"${p?.name ?? 'Producto'}" tiene solo ${qty} ud (mínimo: ${min}) en ${branch?.branchName ?? 'tu sucursal'}.`,
-        icon:   '/favicon.ico',
+        icon:   '/favicon.png',
         tag:    row.id,
         silent: false,
-      })
+      }
+      void (async () => {
+        try {
+          const reg = 'serviceWorker' in navigator
+            ? await navigator.serviceWorker.getRegistration()
+            : undefined
+          if (reg?.showNotification) {
+            await reg.showNotification(title, options)
+          } else {
+            new Notification(title, options)
+          }
+        } catch { /* sin soporte de notificaciones: seguir sin romper nada */ }
+      })()
     })
 
     // Clean up: remove IDs from pushNotifiedRef that are no longer in alerts

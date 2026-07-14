@@ -3,7 +3,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   Settings, Shield, Building, Bell, Save, Loader2, Upload, Info,
+  MonitorDown, CheckCircle2, Smartphone, Share,
 } from 'lucide-react'
+import {
+  isInstalled, canInstall, isIOS, promptInstall, onInstallAvailabilityChange,
+} from '@lib/pwa-install'
 import { cn } from '@shared/utils/cn'
 import { useAuthStore } from '@store/auth.store'
 import {
@@ -132,6 +136,7 @@ export default function SettingsPage() {
     { id: 'general',       name: 'General',          icon: Settings },
     { id: 'roles',         name: 'Roles y Permisos', icon: Shield   },
     { id: 'notifications', name: 'Notificaciones',   icon: Bell     },
+    { id: 'app',           name: 'Aplicación',       icon: MonitorDown },
   ]
 
   return (
@@ -173,9 +178,76 @@ export default function SettingsPage() {
               {activeTab === 'general'       && <GeneralTab       tenant={tenant} tenantId={tenantId!} qc={qc} />}
               {activeTab === 'roles'         && <RolesTab />}
               {activeTab === 'notifications' && <NotificationsTab tenant={tenant} tenantId={tenantId!} qc={qc} />}
+              {activeTab === 'app'           && <AppInstallTab />}
             </>
           )}
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Tab: Aplicación (instalar PWA) ────────────────────────────────────────────
+function AppInstallTab() {
+  const [, forceRender] = useState(0)
+  const [installing, setInstalling] = useState(false)
+
+  useEffect(() => onInstallAvailabilityChange(() => forceRender(n => n + 1)), [])
+
+  const installed = isInstalled()
+  const available = canInstall()
+
+  const handleInstall = async () => {
+    setInstalling(true)
+    try {
+      const ok = await promptInstall()
+      toast[ok ? 'success' : 'info'](ok
+        ? 'REG-X instalada: búscala en tu escritorio o pantalla de inicio'
+        : 'Instalación cancelada')
+    } finally {
+      setInstalling(false)
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="rounded-2xl border border-grafito-200 dark:border-white/5 bg-white dark:bg-grafito-900/60 p-6 space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="rounded-xl bg-brand-500/10 p-2.5"><MonitorDown className="h-5 w-5 text-brand-500" /></div>
+          <div>
+            <h3 className="font-bold text-grafito-900 dark:text-white">Instalar REG-X como aplicación</h3>
+            <p className="text-sm text-grafito-500 dark:text-grafito-400">
+              Ventana propia, ícono en el escritorio o pantalla de inicio, y arranque directo al POS.
+            </p>
+          </div>
+        </div>
+
+        {installed ? (
+          <div className="flex items-center gap-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-4 py-3 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+            <CheckCircle2 className="h-4 w-4" /> Ya estás usando la aplicación instalada
+          </div>
+        ) : available ? (
+          <button
+            onClick={handleInstall}
+            disabled={installing}
+            className="inline-flex items-center gap-2 rounded-xl bg-brand-500 px-5 py-3 text-sm font-bold text-white hover:bg-brand-600 disabled:opacity-50 transition-colors"
+          >
+            {installing ? <Loader2 className="h-4 w-4 animate-spin" /> : <MonitorDown className="h-4 w-4" />}
+            Instalar aplicación
+          </button>
+        ) : isIOS() ? (
+          <div className="rounded-xl bg-grafito-50 dark:bg-white/5 border border-grafito-200 dark:border-white/10 p-4 space-y-2 text-sm text-grafito-600 dark:text-grafito-300">
+            <p className="font-semibold flex items-center gap-2"><Smartphone className="h-4 w-4" /> En iPhone/iPad la instalación es manual:</p>
+            <p className="flex items-center gap-1.5">1. Toca el botón <Share className="h-3.5 w-3.5 inline" /> <strong>Compartir</strong> de Safari</p>
+            <p>2. Elige <strong>"Agregar a pantalla de inicio"</strong></p>
+          </div>
+        ) : (
+          <div className="rounded-xl bg-grafito-50 dark:bg-white/5 border border-grafito-200 dark:border-white/10 p-4 text-sm text-grafito-500 dark:text-grafito-400">
+            La instalación se ofrece en <strong>Chrome o Edge</strong> sobre la versión publicada (HTTPS).
+            Si ya la instalaste antes, este aviso es normal. En Chrome también puedes usar el ícono
+            de instalar en la barra de direcciones.
+          </div>
+        )}
       </div>
     </div>
   )
