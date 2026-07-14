@@ -243,4 +243,22 @@ export async function deleteTenant(tenantId: string): Promise<void> {
 }
 
 /** Cambia el plan de un tenant (sincroniza la suscripcion). */
-ex
+export async function setTenantPlan(
+  tenantId: string,
+  plan: 'FREE' | 'BASIC' | 'PROFESSIONAL' | 'ENTERPRISE',
+): Promise<void> {
+  const { error } = await (supabase.rpc as any)('set_tenant_plan', {
+    p_tenant_id: tenantId,
+    p_plan: plan,
+  })
+  if (error) throw error
+}
+
+/** Activa o desactiva un tenant (y su suscripcion). */
+export async function setTenantActive(tenantId: string, active: boolean): Promise<void> {
+  const { error } = await (supabase.rpc as any)('set_tenant_active', {
+    p_tenant_id: tenantId,
+    p_active: active,
+  })
+  if (error) throw error
+}
