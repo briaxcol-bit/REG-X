@@ -838,11 +838,10 @@ export default function POSPage() {
           <div className="flex items-center gap-1 shrink-0">
             <button
               onClick={() => setMesasOpen(true)}
-              className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold text-grafito-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 hover:text-brand-600 dark:hover:text-brand-400 transition-colors"
+              className="rounded-lg p-1.5 text-grafito-400 hover:bg-brand-50 dark:hover:bg-brand-500/10 hover:text-brand-500 transition-colors"
               title="Ver mapa de mesas"
             >
               <UtensilsCrossed className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Mesas</span>
             </button>
             {isManager && (
               <button

@@ -358,23 +358,25 @@ export function TopBar({ onMenuClick }: { onMenuClick?: () => void } = {}) {
                     )}
                   </div>
 
-                  {/* Menu items */}
-                  <div className="p-1.5 space-y-0.5">
-                    <button
-                      onClick={() => { setUserMenuOpen(false); navigate('/settings') }}
-                      className="w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-grafito-700 dark:text-grafito-200 hover:bg-grafito-100 dark:hover:bg-white/5 transition-colors"
-                    >
-                      <User className="h-4 w-4 text-grafito-400" />
-                      Mi Perfil
-                    </button>
-                    <button
-                      onClick={() => { setUserMenuOpen(false); navigate('/settings') }}
-                      className="w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-grafito-700 dark:text-grafito-200 hover:bg-grafito-100 dark:hover:bg-white/5 transition-colors"
-                    >
-                      <Settings className="h-4 w-4 text-grafito-400" />
-                      Configuracion
-                    </button>
-                  </div>
+                  {/* Menu items — ocultos para WAITER que no tiene acceso a /settings */}
+                  {profile?.businessRole !== 'WAITER' && (
+                    <div className="p-1.5 space-y-0.5">
+                      <button
+                        onClick={() => { setUserMenuOpen(false); navigate('/settings') }}
+                        className="w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-grafito-700 dark:text-grafito-200 hover:bg-grafito-100 dark:hover:bg-white/5 transition-colors"
+                      >
+                        <User className="h-4 w-4 text-grafito-400" />
+                        Mi Perfil
+                      </button>
+                      <button
+                        onClick={() => { setUserMenuOpen(false); navigate('/settings') }}
+                        className="w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-grafito-700 dark:text-grafito-200 hover:bg-grafito-100 dark:hover:bg-white/5 transition-colors"
+                      >
+                        <Settings className="h-4 w-4 text-grafito-400" />
+                        Configuracion
+                      </button>
+                    </div>
+                  )}
 
                   <div className="p-1.5 border-t border-grafito-100 dark:border-white/5">
                     <button
