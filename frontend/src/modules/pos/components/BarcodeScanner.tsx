@@ -2,11 +2,17 @@
  * BarcodeScanner — escáner de código de barras para POS.
  *
  * Modos:
- *  · camera   — usa BarcodeDetector API (Chrome 83+, Android Chrome) con cámara trasera.
- *               Si el navegador no soporta BarcodeDetector, muestra aviso y redirige a manual.
- *  · keyboard — campo de texto; acepta tanto teclado físico como pistola USB.
+ *  · camera   — usa la BarcodeDetector API con cámara trasera. En Chrome Android/Desktop
+ *               usa el detector nativo; en iOS Safari (y otros sin soporte) se activa el
+ *               polyfill WASM importado arriba, así que la cámara funciona igual.
+ *               Requiere HTTPS para acceder a la cámara.
+ *  · keyboard — campo de texto; acepta tanto teclado físico como pistola USB/Bluetooth.
  */
 
+// Polyfill de BarcodeDetector (WASM) para navegadores sin soporte nativo,
+// principalmente iOS Safari. En Chrome Android/Desktop usa el nativo.
+// Debe importarse antes de leer window.BarcodeDetector.
+import 'react-barcode-scanner/polyfill'
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Barcode, Keyboard, Camera, CameraOff, Loader2, AlertCircle } from 'lucide-react'
@@ -288,7 +294,8 @@ export function BarcodeScanner({ open, onClose, onScan }: BarcodeScannerProps) {
                 <div className="mt-3 flex items-start gap-2 rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 p-3">
                   <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
                   <p className="text-xs text-amber-700 dark:text-amber-400">
-                    El modo cámara requiere Chrome en Android o Chrome Desktop (v83+).
+                    Este navegador no permitió abrir la cámara. Usa el modo Manual / Pistola,
+                    o abre la app en Safari (iOS) o Chrome (Android) sobre una conexión segura (HTTPS).
                   </p>
                 </div>
               )}

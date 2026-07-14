@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { Menu } from 'lucide-react'
 import { Outlet } from 'react-router-dom'
 import { Sidebar } from '@shared/components/Sidebar'
 import { TopBar } from '@shared/components/TopBar'
@@ -37,17 +36,6 @@ export function AppLayout({ children }: AppLayoutProps) {
           {children ?? <Outlet />}
         </main>
       </div>
-
-      {/* Botón flotante del menú — solo móvil */}
-      {!mobileNavOpen && (
-        <button
-          onClick={() => setMobileNavOpen(true)}
-          className="fixed bottom-5 left-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-brand-500 text-white shadow-2xl shadow-brand-500/40 active:scale-95 transition-transform lg:hidden"
-          title="Abrir menú"
-        >
-          <Menu className="h-6 w-6" />
-        </button>
-      )}
     </div>
   )
 }

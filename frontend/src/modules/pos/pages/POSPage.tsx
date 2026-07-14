@@ -565,6 +565,11 @@ export default function POSPage() {
         onClose={() => setCustomerPickerOpen(false)}
         onSelect={(id, name) => { setCustomer(id); setCustomerName(name); setCustomerPickerOpen(false) }}
       />
+      <BarcodeScanner
+        open={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onScan={handleBarcodeScanned}
+      />
 
       {/* ══════════════ LEFT: Productos ══════════════════════ */}
       <div className="flex flex-1 flex-col overflow-hidden">

@@ -37,10 +37,25 @@ export default defineConfig({
         prefer_related_applications: false,
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // .wasm incluido para precachear el motor del escáner de códigos (zxing-wasm)
+        // cuando Vite lo empaqueta al origen. Así el escáner funciona offline.
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,wasm}'],
+        // El .wasm del escáner ronda 1–2 MB; subimos el límite de precache (default 2 MiB).
+        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api/],
         runtimeCaching: [
+          {
+            // Si zxing-wasm carga su .wasm desde CDN (jsDelivr/unpkg/fastly),
+            // lo guardamos tras el primer uso online para que luego funcione offline.
+            urlPattern: /^https:\/\/(?:cdn\.jsdelivr\.net|fastly\.jsdelivr\.net|unpkg\.com)\/npm\/zxing-wasm.*\.wasm$/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'zxing-wasm-cache',
+              expiration: { maxEntries: 4, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
           {
             urlPattern: /^https:\/\/.*\.supabase\.co\/rest\/.*/i,
             handler: 'NetworkFirst',
