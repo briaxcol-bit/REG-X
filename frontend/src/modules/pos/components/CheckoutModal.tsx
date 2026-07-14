@@ -10,7 +10,8 @@ import { useCreateSale } from '@modules/pos/hooks/useCreateSale'
 import { useCashSession } from '@modules/pos/hooks/useCashSession'
 import { ReceiptTemplate, type ReceiptData } from './ReceiptTemplate'
 import { closeAllRestaurantOrdersForTable, getCustomerById, createTip, type CustomerRow } from '@lib/db'
-import { openCashDrawer, linkCashDrawer, cashDrawerLinked, cashDrawerSupported } from '@lib/cash-drawer'
+import { openCashDrawer, linkCashDrawer, cashDrawerLinked, cashDrawerSupported, getCashDrawerBridgeUrl } from '@lib/cash-drawer'
+import { buildEscPosReceipt, bytesToBase64 } from '@lib/escpos'
 
 // ── Métodos de pago ────────────────────────────────────────────────────────────
 type PaymentMethod = 'CASH' | 'CARD' | 'NEQUI' | 'DAVIPLATA' | 'TRANSFER' | 'CREDIT' | 'GIFT_CARD'
@@ -270,9 +271,46 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
     }
   }
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     if (!lastReceipt) return
     const r = lastReceipt
+
+    // ── Impresión directa ESC/POS (sin diálogo) ──────────────
+    const bridgeUrl = getCashDrawerBridgeUrl()
+    if (bridgeUrl) {
+      try {
+        const escBytes = buildEscPosReceipt({
+          businessName:  r.businessName,
+          orderNumber:   r.orderNumber,
+          cashierName:   r.cashierName,
+          waiterName:    r.waiterName,
+          customerName:  r.customer?.name,
+          date:          r.date.toLocaleString('es-CO'),
+          items: r.items.map(it => ({
+            name:      it.name,
+            quantity:  it.qty,
+            unitPrice: it.price,
+            total:     it.total,
+          })),
+          subtotal:      r.subtotal,
+          taxTotal:      r.taxTotal,
+          discountTotal: r.discountTotal,
+          total:         r.total,
+          payments: [{ method: r.paymentMethod, amount: r.total }],
+          change:        r.change,
+        })
+        const res = await fetch(`${bridgeUrl}/print`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data: bytesToBase64(escBytes) }),
+          signal: AbortSignal.timeout(5000),
+        })
+        if (res.ok) return // impresión exitosa — no hace falta el navegador
+        toast.error('Error al imprimir — usando impresora del navegador')
+      } catch {
+        toast.error('Puente no disponible — usando impresora del navegador')
+      }
+    }
     const fmt = (n: number) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: r.currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n)
     const dateStr = r.date.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' })
     const timeStr = r.date.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' })

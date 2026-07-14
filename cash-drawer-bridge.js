@@ -55,6 +55,47 @@ const server = http.createServer((req, res) => {
     return
   }
 
+  // POST /print — impresión directa ESC/POS (sin diálogo del navegador)
+  if (req.url === '/print' && req.method === 'POST') {
+    let body = ''
+    req.on('data', chunk => body += chunk)
+    req.on('end', () => {
+      let buffer
+      try {
+        const payload = JSON.parse(body)
+        buffer = Buffer.from(payload.data, 'base64')
+      } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: false, error: 'JSON inválido' }))
+        return
+      }
+
+      const socket = new net.Socket()
+      let done = false
+      socket.setTimeout(4000)
+
+      socket.connect(PRINTER_PORT, PRINTER_IP, () => {
+        socket.write(buffer, () => {
+          socket.destroy()
+          if (!done) {
+            done = true
+            console.log(`[${timestamp()}] Recibo impreso → ${PRINTER_IP}:${PRINTER_PORT} (${buffer.length} bytes)`)
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: true }))
+          }
+        })
+      })
+      socket.on('timeout', () => {
+        socket.destroy()
+        if (!done) { done = true; res.writeHead(504); res.end(JSON.stringify({ ok: false, error: 'Timeout' })) }
+      })
+      socket.on('error', e => {
+        if (!done) { done = true; res.writeHead(500); res.end(JSON.stringify({ ok: false, error: e.message })) }
+      })
+    })
+    return
+  }
+
   // POST /open — abrir cajón
   if (req.url === '/open' && req.method === 'POST') {
     const socket = new net.Socket()
