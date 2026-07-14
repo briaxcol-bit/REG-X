@@ -3,8 +3,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   Settings, Shield, Building, Bell, Save, Loader2, Upload, Info,
-  MonitorDown, CheckCircle2, Smartphone, Share,
+  MonitorDown, CheckCircle2, Smartphone, Share, CircleDollarSign, Wifi, WifiOff,
 } from 'lucide-react'
+import { getCashDrawerBridgeUrl, setCashDrawerBridgeUrl, cashDrawerBridgeOnline, openCashDrawerNetwork } from '@lib/cash-drawer'
 import {
   isInstalled, canInstall, isIOS, promptInstall, onInstallAvailabilityChange,
 } from '@lib/pwa-install'
@@ -136,6 +137,7 @@ export default function SettingsPage() {
     { id: 'general',       name: 'General',          icon: Settings },
     { id: 'roles',         name: 'Roles y Permisos', icon: Shield   },
     { id: 'notifications', name: 'Notificaciones',   icon: Bell     },
+    { id: 'hardware',      name: 'Hardware',         icon: CircleDollarSign },
     { id: 'app',           name: 'Aplicación',       icon: MonitorDown },
   ]
 
@@ -178,6 +180,7 @@ export default function SettingsPage() {
               {activeTab === 'general'       && <GeneralTab       tenant={tenant} tenantId={tenantId!} qc={qc} />}
               {activeTab === 'roles'         && <RolesTab />}
               {activeTab === 'notifications' && <NotificationsTab tenant={tenant} tenantId={tenantId!} qc={qc} />}
+              {activeTab === 'hardware'      && <HardwareTab />}
               {activeTab === 'app'           && <AppInstallTab />}
             </>
           )}
@@ -542,6 +545,95 @@ function NotificationsTab({ tenant, tenantId, qc }: {
         <Toggle checked={newSale}   onChange={setNewSale}   label="Cada venta"                   desc="Notificación por cada venta registrada" />
       </div>
       <SaveBar dirty={dirty} saving={save.isPending} onSave={() => save.mutate()} />
+    </Panel>
+  )
+}
+
+// ── Tab: Hardware (cajón monedero, impresora) ──────────────────────────────────
+function HardwareTab() {
+  const [bridgeUrl, setBridgeUrl] = useState(getCashDrawerBridgeUrl)
+  const [status, setStatus] = useState<'idle' | 'checking' | 'online' | 'offline'>('idle')
+  const [testing, setTesting] = useState(false)
+
+  const handleSave = () => {
+    setCashDrawerBridgeUrl(bridgeUrl)
+    toast.success('Configuración guardada')
+  }
+
+  const handleCheck = async () => {
+    setCashDrawerBridgeUrl(bridgeUrl)
+    setStatus('checking')
+    const ok = await cashDrawerBridgeOnline()
+    setStatus(ok ? 'online' : 'offline')
+  }
+
+  const handleTest = async () => {
+    setCashDrawerBridgeUrl(bridgeUrl)
+    setTesting(true)
+    const ok = await openCashDrawerNetwork()
+    setTesting(false)
+    toast[ok ? 'success' : 'error'](ok ? '¡Cajón abierto!' : 'No se pudo abrir el cajón — verifica la IP y que el puente esté corriendo')
+  }
+
+  return (
+    <Panel title="Hardware">
+      <div className="space-y-6">
+        {/* Instrucciones puente */}
+        <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4 space-y-2 text-sm text-grafito-700 dark:text-grafito-200">
+          <p className="font-semibold text-blue-600 dark:text-blue-400">Cajón monedero por Ethernet</p>
+          <p>Si tu cajón está conectado por <strong>RJ11 a la impresora</strong> y la impresora va por <strong>Ethernet/WiFi</strong> (incluye POS Android), necesitas correr el puente en <strong>cualquier PC de la misma red</strong>:</p>
+          <ol className="list-decimal pl-5 space-y-1 text-xs">
+            <li>En el PC, abre <strong>CMD</strong> y ve a la carpeta del proyecto: <code className="bg-grafito-100 dark:bg-white/10 px-1 rounded">cd ruta\REG-X</code></li>
+            <li>Corre: <code className="bg-grafito-100 dark:bg-white/10 px-1 rounded">node cash-drawer-bridge.js 192.168.X.X</code> (IP de la impresora)</li>
+            <li>El programa mostrará la <strong>URL de red</strong> para Android, ej: <code className="bg-grafito-100 dark:bg-white/10 px-1 rounded">http://192.168.1.5:8765</code></li>
+            <li>Copia esa URL en el campo de abajo y guarda</li>
+            <li>Deja la ventana del CMD abierta durante el turno</li>
+          </ol>
+        </div>
+
+        {/* URL del puente */}
+        <div className="space-y-2">
+          <label className="text-xs font-semibold uppercase tracking-wider text-grafito-500">URL del puente local</label>
+          <div className="flex gap-2">
+            <input
+              value={bridgeUrl}
+              onChange={e => { setBridgeUrl(e.target.value); setStatus('idle') }}
+              placeholder="http://localhost:8765"
+              className="flex-1 rounded-xl border border-grafito-200 dark:border-white/10 bg-white dark:bg-grafito-800 px-3 py-2 text-sm text-grafito-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+            />
+            <button
+              onClick={handleCheck}
+              disabled={status === 'checking'}
+              className="flex items-center gap-1.5 rounded-xl border border-grafito-200 dark:border-white/10 px-3 py-2 text-sm font-semibold text-grafito-600 dark:text-grafito-300 hover:bg-grafito-100 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
+            >
+              {status === 'checking' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wifi className="h-4 w-4" />}
+              Verificar
+            </button>
+          </div>
+          {status === 'online'  && <p className="flex items-center gap-1.5 text-xs text-emerald-500"><Wifi className="h-3 w-3" /> Puente conectado — cajón listo</p>}
+          {status === 'offline' && <p className="flex items-center gap-1.5 text-xs text-red-500"><WifiOff className="h-3 w-3" /> No se detectó el puente — ¿está corriendo?</p>}
+          <p className="text-[11px] text-grafito-400">Deja vacío para usar Web Serial (USB directo al PC)</p>
+        </div>
+
+        {/* Acciones */}
+        <div className="flex gap-3">
+          <button
+            onClick={handleSave}
+            className="flex items-center gap-2 rounded-xl bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-600 transition-colors"
+          >
+            <Save className="h-4 w-4" />
+            Guardar
+          </button>
+          <button
+            onClick={handleTest}
+            disabled={testing}
+            className="flex items-center gap-2 rounded-xl border border-grafito-200 dark:border-white/10 px-4 py-2.5 text-sm font-semibold text-grafito-700 dark:text-grafito-200 hover:bg-grafito-100 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
+          >
+            {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CircleDollarSign className="h-4 w-4" />}
+            Probar cajón
+          </button>
+        </div>
+      </div>
     </Panel>
   )
 }

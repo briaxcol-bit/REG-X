@@ -135,17 +135,18 @@ export function CompleteComandaModal({ open, onClose, sale, currency }: Complete
   <div class="center bold" style="margin-top:8px">¡Gracias por su compra!</div>
 </body></html>`
 
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
-    const url  = URL.createObjectURL(blob)
-    const win  = window.open(url, '_blank', 'width=420,height=800,scrollbars=yes')
-    if (!win) { URL.revokeObjectURL(url); alert('Permite ventanas emergentes para imprimir.'); return }
-    win.onload = () => {
-      setTimeout(() => {
-        win.focus()
-        win.print()
-        win.onafterprint = () => { win.close(); URL.revokeObjectURL(url) }
-      }, 250)
-    }
+    // iframe oculto — funciona en Android sin necesitar popups
+    const iframe = document.createElement('iframe')
+    iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none;'
+    document.body.appendChild(iframe)
+    const doc = iframe.contentDocument ?? iframe.contentWindow?.document
+    if (!doc) { document.body.removeChild(iframe); return }
+    doc.open(); doc.write(html); doc.close()
+    setTimeout(() => {
+      iframe.contentWindow?.focus()
+      iframe.contentWindow?.print()
+      setTimeout(() => document.body.removeChild(iframe), 1000)
+    }, 300)
   }
 
   return (
