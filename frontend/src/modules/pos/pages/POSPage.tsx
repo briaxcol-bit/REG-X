@@ -537,6 +537,15 @@ export default function POSPage() {
           isCommandsOnly={isCommandsOnly}
         />
       )}
+      <CheckoutModal
+        open={checkoutOpen}
+        onClose={() => setCheckoutOpen(false)}
+        total={grandTotal}
+        tip={tipAmount}
+        currency={currency}
+        tableId={activeTab?.tableId}
+        restaurantOrderId={activeTab?.restaurantOrderId}
+      />
       <SalesHistoryModal open={historyOpen} onClose={() => setHistoryOpen(false)} activeRegister={activeRegister ?? null} />
       {isManager && <ManageTerminalsModal open={terminalsOpen} onClose={() => setTerminalsOpen(false)} />}
       <CompleteComandaModal
@@ -551,6 +560,11 @@ export default function POSPage() {
           onTableSelect={handleTableSelectFromMap}
         />
       )}
+      <CustomerPicker
+        open={customerPickerOpen}
+        onClose={() => setCustomerPickerOpen(false)}
+        onSelect={(id, name) => { setCustomer(id); setCustomerName(name); setCustomerPickerOpen(false) }}
+      />
 
       {/* ══════════════ LEFT: Productos ══════════════════════ */}
       <div className="flex flex-1 flex-col overflow-hidden">
@@ -800,7 +814,7 @@ export default function POSPage() {
           <div className="flex flex-col min-w-0 gap-0.5">
             <div className="flex items-center gap-2">
               <ShoppingCart className="h-4 w-4 text-brand-500 shrink-0" />
-              <span className="text-sm font-bold text-grafito-900 dark:text-white">
+              <span className="text-sm font-bold text-grafito-900 dark:text-white whitespace-nowrap">
                 {tabs.find(t => t.id === activeTabId)?.label ?? 'Venta actual'}
               </span>
               {itemCount > 0 && (
@@ -1022,7 +1036,7 @@ export default function POSPage() {
       >
         <ShoppingCart className="h-6 w-6" />
         {itemCount > 0 && (
-          <span className="absolute -top-1 -right-1 flex h-6 min-w-6 items-center justify-center rounded-full bg-white px-1 text-xs font-black text-brand-600 shadow">
+          <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-white text-[10px] font-black text-brand-500">
             {itemCount}
           </span>
         )}

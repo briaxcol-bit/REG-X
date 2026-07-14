@@ -140,16 +140,6 @@ export function POSLayout({ children }: POSLayoutProps) {
                     </p>
                   </div>
 
-                  {/* Inventario (movimientos) */}
-                  <Link
-                    to="/inventory/movements"
-                    onClick={() => setMenuOpen(false)}
-                    className="flex items-center gap-2.5 px-3 py-2.5 text-xs font-medium text-grafito-600 dark:text-grafito-300 hover:bg-grafito-50 dark:hover:bg-white/5 transition-colors"
-                  >
-                    <Boxes className="h-4 w-4 text-grafito-400" />
-                    Movimientos de inventario
-                  </Link>
-
                   {/* Cerrar sesión */}
                   <button
                     onClick={handleLogout}

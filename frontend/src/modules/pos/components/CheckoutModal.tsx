@@ -9,7 +9,7 @@ import { cn } from '@shared/utils/cn'
 import { useCreateSale } from '@modules/pos/hooks/useCreateSale'
 import { useCashSession } from '@modules/pos/hooks/useCashSession'
 import { ReceiptTemplate, type ReceiptData } from './ReceiptTemplate'
-import { closeRestaurantOrder, getCustomerById, createTip, type CustomerRow } from '@lib/db'
+import { closeAllRestaurantOrdersForTable, getCustomerById, createTip, type CustomerRow } from '@lib/db'
 import { openCashDrawer, linkCashDrawer, cashDrawerLinked, cashDrawerSupported } from '@lib/cash-drawer'
 
 // ── Métodos de pago ────────────────────────────────────────────────────────────
@@ -182,9 +182,13 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
         subtotal:         subtotalAmt,
         tax_total:        taxTotalAmt,
         discount_total:   discountAmt,
-        total:            saleTotal,
+        total:             saleTotal,
         currency,
-        cash_register_id: activeRegister?.id,
+        cash_register_id:  activeRegister?.id,
+        // Órdenes de restaurante: la comida ya fue preparada — no bloquear por stock insuficiente.
+        // Usamos tableId (siempre presente en tabs de mesa) en lugar de restaurantOrderId
+        // que puede ser undefined cuando hay múltiples comandas activas.
+        skip_stock_check:  !!(tableId || restaurantOrderId),
       })
 
       // Abrir el cajón monedero en ventas en efectivo (silencioso si no está vinculado)
@@ -206,20 +210,23 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
         }
       }
 
-      // Cerrar orden de restaurante si la venta viene de una mesa
-      if (restaurantOrderId && tableId) {
+      // Cerrar TODAS las órdenes activas de la mesa y liberarla
+      if (tableId && tenant?.tenantId) {
         try {
-          await closeRestaurantOrder(restaurantOrderId, tableId)
+          await closeAllRestaurantOrdersForTable(tenant.tenantId, tableId)
         } catch (e) {
-          console.warn('No se pudo cerrar la orden de restaurante:', e)
+          console.warn('No se pudo cerrar las órdenes de restaurante:', e)
         }
       }
 
       // Avisar productos que quedan agotados tras la venta
-      const agotados = items.filter(it => it.stock - it.quantity <= 0)
-      agotados.forEach(it => {
-        toast.warning(`"${it.name}" quedó agotado en inventario.`, { duration: 5000 })
-      })
+      // (solo en ventas normales — en mesas el stock puede no reflejar la realidad)
+      if (!tableId) {
+        const agotados = items.filter(it => it.stock - it.quantity <= 0)
+        agotados.forEach(it => {
+          toast.warning(`"${it.name}" quedó agotado en inventario.`, { duration: 5000 })
+        })
+      }
 
       const taxBaseAmt       = subtotalAmt - discountAmt
 
