@@ -1,4 +1,4 @@
-import { Bell, Search, Sun, Moon, ChevronDown, LogOut, User, Settings, ShieldCheck, AlertTriangle, PackageX } from 'lucide-react'
+import { Bell, Search, Sun, Moon, ChevronDown, LogOut, User, Settings, ShieldCheck, AlertTriangle, PackageX, Menu } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate, useLocation } from 'react-router-dom'
@@ -25,7 +25,7 @@ const ROLE_DISPLAY: Record<string, { label: string; style: string }> = {
   INVENTORY_MANAGER: { label: 'Inventario',          style: 'bg-cyan-500/15 text-cyan-600 dark:text-cyan-400' },
 }
 
-export function TopBar() {
+export function TopBar({ onMenuClick }: { onMenuClick?: () => void } = {}) {
   const { profile, tenant, branch, logout } = useAuthStore()
   const { isDark, toggle } = useTheme()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
@@ -111,25 +111,35 @@ export function TopBar() {
   const roleInfo = activeRole ? ROLE_DISPLAY[activeRole] : null
 
   return (
-    <header className="flex h-16 shrink-0 items-center justify-between border-b border-grafito-200 dark:border-white/5 bg-white dark:bg-grafito-900 px-6 transition-colors duration-200">
+    <header className="flex h-16 shrink-0 items-center justify-between border-b border-grafito-200 dark:border-white/5 bg-white dark:bg-grafito-900 px-4 sm:px-6 transition-colors duration-200">
 
-      {/* Left section (empty for now, could put breadcrumbs or title here) */}
-      <div></div>
+      {/* Left: hamburguesa (solo móvil) */}
+      <div>
+        {onMenuClick && (
+          <button
+            onClick={onMenuClick}
+            className="rounded-lg p-2 text-grafito-500 dark:text-grafito-400 hover:bg-grafito-100 dark:hover:bg-white/5 hover:text-grafito-900 dark:hover:text-white transition-colors lg:hidden"
+            title="Menú"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        )}
+      </div>
 
       {/* Right actions */}
       <div className="flex items-center gap-2">
 
-        {/* Branch badge */}
+        {/* Branch badge (oculto en pantallas pequeñas) */}
         {!isPlatformView && branch && (
-          <span className="rounded-md border border-grafito-200 dark:border-white/10 bg-grafito-100 dark:bg-grafito-800 px-2.5 py-1 text-xs text-grafito-600 dark:text-grafito-300">
+          <span className="hidden sm:inline-block rounded-md border border-grafito-200 dark:border-white/10 bg-grafito-100 dark:bg-grafito-800 px-2.5 py-1 text-xs text-grafito-600 dark:text-grafito-300">
             {branch.branchName}
           </span>
         )}
 
-        {/* Plan badge */}
+        {/* Plan badge (oculto en pantallas pequeñas) */}
         {!isPlatformView && tenant && (
           <span className={cn(
-            'rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider',
+            'hidden sm:inline-block rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider',
             tenant.plan === 'ENTERPRISE'   && 'bg-brand-500/15 text-brand-600 dark:text-brand-400',
             tenant.plan === 'PROFESSIONAL' && 'bg-blue-500/15 text-blue-600 dark:text-blue-400',
             tenant.plan === 'BASIC'        && 'bg-green-500/15 text-green-600 dark:text-green-400',

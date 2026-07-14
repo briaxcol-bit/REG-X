@@ -177,3 +177,43 @@ export async function getMyModuleSlugs(tenantId: string): Promise<string[]> {
     .filter((s: unknown): s is string => typeof s === 'string')
   return slugs
 }
+
+// ── Gestión de módulos del tenant (Marketplace) — migración 048 ──
+export interface MarketplaceModuleRow {
+  id: string
+  slug: string
+  name: string
+  description: string | null
+  category: string
+  is_free: boolean
+  min_plan: string
+  is_active: boolean
+}
+
+/** Catálogo completo de módulos disponibles en la plataforma. */
+export async function getMarketplaceModules(): Promise<MarketplaceModuleRow[]> {
+  const { data, error } = await supabase
+    .from('marketplace_modules')
+    .select('id, slug, name, description, category, is_free, min_plan, is_active')
+    .eq('is_active', true)
+    .order('category')
+    .order('name')
+  if (error) throw error
+  return (data ?? []) as MarketplaceModuleRow[]
+}
+
+/** Activa o desactiva un módulo del tenant (OWNER/ADMIN; el core no se apaga). */
+export async function setTenantModule(tenantId: string, slug: string, enabled: boolean): Promise<void> {
+  const { error } = await (supabase.rpc as any)('set_tenant_module', {
+    p_tenant_id: tenantId, p_slug: slug, p_enabled: enabled,
+  })
+  if (error) throw error
+}
+
+/** Restablece los módulos del tenant a los de su tipo de negocio. */
+export async function resetTenantModules(tenantId: string): Promise<void> {
+  const { error } = await (supabase.rpc as any)('reset_tenant_modules', {
+    p_tenant_id: tenantId,
+  })
+  if (error) throw error
+}

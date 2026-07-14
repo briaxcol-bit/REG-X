@@ -57,9 +57,9 @@ export default function PlatformDashboardPage() {
       bg: 'bg-purple-500/10',
     },
     {
-      label: 'Usuarios Registrados',
-      value: stats?.totalUsers ?? 0,
-      sub: 'en la plataforma',
+      label: 'Dueños de Negocio',
+      value: stats?.totalOwners ?? 0,
+      sub: `${stats?.totalUsers ?? 0} usuarios en total (incluye empleados)`,
       icon: Users,
       color: 'text-emerald-400',
       bg: 'bg-emerald-500/10',

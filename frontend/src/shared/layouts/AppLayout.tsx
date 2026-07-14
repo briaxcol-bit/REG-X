@@ -11,24 +11,27 @@ interface AppLayoutProps {
 
 export function AppLayout({ children }: AppLayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
   useTenantTheme()
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-grafito-100 dark:bg-grafito-950 text-grafito-900 dark:text-white transition-colors duration-200">
-      {/* ── Sidebar ──────────────────────────────────────── */}
+      {/* ── Sidebar (drawer en móvil, fijo en desktop) ───── */}
       <Sidebar
         collapsed={sidebarCollapsed}
         onToggle={() => setSidebarCollapsed((v) => !v)}
+        mobileOpen={mobileNavOpen}
+        onMobileClose={() => setMobileNavOpen(false)}
       />
 
       {/* ── Main area ────────────────────────────────────── */}
       <div
         className={cn(
-          'flex flex-1 flex-col overflow-hidden transition-all duration-300',
-          sidebarCollapsed ? 'ml-16' : 'ml-64',
+          'flex flex-1 flex-col overflow-hidden transition-all duration-300 ml-0',
+          sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-64',
         )}
       >
-        <TopBar />
+        <TopBar onMenuClick={() => setMobileNavOpen(true)} />
         <main className="flex-1 overflow-y-auto">
           {children ?? <Outlet />}
         </main>

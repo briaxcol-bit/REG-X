@@ -502,7 +502,7 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
                     {/* ── MÉTODOS DE PAGO ─────────────────── */}
                     <div>
                       <p className="text-xs font-bold text-grafito-500 uppercase tracking-wider mb-3">Método de pago</p>
-                      <div className="grid grid-cols-5 gap-2">
+                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                         {METHODS.map(m => {
                           const active = method === m.method
                           const IconEl = m.icon

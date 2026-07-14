@@ -87,8 +87,8 @@ export function POSLayout({ children }: POSLayoutProps) {
             </span>
           )}
 
-          {/* Clock */}
-          <ClockDisplay />
+          {/* Clock (oculto en pantallas pequeñas) */}
+          <div className="hidden sm:block"><ClockDisplay /></div>
 
           {/* Theme toggle */}
           <motion.button

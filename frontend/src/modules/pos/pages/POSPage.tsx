@@ -246,6 +246,7 @@ export default function POSPage() {
   const [historyOpen, setHistoryOpen]         = useState(false)
   const [terminalsOpen, setTerminalsOpen]     = useState(false)
   const [mesasOpen,     setMesasOpen]         = useState(false)
+  const [mobileCartOpen, setMobileCartOpen]   = useState(false)
   const [selectedComanda, setSelectedComanda] = useState<SaleHistoryRow | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
 
@@ -764,7 +765,16 @@ export default function POSPage() {
       </div>
 
       {/* ══════════════ RIGHT: Carrito ════════════════════════ */}
-      <div className="flex w-[360px] shrink-0 flex-col border-l border-grafito-200 dark:border-white/5 bg-white dark:bg-grafito-900">
+      {/* Backdrop del carrito en móvil */}
+      {mobileCartOpen && (
+        <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm md:hidden" onClick={() => setMobileCartOpen(false)} />
+      )}
+      <div className={cn(
+        'flex w-[360px] shrink-0 flex-col border-l border-grafito-200 dark:border-white/5 bg-white dark:bg-grafito-900',
+        // Móvil: panel deslizable desde la derecha; Desktop (md+): columna fija
+        'max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:z-50 max-md:w-full max-md:max-w-[400px] max-md:shadow-2xl max-md:transition-transform max-md:duration-300',
+        mobileCartOpen ? 'max-md:translate-x-0' : 'max-md:translate-x-full',
+      )}>
 
         {/* Barra de caja */}
         {hasOpenSession && activeRegister && (
@@ -1003,6 +1013,20 @@ export default function POSPage() {
           </div>
         </div>
       </div>
+
+      {/* Botón flotante del carrito — solo móvil */}
+      <button
+        onClick={() => setMobileCartOpen(v => !v)}
+        className="fixed bottom-5 right-5 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-brand-500 text-white shadow-2xl shadow-brand-500/40 active:scale-95 transition-transform md:hidden"
+        title="Ver carrito"
+      >
+        <ShoppingCart className="h-6 w-6" />
+        {itemCount > 0 && (
+          <span className="absolute -top-1 -right-1 flex h-6 min-w-6 items-center justify-center rounded-full bg-white px-1 text-xs font-black text-brand-600 shadow">
+            {itemCount}
+          </span>
+        )}
+      </button>
     </div>
   )
 }

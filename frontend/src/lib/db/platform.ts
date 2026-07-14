@@ -12,6 +12,8 @@ export interface PlatformStats {
   activeSubscriptions: number
   mrr: number
   totalUsers: number
+  /** Dueños de tenant (los que lista la página Usuarios) */
+  totalOwners: number
   newThisMonth: number
   planBreakdown: { plan: string; count: number }[]
 }
@@ -44,9 +46,16 @@ export async function getPlatformStats(): Promise<PlatformStats> {
 
   const [{ data: tenants, error: errT }, { data: subs, error: errS }, { data: users, error: errU }] = await Promise.all([
     supabase.from('tenants').select('id, plan, is_active, created_at'),
-    supabase.from('subscriptions').select('id, status, plan, price, currency'),
+    supabase.from('subscriptions').select('id, tenant_id, status, plan, price, currency, created_at'),
     supabase.from('user_profiles').select('id'),
   ])
+
+  const { data: ownerRoles } = await supabase
+    .from('user_tenant_roles')
+    .select('user_id')
+    .eq('role', 'OWNER')
+    .eq('is_active', true)
+  const ownerCount = new Set((ownerRoles ?? []).map((r: { user_id: string }) => r.user_id)).size
 
   if (errT) console.error("Error fetching tenants for stats:", errT)
   if (errS) console.error("Error fetching subs for stats:", errS)
@@ -60,12 +69,23 @@ export async function getPlatformStats(): Promise<PlatformStats> {
     planBreakdownMap[t.plan] = (planBreakdownMap[t.plan] ?? 0) + 1
   }
 
+  // Una suscripción viva por tenant (migración 049); por defensa, si aún
+  // hubiera duplicados históricos se cuenta solo la MÁS RECIENTE por tenant.
+  const latestActiveByTenant = new Map<string, { price: number | null }>()
+  for (const s of [...sList].sort((a: any, b: any) => (a.created_at < b.created_at ? 1 : -1))) {
+    const sub = s as { tenant_id?: string; status: string; price: number | null }
+    if (sub.status === 'ACTIVE' && sub.tenant_id && !latestActiveByTenant.has(sub.tenant_id)) {
+      latestActiveByTenant.set(sub.tenant_id, { price: sub.price })
+    }
+  }
+
   return {
     totalTenants:        tList.length,
     activeTenants:       tList.filter((t) => t.is_active).length,
-    activeSubscriptions: sList.filter((s) => s.status === 'ACTIVE').length,
-    mrr:                 sList.filter((s) => s.status === 'ACTIVE').reduce((sum, s) => sum + (s.price ?? 0), 0),
+    activeSubscriptions: latestActiveByTenant.size,
+    mrr:                 [...latestActiveByTenant.values()].reduce((sum, s) => sum + (s.price ?? 0), 0),
     totalUsers:          (users ?? []).length,
+    totalOwners:         ownerCount,
     newThisMonth:        tList.filter((t) => t.created_at >= monthStart).length,
     planBreakdown:       Object.entries(planBreakdownMap).map(([plan, count]) => ({ plan, count })),
   }
@@ -223,22 +243,4 @@ export async function deleteTenant(tenantId: string): Promise<void> {
 }
 
 /** Cambia el plan de un tenant (sincroniza la suscripcion). */
-export async function setTenantPlan(
-  tenantId: string,
-  plan: 'FREE' | 'BASIC' | 'PROFESSIONAL' | 'ENTERPRISE',
-): Promise<void> {
-  const { error } = await (supabase.rpc as any)('set_tenant_plan', {
-    p_tenant_id: tenantId,
-    p_plan: plan,
-  })
-  if (error) throw error
-}
-
-/** Activa o desactiva un tenant (y su suscripcion). */
-export async function setTenantActive(tenantId: string, active: boolean): Promise<void> {
-  const { error } = await (supabase.rpc as any)('set_tenant_active', {
-    p_tenant_id: tenantId,
-    p_active: active,
-  })
-  if (error) throw error
-}
+ex

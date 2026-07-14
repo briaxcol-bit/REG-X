@@ -114,9 +114,12 @@ const PLATFORM_NAV_ITEMS: NavItem[] = [
 interface SidebarProps {
   collapsed: boolean
   onToggle: () => void
+  /** Drawer móvil (<lg): abierto/cerrado */
+  mobileOpen?: boolean
+  onMobileClose?: () => void
 }
 
-export function Sidebar({ collapsed, onToggle }: SidebarProps) {
+export function Sidebar({ collapsed, onToggle, mobileOpen = false, onMobileClose }: SidebarProps) {
   const location = useLocation()
   const { hasPermission, hasRole, tenant, profile } = useAuthStore()
   const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({})
@@ -151,10 +154,23 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const groups = [...new Set(visibleItems.map((i) => i.group))]
 
   return (
+    <>
+    {/* Backdrop del drawer móvil */}
+    {mobileOpen && (
+      <div
+        className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden"
+        onClick={onMobileClose}
+      />
+    )}
     <motion.aside
-      animate={{ width: collapsed ? 64 : 256 }}
+      animate={{ width: collapsed && !mobileOpen ? 64 : 256 }}
       transition={{ duration: 0.25, ease: 'easeInOut' }}
-      className="fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-grafito-200 dark:border-white/5 bg-white dark:bg-grafito-900 shadow-sm dark:shadow-2xl transition-colors duration-200"
+      className={cn(
+        'fixed left-0 top-0 z-50 flex h-screen flex-col border-r border-grafito-200 dark:border-white/5 bg-white dark:bg-grafito-900 shadow-sm dark:shadow-2xl transition-colors duration-200',
+        // Móvil: drawer deslizable; Desktop (lg+): siempre visible
+        'max-lg:transition-transform max-lg:duration-300',
+        mobileOpen ? 'max-lg:translate-x-0' : 'max-lg:-translate-x-full',
+      )}
     >
       {/* ── Logo ─────────────────────────────────────────── */}
       <div className="flex h-16 items-center border-b border-grafito-200 dark:border-white/5 px-3">
@@ -222,6 +238,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                     <NavLink
                       to={item.to}
                       title={collapsed ? item.label : undefined}
+                      onClick={() => onMobileClose?.()}
                       className={cn(
                         'relative flex items-center gap-3 rounded-lg mx-2 px-3 py-2 text-sm font-medium transition-all duration-150',
                         isActive
@@ -280,6 +297,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                               <NavLink
                                 key={sub.to}
                                 to={sub.to}
+                                onClick={() => onMobileClose?.()}
                                 className={cn(
                                   'flex items-center gap-2 text-sm px-3 py-1.5 rounded-md transition-colors',
                                   isSubActive
@@ -304,5 +322,6 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
 
     </motion.aside>
+    </>
   )
 }
