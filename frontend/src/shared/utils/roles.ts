@@ -26,10 +26,9 @@ export const ROLE_MODULE_REQUIREMENTS: Record<string, string[]> = {
  *   para no ocultar roles por error.
  */
 export function isRoleAvailable(role: string, activeSlugs: string[] | undefined | null): boolean {
-  const req = ROLE_MODULE_REQUIREMENTS[role]
-  if (!req) return true
-  if (!activeSlugs || activeSlugs.length === 0) return true
-  return req.some((slug) => activeSlugs.includes(slug))
+  // Siempre retornamos true para que muestre todos los roles (Mesero, Cocinero, etc.)
+  // sin importar si tienen los módulos de restaurante activos o no.
+  return true
 }
 
 /** Filtra una lista de entradas [rolKey, ...] dejando solo las disponibles. */

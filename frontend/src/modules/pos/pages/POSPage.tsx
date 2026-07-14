@@ -815,11 +815,11 @@ export default function POSPage() {
         )}
 
         {/* Header carrito */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-grafito-100 dark:border-white/5">
-          <div className="flex flex-col min-w-0 gap-0.5">
+        <div className="flex flex-wrap items-center justify-between px-4 py-2 border-b border-grafito-100 dark:border-white/5 gap-y-2 gap-x-2">
+          <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2">
               <ShoppingCart className="h-4 w-4 text-brand-500 shrink-0" />
-              <span className="text-sm font-bold text-grafito-900 dark:text-white whitespace-nowrap">
+              <span className="text-sm font-bold text-grafito-900 dark:text-white">
                 {tabs.find(t => t.id === activeTabId)?.label ?? 'Venta actual'}
               </span>
               {itemCount > 0 && (
@@ -835,7 +835,7 @@ export default function POSPage() {
               </div>
             )}
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 shrink-0">
             <button
               onClick={() => setMesasOpen(true)}
               className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold text-grafito-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 hover:text-brand-600 dark:hover:text-brand-400 transition-colors"
