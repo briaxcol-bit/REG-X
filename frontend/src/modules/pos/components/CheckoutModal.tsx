@@ -12,6 +12,7 @@ import { ReceiptTemplate, type ReceiptData } from './ReceiptTemplate'
 import { closeAllRestaurantOrdersForTable, getCustomerById, createTip, type CustomerRow } from '@lib/db'
 import { openCashDrawer, linkCashDrawer, cashDrawerLinked, cashDrawerSupported, getCashDrawerBridgeUrl } from '@lib/cash-drawer'
 import { buildEscPosReceipt, bytesToBase64 } from '@lib/escpos'
+import { isUsbPrinterSupported, usbPrinterLinked, linkUsbPrinter, printUsbRaw, openDrawerUsb } from '@lib/usb-printer'
 
 // ── Métodos de pago ────────────────────────────────────────────────────────────
 type PaymentMethod = 'CASH' | 'CARD' | 'NEQUI' | 'DAVIPLATA' | 'TRANSFER' | 'CREDIT' | 'GIFT_CARD'
@@ -194,7 +195,8 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
 
       // Abrir el cajón monedero en ventas en efectivo (silencioso si no está vinculado)
       if (method === 'CASH') {
-        openCashDrawer().catch(() => {})
+        if (await usbPrinterLinked()) openDrawerUsb().catch(() => {})
+        else openCashDrawer().catch(() => {})
       }
 
       // Registrar la propina como dato real (además de la nota) para el módulo de Propinas
@@ -276,40 +278,48 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
     const r = lastReceipt
 
     // ── Impresión directa ESC/POS (sin diálogo) ──────────────
+    const escBytes = buildEscPosReceipt({
+      businessName:  r.businessName,
+      orderNumber:   r.orderNumber,
+      cashierName:   r.cashierName,
+      waiterName:    r.waiterName,
+      customerName:  r.customer?.name,
+      date:          r.date.toLocaleString('es-CO'),
+      items: r.items.map(it => ({
+        name:      it.name,
+        quantity:  it.qty,
+        unitPrice: it.price,
+        total:     it.total,
+      })),
+      subtotal:      r.subtotal,
+      taxTotal:      r.taxTotal,
+      discountTotal: r.discountTotal,
+      total:         r.total,
+      payments: [{ method: r.paymentMethod, amount: r.total }],
+      change:        r.change,
+    })
+
+    // 1) Intentar USB directo (impresora por USB al dispositivo)
+    if (isUsbPrinterSupported()) {
+      const linked = await usbPrinterLinked()
+      if (linked) {
+        const ok = await printUsbRaw(escBytes)
+        if (ok) return
+      }
+    }
+
+    // 2) Intentar bridge de red (impresora por Ethernet)
     const bridgeUrl = getCashDrawerBridgeUrl()
     if (bridgeUrl) {
       try {
-        const escBytes = buildEscPosReceipt({
-          businessName:  r.businessName,
-          orderNumber:   r.orderNumber,
-          cashierName:   r.cashierName,
-          waiterName:    r.waiterName,
-          customerName:  r.customer?.name,
-          date:          r.date.toLocaleString('es-CO'),
-          items: r.items.map(it => ({
-            name:      it.name,
-            quantity:  it.qty,
-            unitPrice: it.price,
-            total:     it.total,
-          })),
-          subtotal:      r.subtotal,
-          taxTotal:      r.taxTotal,
-          discountTotal: r.discountTotal,
-          total:         r.total,
-          payments: [{ method: r.paymentMethod, amount: r.total }],
-          change:        r.change,
-        })
         const res = await fetch(`${bridgeUrl}/print`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ data: bytesToBase64(escBytes) }),
           signal: AbortSignal.timeout(5000),
         })
-        if (res.ok) return // impresión exitosa — no hace falta el navegador
-        toast.error('Error al imprimir — usando impresora del navegador')
-      } catch {
-        toast.error('Puente no disponible — usando impresora del navegador')
-      }
+        if (res.ok) return
+      } catch { /* cae al navegador */ }
     }
     const fmt = (n: number) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: r.currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n)
     const dateStr = r.date.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' })
@@ -493,25 +503,34 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
 
                   {/* Acciones */}
                   <div className="flex gap-3">
-                    {cashDrawerSupported() && (
-                      <button
-                        onClick={async () => {
-                          // Con puerto vinculado abre directo; si no, pide vincular (gesto de usuario)
+                    <button
+                      onClick={async () => {
+                        // USB (impresora conectada por USB al dispositivo)
+                        if (isUsbPrinterSupported()) {
+                          if (await usbPrinterLinked()) { openDrawerUsb(); return }
+                          if (await linkUsbPrinter()) {
+                            const ok = await openDrawerUsb()
+                            toast[ok ? 'success' : 'error'](ok
+                              ? 'Impresora vinculada — cajón y recibos por USB'
+                              : 'No se pudo abrir el cajón')
+                            return
+                          }
+                        }
+                        // Serial (USB-Serie)
+                        if (cashDrawerSupported()) {
                           if (await cashDrawerLinked()) { openCashDrawer(); return }
                           if (await linkCashDrawer()) {
                             const ok = await openCashDrawer()
-                            toast[ok ? 'success' : 'error'](ok
-                              ? 'Cajón vinculado: se abrirá solo en ventas en efectivo'
-                              : 'No se pudo abrir el cajón por ese puerto')
+                            toast[ok ? 'success' : 'error'](ok ? 'Cajón vinculado' : 'No se pudo abrir')
                           }
-                        }}
-                        title="Abrir cajón monedero"
-                        className="flex items-center justify-center gap-2 rounded-xl border border-grafito-200 dark:border-white/10 px-4 py-3 text-sm font-semibold text-grafito-700 dark:text-grafito-200 hover:bg-grafito-100 dark:hover:bg-white/5 transition-colors"
-                      >
-                        <CircleDollarSign className="h-4 w-4" />
-                        Cajón
-                      </button>
-                    )}
+                        }
+                      }}
+                      title="Abrir cajón monedero"
+                      className="flex items-center justify-center gap-2 rounded-xl border border-grafito-200 dark:border-white/10 px-4 py-3 text-sm font-semibold text-grafito-700 dark:text-grafito-200 hover:bg-grafito-100 dark:hover:bg-white/5 transition-colors"
+                    >
+                      <CircleDollarSign className="h-4 w-4" />
+                      Cajón
+                    </button>
                     <button
                       onClick={handlePrint}
                       className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-grafito-200 dark:border-white/10 py-3 text-sm font-semibold text-grafito-700 dark:text-grafito-200 hover:bg-grafito-100 dark:hover:bg-white/5 transition-colors"
