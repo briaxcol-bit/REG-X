@@ -12,7 +12,7 @@ export default defineConfig({
       // mientras un SW viejo servía builds cacheados; con autoUpdate +
       // skipWaiting + cleanupOutdatedCaches las actualizaciones aplican solas.
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'logo.svg'],
+      includeAssets: ['favicon.ico', 'favicon.png', 'apple-touch-icon.png'],
       manifest: {
         name: 'REG-X ERP/POS',
         short_name: 'REG-X',
