@@ -12,7 +12,7 @@
 // Polyfill de BarcodeDetector (WASM) para navegadores sin soporte nativo,
 // principalmente iOS Safari. En Chrome Android/Desktop usa el nativo.
 // Debe importarse antes de leer window.BarcodeDetector.
-import 'react-barcode-scanner/polyfill'
+import '@preflower/barcode-detector-polyfill'
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Barcode, Keyboard, Camera, CameraOff, Loader2, AlertCircle } from 'lucide-react'
