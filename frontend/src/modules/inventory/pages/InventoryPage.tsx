@@ -18,7 +18,7 @@ function EditStockModal({ row, onClose, onSaved }: EditStockModalProps) {
   const p    = row.products as any
   const prev = Number(row.quantity)
 
-  const [qtyStr, setQtyStr] = useState(String(prev))
+  const [qtyStr, setQtyStr] = useState(String(Math.max(0, prev)))
   const [notes, setNotes]   = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -103,12 +103,9 @@ function EditStockModal({ row, onClose, onSaved }: EditStockModalProps) {
         </div>
 
         {/* Delta */}
-        {delta !== 0 && (
-          <p className={cn(
-            'text-center text-sm font-semibold',
-            delta > 0 ? 'text-emerald-500' : 'text-red-500'
-          )}>
-            {delta > 0 ? `+${delta}` : delta} unidades respecto al stock actual ({prev})
+        {qty !== Math.max(0, prev) && (
+          <p className="text-center text-sm font-semibold text-emerald-500">
+            Stock: {qty} unidades
           </p>
         )}
 
@@ -360,10 +357,12 @@ const [deletingRow, setDeletingRow]   = useState<InventoryRow | null>(null)
                     <h3 className="font-bold text-base text-grafito-900 dark:text-white line-clamp-1" title={p?.name ?? ''}>{p?.name ?? '—'}</h3>
                     <p className="font-mono text-xs text-grafito-500 dark:text-grafito-400 mt-1">{p?.sku ?? '—'}</p>
 
-                    <div className="mt-4 pt-4 border-t border-grafito-100 dark:border-white/5 flex items-center justify-between">
-                      <span className="text-lg font-black text-brand-500">${Number(p?.price ?? 0).toLocaleString('es-CO')}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-grafito-400">Mínimo: {min}</span>
+                    <div className="mt-4 pt-4 border-t border-grafito-100 dark:border-white/5 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <span className="text-lg font-black text-brand-500 block leading-tight">${Number(p?.price ?? 0).toLocaleString('es-CO')}</span>
+                        {min > 0 && <span className="text-xs text-grafito-400">Mínimo: {min} uds</span>}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
                         <button
                           onClick={() => setEditing(row)}
                           className="flex h-8 w-8 items-center justify-center rounded-lg bg-grafito-50 dark:bg-white/5 text-grafito-500 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-500/10 transition-colors"

@@ -76,6 +76,11 @@ export interface CreateSalePayload {
   cash_register_id?: string            // vincula la venta a la caja activa
   /** Número de orden fijo (lo usa la cola offline para reintentos idempotentes) */
   order_number?: string
+  /**
+   * Si es TRUE, la función no lanza excepción cuando el stock queda negativo.
+   * Usar en checkout de mesas de restaurante: la comida ya fue preparada.
+   */
+  skip_stock_check?: boolean
 }
 
 export async function createSale(
@@ -92,8 +97,10 @@ export async function createSale(
 
   // Venta atómica vía RPC: venta + ítems + pagos + descuento de stock en
   // UNA sola transacción de Postgres. Valida el tenant y frena stock negativo.
-  // Ver database/migrations/021_hardened_create_sale.sql
-  const { data: saleId, error: rpcErr } = await supabase.rpc('create_sale_transaction', {
+  // Ver database/migrations/039_sale_side_effects.sql (v3) y 040_sale_skip_stock_check.sql (v4).
+  // Construir params base (3 parámetros — compatible con la función existente)
+  // p_skip_stock_check solo se agrega cuando es true (requiere migración 040)
+  const rpcParams: Record<string, unknown> = {
     p_sale: {
       tenant_id:        tenantId,
       branch_id:        branchId,
@@ -126,7 +133,12 @@ export async function createSale(
       amount:    p.amount,
       reference: p.reference ?? null,
     })),
-  } as any)
+  }
+  // Solo incluir p_skip_stock_check cuando es true (evita romper la firma de 3 params
+  // en producción antes de que se ejecute la migración 040)
+  if (payload.skip_stock_check) rpcParams.p_skip_stock_check = true
+
+  const { data: saleId, error: rpcErr } = await supabase.rpc('create_sale_transaction', rpcParams as any)
 
   if (rpcErr) throw rpcErr
 
@@ -231,14 +243,19 @@ export async function getPosPricingData(
 ): Promise<PosPricingData> {
   const today = new Date().toISOString().slice(0, 10)
 
-  const { data: promos, error: pErr } = await supabase
+  // Nota: NO encadenar dos .or() — genera query params duplicados que PostgREST rechaza.
+  // Se traen todas las activas y se filtra por fecha en JS.
+  const { data: promosRaw, error: pErr } = await supabase
     .from('promotions')
     .select()
     .eq('tenant_id', tenantId)
     .eq('is_active', true)
-    .or(`starts_at.is.null,starts_at.lte.${today}`)
-    .or(`ends_at.is.null,ends_at.gte.${today}`)
   if (pErr) throw pErr
+  const promos = (promosRaw ?? []).filter(p => {
+    const startOk = !p.starts_at || p.starts_at <= today
+    const endOk   = !p.ends_at   || p.ends_at   >= today
+    return startOk && endOk
+  })
 
   const { data: volLists, error: vErr } = await supabase
     .from('price_lists')
@@ -259,7 +276,6 @@ export async function getPosPricingData(
     if (error) throw error
     volumeItems = (data ?? []) as PriceListItemRow[]
   }
-
   let customerItems: PriceListItemRow[] = []
   if (customerId) {
     const { data: cust, error: cErr } = await supabase
@@ -279,5 +295,5 @@ export async function getPosPricingData(
     }
   }
 
-  return { promotions: (promos ?? []) as PromotionRow[], volumeItems, customerItems }
+  return { promotions: promos as PromotionRow[], volumeItems, customerItems }
 }

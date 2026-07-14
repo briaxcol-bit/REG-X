@@ -729,3 +729,24 @@ export async function getBillSplits(tenantId: string, limit = 40): Promise<BillS
   if (error) throw error
   return (data ?? []) as unknown as BillSplitRow[]
 }
+
+/** Cierra TODAS las órdenes activas de una mesa y la deja disponible.
+ *  Usar al cobrar desde el POS: puede haber múltiples comandas abiertas. */
+export async function closeAllRestaurantOrdersForTable(
+  tenantId: string,
+  tableId:  string,
+): Promise<void> {
+  const { error: ordersErr } = await supabase
+    .from('orders')
+    .update({ status: 'SERVED' as any })
+    .eq('tenant_id', tenantId)
+    .eq('table_id', tableId)
+    .not('status', 'in', '(SERVED,CANCELLED)')
+  if (ordersErr) throw ordersErr
+
+  const { error: tableErr } = await supabase
+    .from('tables')
+    .update({ status: 'AVAILABLE' })
+    .eq('id', tableId)
+  if (tableErr) throw tableErr
+}
