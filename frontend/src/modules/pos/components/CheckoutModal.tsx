@@ -299,11 +299,17 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
       change:        r.change,
     })
 
-    // 1) Intentar USB directo (impresora por USB al dispositivo)
+    // Estrategia por equipo:
+    //  • Móvil/tablet Android → USB directo (WebUSB imprime sin driver del sistema).
+    //  • PC Windows/Mac → el diálogo del navegador (Windows ya tiene la impresora
+    //    instalada como driver; WebUSB ahí da "Access denied"). Cae más abajo.
+    const isMobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent)
+
+    // 1) USB directo — ideal en tablet/móvil Android
     if (isUsbPrinterSupported()) {
       let linked = await usbPrinterLinked()
-      if (!linked) {
-        // Primera vez: abrir el selector USB de Chrome.
+      if (!linked && isMobile) {
+        // Primera vez en móvil: abrir el selector USB de Chrome.
         // Se ejecuta dentro del click en "Imprimir" (gesto de usuario requerido).
         linked = await linkUsbPrinter()
         if (linked) toast.success('Impresora vinculada por USB')
@@ -311,7 +317,7 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
       if (linked) {
         const ok = await printUsbRaw(escBytes)
         if (ok) return
-        toast.error('No se pudo imprimir por USB')
+        // Si falla (p. ej. escritorio con driver de Windows), cae al diálogo del navegador.
       }
     }
 
@@ -750,25 +756,4 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
                     >
                       {isPending ? (
                         <motion.span
-                          animate={{ rotate: 360 }}
-                          transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                          className="h-5 w-5 rounded-full border-2 border-white/30 border-t-white inline-block"
-                        />
-                      ) : (
-                        <>
-                          <CheckCircle2 className="h-5 w-5" />
-                          Confirmar cobro
-                          <ChevronRight className="h-4 w-4 ml-1" />
-                        </>
-                      )}
-                    </motion.button>
-                  </div>
-                </>
-              )}
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </>
-  )
-}
+                     

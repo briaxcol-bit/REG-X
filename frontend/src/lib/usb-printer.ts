@@ -93,14 +93,4 @@ export async function printUsbRaw(data: Uint8Array): Promise<boolean> {
     const result = await device.transferOut(target.endpointNumber, data)
     return result.status === 'ok'
   } catch (e) {
-    console.warn('[usb-printer] error:', e)
-    cachedDevice = null // resetear para reconectar en el próximo intento
-    return false
-  }
-}
-
-/** Abre el cajón monedero via USB (comando ESC/POS kick). */
-export async function openDrawerUsb(): Promise<boolean> {
-  const KICK = new Uint8Array([0x1b, 0x70, 0x00, 0x19, 0xfa])
-  return printUsbRaw(KICK)
-}
+    console.warn('[usb-printer]
