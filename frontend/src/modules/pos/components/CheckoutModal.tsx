@@ -756,4 +756,25 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
                     >
                       {isPending ? (
                         <motion.span
-                     
+                          animate={{ rotate: 360 }}
+                          transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                          className="h-5 w-5 rounded-full border-2 border-white/30 border-t-white inline-block"
+                        />
+                      ) : (
+                        <>
+                          <CheckCircle2 className="h-5 w-5" />
+                          Confirmar cobro
+                          <ChevronRight className="h-4 w-4 ml-1" />
+                        </>
+                      )}
+                    </motion.button>
+                  </div>
+                </>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
+  )
+}
