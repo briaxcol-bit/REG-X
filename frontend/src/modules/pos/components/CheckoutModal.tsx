@@ -110,6 +110,7 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
   const [giftCardCode, setGiftCardCode] = useState('')
   const [success, setSuccess]           = useState(false)
   const [customerData, setCustomerData] = useState<CustomerRow | null>(null)
+  const [printMsg, setPrintMsg]         = useState('')  // estado visible de la última impresión
 
   const { tabs, activeTabId, clearCart, lastReceipt, setLastReceipt } = usePOSStore()
   const activeTab  = tabs.find(t => t.id === activeTabId) ?? tabs[0]
@@ -304,19 +305,23 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
     //    usbAccessDenied() y caemos al diálogo del navegador (que usa el driver
     //    de Windows ya instalado). No dependemos del userAgent: algunos POS
     //    Android no se identifican como "móvil".
+    setPrintMsg('▶ Imprimiendo… USB=' + isUsbPrinterSupported() + ' denegado=' + usbAccessDenied())
+
     if (isUsbPrinterSupported() && !usbAccessDenied()) {
       let linked = await usbPrinterLinked()
       if (!linked) {
         // Abrir el selector USB de Chrome (requiere el gesto de este click).
         linked = await linkUsbPrinter()
-        if (linked) toast.success('Impresora vinculada por USB')
       }
-      if (linked) {
+      if (!linked) {
+        setPrintMsg('✗ No se seleccionó impresora (¿cancelaste el selector?)')
+      } else {
         const ok = await printUsbRaw(escBytes)
-        if (ok) return
-        // Mostrar el motivo real del fallo para diagnosticar (en vez de fallar mudo).
-        toast.error('USB: ' + (lastUsbError() || 'error desconocido'), { duration: 8000 })
-        // Si falla (p. ej. PC Windows con driver del sistema), cae al diálogo del navegador.
+        if (ok) { setPrintMsg('✓ Enviado por USB — ' + escBytes.length + ' bytes'); return }
+        setPrintMsg('✗ USB: ' + (lastUsbError() || 'error desconocido'))
+        // En tablet paramos aquí para poder leer el error. En PC (acceso negado)
+        // dejamos que caiga al diálogo del navegador de más abajo.
+        if (!usbAccessDenied()) return
       }
     }
 
@@ -446,6 +451,7 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
     setCashInput('')
     setGiftCardCode('')
     setMethod('CASH')
+    setPrintMsg('')
     onClose()
   }
 
@@ -558,6 +564,13 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
                       Nueva venta
                     </button>
                   </div>
+
+                  {/* Estado de impresión (diagnóstico visible) */}
+                  {printMsg && (
+                    <div className="mt-3 rounded-lg border border-grafito-200 dark:border-white/10 bg-grafito-50 dark:bg-white/5 px-3 py-2 text-xs font-mono text-grafito-700 dark:text-grafito-200 break-words">
+                      {printMsg}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <>
