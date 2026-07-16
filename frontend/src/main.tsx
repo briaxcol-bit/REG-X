@@ -4,16 +4,18 @@ import './index.css'
 import App from './App'
 
 // ── PWA Service Worker ───────────────────────────────────────
+// Auto-actualización real: apenas hay una versión nueva desplegada, el SW
+// nuevo toma el control (skipWaiting + clientsClaim en vite.config) y la
+// página se recarga sola. Sin avisos ni pasos manuales.
 import { registerSW } from 'virtual:pwa-register'
 
-const updateSW = registerSW({
-  onNeedRefresh() {
-    if (confirm('Nueva versión disponible. ¿Actualizar ahora?')) {
-      updateSW(true)
+registerSW({
+  immediate: true,
+  onRegisteredSW(_swUrl, registration) {
+    // Revisar si hay versión nueva cada 60s (además del chequeo al navegar).
+    if (registration) {
+      setInterval(() => registration.update().catch(() => {}), 60_000)
     }
-  },
-  onOfflineReady() {
-    console.log('[PWA] Aplicación lista para uso offline')
   },
 })
 

@@ -463,7 +463,7 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm print:hidden"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto bg-black/60 backdrop-blur-sm print:hidden"
             onClick={receipt ? undefined : onClose}
           >
             <motion.div
@@ -471,7 +471,7 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 40 }}
               transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-              className="w-full sm:max-w-md max-h-[95vh] overflow-y-auto rounded-t-3xl sm:rounded-2xl border border-grafito-200 dark:border-white/10 bg-white dark:bg-grafito-900 shadow-2xl"
+              className="w-full sm:max-w-md max-h-[90dvh] my-auto overflow-y-auto rounded-2xl border border-grafito-200 dark:border-white/10 bg-white dark:bg-grafito-900 shadow-2xl"
               onClick={e => e.stopPropagation()}
             >
               {/* ── SUCCESS STATE ─────────────────────────── */}
