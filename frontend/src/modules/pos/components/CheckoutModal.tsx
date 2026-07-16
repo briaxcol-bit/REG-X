@@ -12,7 +12,7 @@ import { ReceiptTemplate, type ReceiptData } from './ReceiptTemplate'
 import { closeAllRestaurantOrdersForTable, getCustomerById, createTip, type CustomerRow } from '@lib/db'
 import { openCashDrawer, linkCashDrawer, cashDrawerLinked, cashDrawerSupported, getCashDrawerBridgeUrl } from '@lib/cash-drawer'
 import { buildEscPosReceipt, bytesToBase64 } from '@lib/escpos'
-import { isUsbPrinterSupported, usbPrinterLinked, linkUsbPrinter, printUsbRaw, openDrawerUsb, usbAccessDenied } from '@lib/usb-printer'
+import { isUsbPrinterSupported, usbPrinterLinked, linkUsbPrinter, printUsbRaw, openDrawerUsb, usbAccessDenied, lastUsbError } from '@lib/usb-printer'
 
 // ── Métodos de pago ────────────────────────────────────────────────────────────
 type PaymentMethod = 'CASH' | 'CARD' | 'NEQUI' | 'DAVIPLATA' | 'TRANSFER' | 'CREDIT' | 'GIFT_CARD'
@@ -314,6 +314,8 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
       if (linked) {
         const ok = await printUsbRaw(escBytes)
         if (ok) return
+        // Mostrar el motivo real del fallo para diagnosticar (en vez de fallar mudo).
+        toast.error('USB: ' + (lastUsbError() || 'error desconocido'), { duration: 8000 })
         // Si falla (p. ej. PC Windows con driver del sistema), cae al diálogo del navegador.
       }
     }

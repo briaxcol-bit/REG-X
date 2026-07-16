@@ -25,6 +25,12 @@ export function usbAccessDenied(): boolean {
   return accessDenied
 }
 
+// Último error de impresión USB, para mostrarlo en pantalla y diagnosticar.
+let lastError = ''
+export function lastUsbError(): string {
+  return lastError
+}
+
 function usbApi(): USB | null {
   return (navigator as any).usb ?? null
 }
@@ -61,10 +67,11 @@ export async function linkUsbPrinter(): Promise<boolean> {
 
 /** Envía bytes ESC/POS a la impresora USB. */
 export async function printUsbRaw(data: Uint8Array): Promise<boolean> {
+  lastError = ''
   try {
     if (!cachedDevice) {
       const linked = await usbPrinterLinked()
-      if (!linked) return false
+      if (!linked) { lastError = 'No hay impresora vinculada (getDevices vacío)'; return false }
     }
     const device = cachedDevice!
 
@@ -91,6 +98,7 @@ export async function printUsbRaw(data: Uint8Array): Promise<boolean> {
     }
 
     if (!target) {
+      lastError = 'No se encontró canal de salida (OUT bulk) en la impresora'
       console.warn('[usb-printer] no se encontró endpoint OUT bulk')
       return false
     }
@@ -100,8 +108,10 @@ export async function printUsbRaw(data: Uint8Array): Promise<boolean> {
     }
 
     const result = await device.transferOut(target.endpointNumber, data)
+    if (result.status !== 'ok') lastError = 'transferOut estado: ' + result.status
     return result.status === 'ok'
   } catch (e: any) {
+    lastError = (e?.name ?? 'Error') + ': ' + String(e?.message ?? e)
     console.warn('[usb-printer] error:', e)
     // "Access denied" / SecurityError = el SO (Windows) tiene tomada la impresora.
     // Marcamos para no reintentar USB y caer al diálogo del navegador.
