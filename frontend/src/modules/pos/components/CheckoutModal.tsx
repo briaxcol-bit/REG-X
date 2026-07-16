@@ -301,10 +301,17 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
 
     // 1) Intentar USB directo (impresora por USB al dispositivo)
     if (isUsbPrinterSupported()) {
-      const linked = await usbPrinterLinked()
+      let linked = await usbPrinterLinked()
+      if (!linked) {
+        // Primera vez: abrir el selector USB de Chrome.
+        // Se ejecuta dentro del click en "Imprimir" (gesto de usuario requerido).
+        linked = await linkUsbPrinter()
+        if (linked) toast.success('Impresora vinculada por USB')
+      }
       if (linked) {
         const ok = await printUsbRaw(escBytes)
         if (ok) return
+        toast.error('No se pudo imprimir por USB')
       }
     }
 
