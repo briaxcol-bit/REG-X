@@ -463,14 +463,14 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm print:hidden"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 print:hidden"
             onClick={receipt ? undefined : onClose}
           >
             <motion.div
-              initial={{ opacity: 0, y: 40 }}
+              initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 40 }}
-              transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+              exit={{ opacity: 0, y: 16 }}
+              transition={{ duration: 0.15, ease: 'easeOut' }}
               className="w-full sm:max-w-md max-h-[85vh] overflow-y-auto rounded-2xl border border-grafito-200 dark:border-white/10 bg-white dark:bg-grafito-900 shadow-2xl"
               onClick={e => e.stopPropagation()}
             >
@@ -627,8 +627,9 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
                     {/* ── EFECTIVO ────────────────────────── */}
                     {method === 'CASH' && (
                       <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.12 }}
                         className="space-y-3"
                       >
                         <p className="text-xs font-bold text-grafito-500 uppercase tracking-wider">Efectivo recibido</p>

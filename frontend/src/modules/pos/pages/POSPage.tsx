@@ -786,7 +786,7 @@ export default function POSPage() {
       {/* ══════════════ RIGHT: Carrito ════════════════════════ */}
       {/* Backdrop del carrito en móvil */}
       {mobileCartOpen && (
-        <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm md:hidden" onClick={() => setMobileCartOpen(false)} />
+        <div className="fixed inset-0 z-40 bg-black/60 md:hidden" onClick={() => setMobileCartOpen(false)} />
       )}
       <div className={cn(
         'flex w-[360px] shrink-0 flex-col border-l border-grafito-200 dark:border-white/5 bg-white dark:bg-grafito-900',
