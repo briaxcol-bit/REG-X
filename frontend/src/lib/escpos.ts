@@ -109,7 +109,8 @@ const METHOD_LABEL: Record<string, string> = {
 export function buildEscPosReceipt(d: EscPosReceiptData): Uint8Array {
   const W = d.paperWidth ?? 32
   const bytes: number[] = []
-  const push = (...args: number[][]) => args.forEach(a => bytes.push(...a))
+  const push = (...args: (number | number[])[]) =>
+    args.forEach(a => Array.isArray(a) ? bytes.push(...a) : bytes.push(a))
 
   // Inicializar
   push(CMD.init)

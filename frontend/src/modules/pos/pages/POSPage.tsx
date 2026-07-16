@@ -791,7 +791,7 @@ export default function POSPage() {
       <div className={cn(
         'flex w-[360px] shrink-0 flex-col border-l border-grafito-200 dark:border-white/5 bg-white dark:bg-grafito-900',
         // Móvil: panel deslizable desde la derecha; Desktop (md+): columna fija
-        'max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:z-50 max-md:w-full max-md:max-w-[400px] max-md:shadow-2xl max-md:transition-transform max-md:duration-300',
+        'max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:z-40 max-md:w-full max-md:max-w-[400px] max-md:shadow-2xl max-md:transition-transform max-md:duration-300',
         mobileCartOpen ? 'max-md:translate-x-0' : 'max-md:translate-x-full',
       )}>
 
