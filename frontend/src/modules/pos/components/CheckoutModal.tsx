@@ -12,7 +12,7 @@ import { ReceiptTemplate, type ReceiptData } from './ReceiptTemplate'
 import { closeAllRestaurantOrdersForTable, getCustomerById, createTip, type CustomerRow } from '@lib/db'
 import { openCashDrawer, linkCashDrawer, cashDrawerLinked, cashDrawerSupported, getCashDrawerBridgeUrl } from '@lib/cash-drawer'
 import { buildEscPosReceipt, bytesToBase64 } from '@lib/escpos'
-import { isUsbPrinterSupported, usbPrinterLinked, linkUsbPrinter, printUsbRaw, openDrawerUsb } from '@lib/usb-printer'
+import { isUsbPrinterSupported, usbPrinterLinked, linkUsbPrinter, printUsbRaw, openDrawerUsb, usbAccessDenied } from '@lib/usb-printer'
 
 // ── Métodos de pago ────────────────────────────────────────────────────────────
 type PaymentMethod = 'CASH' | 'CARD' | 'NEQUI' | 'DAVIPLATA' | 'TRANSFER' | 'CREDIT' | 'GIFT_CARD'
@@ -299,25 +299,22 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
       change:        r.change,
     })
 
-    // Estrategia por equipo:
-    //  • Móvil/tablet Android → USB directo (WebUSB imprime sin driver del sistema).
-    //  • PC Windows/Mac → el diálogo del navegador (Windows ya tiene la impresora
-    //    instalada como driver; WebUSB ahí da "Access denied"). Cae más abajo.
-    const isMobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent)
-
-    // 1) USB directo — ideal en tablet/móvil Android
-    if (isUsbPrinterSupported()) {
+    // 1) USB directo — funciona en tablet/móvil Android (imprime sin driver del SO).
+    //    En PC Windows el SO niega el USB ("Access denied"); ahí se marca
+    //    usbAccessDenied() y caemos al diálogo del navegador (que usa el driver
+    //    de Windows ya instalado). No dependemos del userAgent: algunos POS
+    //    Android no se identifican como "móvil".
+    if (isUsbPrinterSupported() && !usbAccessDenied()) {
       let linked = await usbPrinterLinked()
-      if (!linked && isMobile) {
-        // Primera vez en móvil: abrir el selector USB de Chrome.
-        // Se ejecuta dentro del click en "Imprimir" (gesto de usuario requerido).
+      if (!linked) {
+        // Abrir el selector USB de Chrome (requiere el gesto de este click).
         linked = await linkUsbPrinter()
         if (linked) toast.success('Impresora vinculada por USB')
       }
       if (linked) {
         const ok = await printUsbRaw(escBytes)
         if (ok) return
-        // Si falla (p. ej. escritorio con driver de Windows), cae al diálogo del navegador.
+        // Si falla (p. ej. PC Windows con driver del sistema), cae al diálogo del navegador.
       }
     }
 

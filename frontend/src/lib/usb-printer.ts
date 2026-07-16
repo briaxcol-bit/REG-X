@@ -15,6 +15,15 @@ const ESCPOS_FILTERS = [
 ]
 
 let cachedDevice: USBDevice | null = null
+// Se marca en true si el sistema niega el acceso al USB (típico en Windows,
+// donde el driver de impresora ya tiene tomado el dispositivo). Cuando pasa,
+// dejamos de intentar USB y usamos el diálogo del navegador.
+let accessDenied = false
+
+/** ¿El sistema negó el acceso USB antes? (p. ej. Windows con driver instalado) */
+export function usbAccessDenied(): boolean {
+  return accessDenied
+}
 
 function usbApi(): USB | null {
   return (navigator as any).usb ?? null
@@ -92,8 +101,14 @@ export async function printUsbRaw(data: Uint8Array): Promise<boolean> {
 
     const result = await device.transferOut(target.endpointNumber, data)
     return result.status === 'ok'
-  } catch (e) {
+  } catch (e: any) {
     console.warn('[usb-printer] error:', e)
+    // "Access denied" / SecurityError = el SO (Windows) tiene tomada la impresora.
+    // Marcamos para no reintentar USB y caer al diálogo del navegador.
+    const msg = String(e?.message ?? e)
+    if (e?.name === 'SecurityError' || /access denied/i.test(msg)) {
+      accessDenied = true
+    }
     cachedDevice = null // resetear para reconectar en el próximo intento
     return false
   }
