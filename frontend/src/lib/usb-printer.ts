@@ -61,29 +61,37 @@ export async function printUsbRaw(data: Uint8Array): Promise<boolean> {
 
     if (!device.opened) await device.open()
 
-    // Seleccionar configuración y reclamar interfaz de impresora
+    // Seleccionar configuración
     if (device.configuration === null) {
       await device.selectConfiguration(1)
     }
 
-    // Buscar interfaz de impresora (class 7) o la primera disponible
-    const iface = device.configuration?.interfaces.find(
-      i => i.alternates[0]?.interfaceClass === 0x07
-    ) ?? device.configuration?.interfaces[0]
+    // Buscar CUALQUIER interfaz que tenga un endpoint OUT bulk.
+    // No asumimos que sea la clase 7 ni la interfaz [0]: algunas
+    // térmicas (como la E200L) exponen la impresora en otra interfaz.
+    let target: { iface: USBInterface; endpointNumber: number } | null = null
+    for (const iface of device.configuration?.interfaces ?? []) {
+      for (const alt of iface.alternates) {
+        const ep = alt.endpoints.find(e => e.direction === 'out' && e.type === 'bulk')
+        if (ep) {
+          target = { iface, endpointNumber: ep.endpointNumber }
+          break
+        }
+      }
+      if (target) break
+    }
 
-    if (!iface) return false
+    if (!target) {
+      console.warn('[usb-printer] no se encontró endpoint OUT bulk')
+      return false
+    }
 
-    if (!iface.claimed) await device.claimInterface(iface.interfaceNumber)
+    if (!target.iface.claimed) {
+      await device.claimInterface(target.iface.interfaceNumber)
+    }
 
-    // Buscar endpoint OUT bulk
-    const endpoint = iface.alternates[0]?.endpoints.find(
-      e => e.direction === 'out' && e.type === 'bulk'
-    )
-
-    if (!endpoint) return false
-
-    await device.transferOut(endpoint.endpointNumber, data)
-    return true
+    const result = await device.transferOut(target.endpointNumber, data)
+    return result.status === 'ok'
   } catch (e) {
     console.warn('[usb-printer] error:', e)
     cachedDevice = null // resetear para reconectar en el próximo intento
