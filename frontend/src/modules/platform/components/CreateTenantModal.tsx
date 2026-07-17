@@ -239,12 +239,15 @@ export function CreateTenantModal({ open, onClose }: CreateTenantModalProps) {
     }
   }
 
-  const valid =
-    form.name.trim().length >= 2 &&
-    form.slug.trim().length >= 2 &&
-    /\S+@\S+\.\S+/.test(form.owner_email) &&
-    form.owner_name.trim().length >= 2 &&
-    form.owner_password.length >= 8
+  // Qué le falta al formulario — se muestra junto al botón para que
+  // nunca quede el botón desactivado "sin razón aparente"
+  const missing: string[] = []
+  if (form.name.trim().length < 2)             missing.push('nombre de la empresa')
+  if (form.slug.trim().length < 2)             missing.push('slug')
+  if (!/\S+@\S+\.\S+/.test(form.owner_email))  missing.push('email válido del owner')
+  if (form.owner_name.trim().length < 2)       missing.push('nombre del owner')
+  if (form.owner_password.length < 8)          missing.push('contraseña de mínimo 8 caracteres')
+  const valid = missing.length === 0
 
   const done = mutation.isSuccess
   const result = mutation.data
@@ -520,6 +523,12 @@ export function CreateTenantModal({ open, onClose }: CreateTenantModalProps) {
                 <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
                 <span>{(mutation.error as Error)?.message ?? 'Error al crear el tenant'}</span>
               </div>
+            )}
+
+            {!valid && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                Falta: {missing.join(', ')}
+              </p>
             )}
 
             <div className="flex gap-3 pt-4 border-t border-grafito-200 dark:border-white/5">
