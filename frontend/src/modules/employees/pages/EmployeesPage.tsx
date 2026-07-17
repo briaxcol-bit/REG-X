@@ -687,8 +687,8 @@ export default function EmployeesPage() {
     }
   }
 
-  const handleEmployeeSaved = (userId: string, updated: Partial<EmployeeRow>) => {
-    setEmployees(prev => prev.map(e => e.userId === userId ? { ...e, ...updated } : e))
+  const handleEmployeeSaved = (_userId: string, _updated: Partial<EmployeeRow>) => {
+    load() // recarga desde la BD para que el siguiente edit muestre datos actualizados
   }
 
   // Roles disponibles según los módulos activos del tenant
@@ -967,6 +967,7 @@ export default function EmployeesPage() {
       {/* Modal editar empleado */}
       {editingEmployee && tenant?.tenantId && (
         <EditEmployeeModal
+          key={editingEmployee.userId}
           employee={editingEmployee}
           tenantId={tenant.tenantId}
           onClose={() => setEditingEmployee(null)}

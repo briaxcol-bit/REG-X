@@ -52,6 +52,8 @@ function ExpenseModal({ tenantId, editing, onClose }: { tenantId: string; editin
 
   const [category, setCategory] = useState(editing?.category ?? 'Otros')
   const [amount, setAmount]     = useState(editing ? String(editing.amount) : '')
+
+  const amountDisplay = amount ? `$ ${Number(amount).toLocaleString('es-CO')}` : ''
   const [date, setDate]         = useState(editing?.expense_date ?? new Date().toISOString().slice(0, 10))
   const [method, setMethod]     = useState<ExpensePaymentMethod>(editing?.payment_method ?? 'CASH')
   const [supplierId, setSupplierId] = useState(editing?.supplier_id ?? '')
@@ -95,7 +97,17 @@ function ExpenseModal({ tenantId, editing, onClose }: { tenantId: string; editin
             </select>
           </Field>
           <Field label="Monto">
-            <input type="number" min={0} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" className={inputCls} />
+            <input
+              type="text"
+              inputMode="numeric"
+              value={amountDisplay}
+              placeholder="$ 0"
+              className={inputCls}
+              onChange={(e) => {
+                const raw = e.target.value.replace(/[^0-9]/g, '')
+                setAmount(raw)
+              }}
+            />
           </Field>
           <Field label="Fecha"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} /></Field>
           <Field label="Método de pago">

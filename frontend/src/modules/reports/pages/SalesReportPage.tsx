@@ -143,6 +143,8 @@ function ChartTooltip({ active, payload, label, currency }: any) {
 export default function SalesReportPage() {
   const [range, setRange]           = useState<Range>('30d')
   const [rangeOpen, setRangeOpen]   = useState(false)
+  const [showCurrent, setShowCurrent] = useState(true)
+  const [showPrev, setShowPrev]       = useState(true)
 
   const { tenant, branch } = useAuthStore()
   const tenantId = tenant?.tenantId ?? ''
@@ -315,9 +317,31 @@ export default function SalesReportPage() {
                 <p className="font-bold text-grafito-900 dark:text-white">Ingresos por día</p>
                 <p className="text-xs text-grafito-400 mt-0.5">Comparación con período anterior</p>
               </div>
-              <div className="flex items-center gap-4 text-[11px] font-semibold">
-                <span className="flex items-center gap-1.5"><span className="h-2 w-4 rounded-full bg-brand-500 inline-block" />Actual</span>
-                <span className="flex items-center gap-1.5"><span className="h-2 w-4 rounded-full bg-grafito-300 dark:bg-grafito-600 inline-block" />Anterior</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowCurrent(v => !v)}
+                  className={cn(
+                    'flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-semibold border transition-all',
+                    showCurrent
+                      ? 'border-indigo-500/40 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400'
+                      : 'border-grafito-200 dark:border-white/10 bg-transparent text-grafito-400 dark:text-grafito-600',
+                  )}
+                >
+                  <span className={cn('h-2 w-4 rounded-full inline-block transition-colors', showCurrent ? 'bg-indigo-500' : 'bg-grafito-300 dark:bg-grafito-700')} />
+                  Actual
+                </button>
+                <button
+                  onClick={() => setShowPrev(v => !v)}
+                  className={cn(
+                    'flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-semibold border transition-all',
+                    showPrev
+                      ? 'border-grafito-400/40 bg-grafito-100 dark:bg-white/5 text-grafito-600 dark:text-grafito-300'
+                      : 'border-grafito-200 dark:border-white/10 bg-transparent text-grafito-400 dark:text-grafito-600',
+                  )}
+                >
+                  <span className={cn('h-2 w-4 rounded-full inline-block transition-colors', showPrev ? 'bg-grafito-400 dark:bg-grafito-500' : 'bg-grafito-200 dark:bg-grafito-800')} />
+                  Anterior
+                </button>
               </div>
             </div>
             <ResponsiveContainer width="100%" height={240}>
@@ -336,8 +360,8 @@ export default function SalesReportPage() {
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'currentColor' }} className="text-grafito-400" tickLine={false} axisLine={false} interval="preserveStartEnd" />
                 <YAxis tickFormatter={v => `$${(v/1000).toFixed(0)}k`} tick={{ fontSize: 11, fill: 'currentColor' }} className="text-grafito-400" tickLine={false} axisLine={false} width={52} />
                 <Tooltip content={<ChartTooltip currency={currency} />} />
-                <Area type="monotone" dataKey="anterior" name="Anterior" stroke="#9ca3af" strokeWidth={1.5} strokeDasharray="4 4" fill="url(#gradPrev)" dot={false} />
-                <Area type="monotone" dataKey="current"  name="Actual"   stroke="#6366f1" strokeWidth={2.5} fill="url(#gradCurrent)" dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />
+                {showPrev    && <Area type="monotone" dataKey="anterior" name="Anterior" stroke="#9ca3af" strokeWidth={1.5} strokeDasharray="4 4" fill="url(#gradPrev)"     dot={false} />}
+                {showCurrent && <Area type="monotone" dataKey="current"  name="Actual"   stroke="#6366f1" strokeWidth={2.5}                   fill="url(#gradCurrent)" dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />}
               </AreaChart>
             </ResponsiveContainer>
           </div>

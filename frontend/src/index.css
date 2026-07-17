@@ -80,6 +80,17 @@
     color-scheme: dark;
   }
 
+  /* ── Dropdown de <select> en dark mode ── */
+  .dark select option {
+    background-color: #1f2937; /* grafito-800 */
+    color: #f9fafb;
+  }
+  .dark select option:hover,
+  .dark select option:checked {
+    background-color: #374151; /* grafito-700 */
+    color: #ffffff;
+  }
+
   /* ── Autofill dark mode: fondo oscuro para cubrir el autofill del browser ── */
   .dark input:-webkit-autofill,
   .dark input:-webkit-autofill:hover,
