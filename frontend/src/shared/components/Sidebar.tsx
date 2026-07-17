@@ -49,7 +49,7 @@ const NAV_ITEMS: NavItem[] = [
   },
   { to: '/customers',     icon: Users,    label: 'Clientes',    group: 'Catalogo' },
   { to: '/suppliers',     icon: Truck,    label: 'Proveedores', group: 'Catalogo', module: 'suppliers' },
-  { to: '/employees',     icon: UserCog,  label: 'Empleados',   group: 'Catalogo' },
+  { to: '/employees',     icon: UserCog,  label: 'Empleados',   group: 'Catalogo', module: 'employees' },
   { to: '/attendance',    icon: Clock,    label: 'Asistencia',  group: 'Catalogo', module: 'attendance' },
   { to: '/commissions',   icon: Percent,  label: 'Comisiones',  group: 'Catalogo', module: 'commissions' },
   { to: '/restaurant',    icon: ChefHat,  label: 'Restaurante', permission: 'restaurant.view', group: 'Servicio', waiterVisible: true },
@@ -120,16 +120,18 @@ export function Sidebar({ collapsed, onToggle, mobileOpen = false, onMobileClose
   const isWaiter     = hasRole('WAITER')
 
   // Módulos activos del tenant, para gatear ítems que dependen de un módulo.
-  const { data: moduleSlugs } = useQuery({
+  const { data: moduleSlugs, isSuccess: modulesLoaded } = useQuery({
     queryKey: ['my-module-slugs', tenant?.tenantId],
     queryFn: () => getMyModuleSlugs(tenant!.tenantId),
     enabled: !!tenant?.tenantId && !isSuperAdmin,
+    refetchOnWindowFocus: true,
   })
-  // Fallback seguro: sin datos (cargando) o lista vacía => no ocultar.
+  // Mientras carga (o si falla) no ocultamos nada; pero si la lista llegó
+  // bien, se respeta aunque venga vacía — antes una lista vacía mostraba TODO.
   const moduleOk = (mod?: string) => {
     if (!mod) return true
-    if (!moduleSlugs || moduleSlugs.length === 0) return true
-    return moduleSlugs.includes(mod)
+    if (!modulesLoaded) return true
+    return (moduleSlugs ?? []).includes(mod)
   }
 
   const baseItems = isSuperAdmin
