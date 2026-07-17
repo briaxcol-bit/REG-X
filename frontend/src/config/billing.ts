@@ -14,16 +14,16 @@ export const BILLING = {
   beneficiary: 'REG-X SAS',
 
   /** Número de WhatsApp de soporte/pagos en formato internacional SIN "+" ni espacios. Ej: 573001112233 */
-  whatsapp: '573000000000',
+  whatsapp: '573334001766',
 
   /** Correo de soporte/pagos. */
-  email: 'pagos@regx.co',
+  email: 'regx.poos@gmail.com',
 
   /** Métodos de pago manuales que mostrará la página. Deja vacío el array para ocultarlos. */
   methods: [
-    { label: 'Nequi / Daviplata', value: '300 000 0000' },
-    { label: 'Bancolombia (Ahorros)', value: '000-000000-00' },
-    { label: 'Llave (Transfiya)', value: '@regx' },
+    { label: 'Nequi / Daviplata', value: '3334001766' },
+    { label: 'Bancolombia (Ahorros)', value: 'xxxxxxxx' },
+    { label: 'Llave (Transfiya)', value: '@bab379' },
   ] as { label: string; value: string }[],
 
   /**

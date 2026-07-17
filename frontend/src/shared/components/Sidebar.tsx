@@ -85,16 +85,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/ecommerce',     icon: Globe,       label: 'Tienda en Línea', group: 'Avanzado', module: 'ecommerce' },
   { to: '/webhooks',      icon: Webhook,     label: 'Webhooks / API', group: 'Avanzado', module: 'webhooks' },
   { to: '/audit',         icon: ShieldCheck, label: 'Auditoría',   group: 'Avanzado', module: 'audit_log' },
-  {
-    to: '/reports',
-    icon: BarChart3,
-    label: 'Reportes',
-    permission: 'reports.view',
-    group: 'Analisis',
-    subItems: [
-      { to: '/reports/sales', label: 'Ventas', icon: TrendingUp },
-    ]
-  },
+  { to: '/reports', icon: BarChart3, label: 'Reportes', permission: 'reports.view', group: 'Analisis' },
   { to: '/subscriptions', icon: CreditCard, label: 'Suscripcion', group: 'Sistema' },
   { to: '/settings',      icon: Settings,   label: 'Ajustes',     group: 'Sistema' },
 ]
