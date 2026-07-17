@@ -37,7 +37,7 @@ function encodeText(text: string): number[] {
   return bytes
 }
 
-function line(text: string): number[] {
+function line(text = ''): number[] {
   return [...encodeText(text), LF]
 }
 
@@ -52,16 +52,32 @@ function padLeft(str: string, len: number): string {
   return str.length >= len ? str.slice(0, len) : ' '.repeat(len - str.length) + str
 }
 
+/** Fila etiqueta + valor alineado a la derecha */
+function row(label: string, value: string, width: number): number[] {
+  const valW = Math.max(value.length, 10)
+  return line(padRight(label, width - valW) + padLeft(value, valW))
+}
+
+/** Ítem: nombre + total en una línea, cantidad × precio debajo */
 function itemLine(name: string, qty: number, price: number, total: number, width = 32): number[] {
-  const totalStr = formatMoney(total)
-  const qtyPrice = `${qty}x${formatMoney(price)}`
-  // Nombre truncado para que quede en una línea con el total
+  const totalStr  = formatMoney(total)
   const nameWidth = width - totalStr.length - 1
-  const nameStr   = padRight(name, nameWidth)
-  const result: number[] = line(`${nameStr} ${totalStr}`)
-  // Si la cantidad/precio caben en la línea de nombre, bien; si no, segunda línea
-  if (qtyPrice.length <= nameWidth) return result
-  return [...line(`  ${qtyPrice}`), ...result]
+  const out: number[] = []
+  // Nombre puede ocupar varias líneas si es largo
+  let rest = name
+  let first = true
+  while (rest.length > 0) {
+    const chunk = rest.slice(0, nameWidth)
+    rest = rest.slice(nameWidth)
+    if (first) {
+      out.push(...line(padRight(chunk, nameWidth) + ' ' + totalStr))
+      first = false
+    } else {
+      out.push(...line(chunk))
+    }
+  }
+  out.push(...line(`  ${qty} x ${formatMoney(price)}`))
+  return out
 }
 
 function formatMoney(n: number): string {
@@ -70,17 +86,20 @@ function formatMoney(n: number): string {
 
 // ── Interfaz pública ──────────────────────────────────────────
 export interface EscPosReceiptData {
-  businessName:  string
-  businessNit?:  string
-  address?:      string
-  phone?:        string
-  header?:       string
-  footer?:       string
-  orderNumber:   string
-  cashierName?:  string
-  customerName?: string
-  waiterName?:   string
-  date:          string
+  businessName:   string
+  branchName?:    string
+  businessNit?:   string
+  address?:       string
+  phone?:         string
+  header?:        string
+  footer?:        string
+  orderNumber:    string
+  cashierName?:   string
+  customerName?:  string
+  customerDocId?: string
+  customerPhone?: string
+  waiterName?:    string
+  date:           string
   items: {
     name:      string
     quantity:  number
@@ -89,9 +108,13 @@ export interface EscPosReceiptData {
   }[]
   subtotal:       number
   taxTotal:       number
+  /** Base gravable (subtotal - descuentos) */
+  taxBase?:       number
   discountTotal:  number
+  tip?:           number
   total:          number
   payments: { method: string; amount: number }[]
+  cashReceived?:  number
   change?:        number
   /** Ancho de papel: 32 chars para 58mm, 48 chars para 80mm */
   paperWidth?: 32 | 48
@@ -115,62 +138,89 @@ export function buildEscPosReceipt(d: EscPosReceiptData): Uint8Array {
   // Inicializar
   push(CMD.init)
 
-  // Encabezado negocio
+  // ── Encabezado negocio ─────────────────────────────────────
   push(CMD.alignCenter)
   if (d.header) push(CMD.boldOn, ...line(d.header), CMD.boldOff)
-  push(CMD.doubleOn, CMD.boldOn, ...line(d.businessName), CMD.boldOff, CMD.doubleOff)
+  push(CMD.doubleOn, CMD.boldOn, ...line(d.businessName.toUpperCase()), CMD.boldOff, CMD.doubleOff)
+  if (d.branchName)  push(...line(d.branchName))
   if (d.businessNit) push(...line(`NIT: ${d.businessNit}`))
   if (d.address)     push(...line(d.address))
   if (d.phone)       push(...line(`Tel: ${d.phone}`))
-  push(...line(''))
+  push(CMD.boldOn, ...line('* FACTURA DE VENTA *'), CMD.boldOff)
 
-  // Datos de la venta
+  // ── Datos de la venta ──────────────────────────────────────
   push(CMD.alignLeft)
-  push(...sep('-', W))
-  push(...line(`Factura: ${d.orderNumber}`))
-  push(...line(`Fecha  : ${d.date}`))
-  if (d.cashierName)  push(...line(`Cajero : ${d.cashierName}`))
-  if (d.waiterName)   push(...line(`Mesero : ${d.waiterName}`))
-  if (d.customerName) push(...line(`Cliente: ${d.customerName}`))
-  push(...sep('-', W))
+  push(...sep('=', W))
+  push(...line(`No.   : ${d.orderNumber}`))
+  push(...line(`Fecha : ${d.date}`))
+  if (d.waiterName)  push(...line(`Mesero: ${d.waiterName}`))
+  if (d.cashierName) push(...line(`Cajero: ${d.cashierName}`))
+  push(...sep('=', W))
 
-  // Ítems
-  push(CMD.boldOn, ...line(padRight('PRODUCTO', W - 10) + padLeft('TOTAL', 10)), CMD.boldOff)
+  // ── Cliente ────────────────────────────────────────────────
+  push(CMD.boldOn, ...line('CLIENTE:'), CMD.boldOff)
+  if (d.customerName) {
+    push(...line(`  ${d.customerName}`))
+    if (d.customerDocId) push(...line(`  CC/NIT: ${d.customerDocId}`))
+    if (d.customerPhone) push(...line(`  Tel: ${d.customerPhone}`))
+  } else {
+    push(...line('  Consumidor final'))
+    push(...line('  CC/NIT: 222222222222'))
+  }
+  push(...sep('=', W))
+
+  // ── Ítems ──────────────────────────────────────────────────
+  push(CMD.boldOn, ...line(padRight('DESCRIPCION', W - 10) + padLeft('TOTAL', 10)), CMD.boldOff)
   push(...sep('-', W))
   for (const item of d.items) {
     push(...itemLine(item.name, item.quantity, item.unitPrice, item.total, W))
   }
   push(...sep('-', W))
 
-  // Totales
-  const labelW = W - 12
+  // ── Totales ────────────────────────────────────────────────
+  push(...row('Subtotal (sin IVA)', formatMoney(d.subtotal - d.taxTotal), W))
   if (d.discountTotal > 0) {
-    push(...line(padRight('Descuento', labelW) + padLeft(formatMoney(-d.discountTotal), 12)))
+    push(...row('Descuento', `-${formatMoney(d.discountTotal)}`, W))
   }
   if (d.taxTotal > 0) {
-    push(...line(padRight('IVA', labelW) + padLeft(formatMoney(d.taxTotal), 12)))
+    if (d.taxBase != null) push(...row('Base gravable', formatMoney(d.taxBase), W))
+    push(...row('IVA', formatMoney(d.taxTotal), W))
+  } else {
+    push(...row('IVA', `${formatMoney(0)} (Excluido)`, W))
   }
-  push(CMD.boldOn)
-  push(...line(padRight('TOTAL', labelW) + padLeft(formatMoney(d.total), 12)))
-  push(CMD.boldOff)
+  if (d.tip && d.tip > 0) {
+    push(...row('Propina voluntaria', formatMoney(d.tip), W))
+  }
   push(...sep('-', W))
+  push(CMD.boldOn, CMD.wideOn)
+  push(...row('TOTAL', formatMoney(d.total), Math.floor(W / 2)))
+  push(CMD.wideOff, CMD.boldOff)
+  push(...sep('=', W))
 
-  // Pagos
+  // ── Forma de pago ──────────────────────────────────────────
+  push(CMD.boldOn, ...line('FORMA DE PAGO:'), CMD.boldOff)
   for (const p of d.payments) {
     const label = METHOD_LABEL[p.method] ?? p.method
-    push(...line(padRight(label, labelW) + padLeft(formatMoney(p.amount), 12)))
+    push(...row(`  ${label}`, formatMoney(p.amount), W))
+  }
+  if (d.cashReceived && d.cashReceived > 0) {
+    push(...row('  Efectivo recibido', formatMoney(d.cashReceived), W))
   }
   if (d.change && d.change > 0) {
-    push(...line(padRight('Cambio', labelW) + padLeft(formatMoney(d.change), 12)))
+    push(...row('  Cambio entregado', formatMoney(d.change), W))
   }
 
-  // Pie
+  // ── Pie ────────────────────────────────────────────────────
+  push(...sep('-', W))
   push(CMD.alignCenter)
-  push(...line(''))
+  push(...line('Regimen Comun - Responsable IVA'))
+  push(...line('Esta factura es titulo valor'))
+  push(...line('segun Art. 616-1 E.T.'))
+  push(...line())
   push(CMD.boldOn, ...line('¡Gracias por su compra!'), CMD.boldOff)
+  push(...line('Conserve esta factura'))
   if (d.footer) push(...line(d.footer))
   push(...line('www.reg-x.com'))
-  push(...line(''))
 
   // Avanzar y cortar
   push(...CMD.feedCut)

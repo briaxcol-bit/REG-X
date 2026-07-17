@@ -281,10 +281,14 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
     // ── Impresión directa ESC/POS (sin diálogo) ──────────────
     const escBytes = buildEscPosReceipt({
       businessName:  r.businessName,
+      branchName:    r.branchName,
+      businessNit:   r.nit,
       orderNumber:   r.orderNumber,
       cashierName:   r.cashierName,
       waiterName:    r.waiterName,
       customerName:  r.customer?.name,
+      customerDocId: r.customer?.docId,
+      customerPhone: r.customer?.phone,
       date:          r.date.toLocaleString('es-CO'),
       items: r.items.map(it => ({
         name:      it.name,
@@ -294,9 +298,12 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
       })),
       subtotal:      r.subtotal,
       taxTotal:      r.taxTotal,
+      taxBase:       r.taxBase,
       discountTotal: r.discountTotal,
+      tip:           r.tip,
       total:         r.total,
       payments: [{ method: r.paymentMethod, amount: r.total }],
+      cashReceived:  r.cashReceived,
       change:        r.change,
     })
 
@@ -305,7 +312,7 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
     //    usbAccessDenied() y caemos al diálogo del navegador (que usa el driver
     //    de Windows ya instalado). No dependemos del userAgent: algunos POS
     //    Android no se identifican como "móvil".
-    setPrintMsg('▶ Imprimiendo… USB=' + isUsbPrinterSupported() + ' denegado=' + usbAccessDenied())
+    setPrintMsg('▶ Imprimiendo…')
 
     if (isUsbPrinterSupported() && !usbAccessDenied()) {
       let linked = await usbPrinterLinked()
@@ -317,8 +324,8 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
         setPrintMsg('✗ No se seleccionó impresora (¿cancelaste el selector?)')
       } else {
         const ok = await printUsbRaw(escBytes)
-        if (ok) { setPrintMsg('✓ Enviado por USB — ' + escBytes.length + ' bytes'); return }
-        setPrintMsg('✗ USB: ' + (lastUsbError() || 'error desconocido'))
+        if (ok) { setPrintMsg('✓ Recibo impreso'); return }
+        setPrintMsg('✗ No se pudo imprimir: ' + (lastUsbError() || 'error desconocido'))
         // En tablet paramos aquí para poder leer el error. En PC (acceso negado)
         // dejamos que caiga al diálogo del navegador de más abajo.
         if (!usbAccessDenied()) return
@@ -641,7 +648,6 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
                             value={cashInput}
                             onChange={e => handleCashInput(e.target.value)}
                             placeholder={new Intl.NumberFormat('es-CO').format(total)}
-                            autoFocus
                             className="w-full rounded-xl border-2 border-grafito-200 dark:border-white/10 bg-grafito-50 dark:bg-white/5 pl-8 pr-4 py-3.5 text-2xl font-black text-grafito-900 dark:text-white placeholder-grafito-300 dark:placeholder-grafito-600 outline-none focus:border-brand-500 transition-colors"
                           />
                         </div>
@@ -755,7 +761,7 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
                   </div>
 
                   {/* ── CONFIRM BUTTON ─────────────────── */}
-                  <div className="border-t border-grafito-100 dark:border-white/5 p-5">
+                  <div className="sticky bottom-0 border-t border-grafito-100 dark:border-white/5 bg-white dark:bg-grafito-900 p-4">
                     <motion.button
                       whileTap={{ scale: 0.98 }}
                       onClick={handleComplete}
