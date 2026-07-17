@@ -305,6 +305,8 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
       payments: [{ method: r.paymentMethod, amount: r.total }],
       cashReceived:  r.cashReceived,
       change:        r.change,
+      // Venta en efectivo → el pulso de apertura del cajón viaja con el recibo
+      openDrawer:    r.cashReceived != null,
     })
 
     // 1) USB directo — funciona en tablet/móvil Android (imprime sin driver del SO).

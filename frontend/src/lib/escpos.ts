@@ -24,6 +24,9 @@ const CMD = {
   doubleOff:   [ESC, 0x21, 0x00],
   wideOn:      [ESC, 0x21, 0x20],    // solo doble ancho
   wideOff:     [ESC, 0x21, 0x00],
+  // Pulso al cajón monedero (conector RJ11 de la impresora).
+  // Se envían ambos pines (2 y 5) para cubrir cualquier cableado.
+  drawerKick:  [ESC, 0x70, 0x00, 0x19, 0xfa, ESC, 0x70, 0x01, 0x19, 0xfa],
 }
 
 function encodeText(text: string): number[] {
@@ -118,6 +121,8 @@ export interface EscPosReceiptData {
   change?:        number
   /** Ancho de papel: 32 chars para 58mm, 48 chars para 80mm */
   paperWidth?: 32 | 48
+  /** Abrir el cajón monedero conectado a la impresora (ventas en efectivo) */
+  openDrawer?: boolean
 }
 
 const METHOD_LABEL: Record<string, string> = {
@@ -137,6 +142,9 @@ export function buildEscPosReceipt(d: EscPosReceiptData): Uint8Array {
 
   // Inicializar
   push(CMD.init)
+
+  // Abrir cajón monedero — el pulso viaja con el mismo trabajo de impresión
+  if (d.openDrawer) push(CMD.drawerKick)
 
   // ── Encabezado negocio ─────────────────────────────────────
   push(CMD.alignCenter)
