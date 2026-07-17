@@ -61,7 +61,9 @@ export default defineConfig({
             handler: 'NetworkFirst',
             options: {
               cacheName: 'supabase-api-cache',
-              expiration: { maxEntries: 200, maxAgeSeconds: 60 * 5 },
+              // 3 días: NetworkFirst siempre prefiere la red; el cache solo se usa
+              // como respaldo offline (catálogo, categorías, etc.)
+              expiration: { maxEntries: 500, maxAgeSeconds: 60 * 60 * 24 * 3 },
               networkTimeoutSeconds: 10,
             },
           },
