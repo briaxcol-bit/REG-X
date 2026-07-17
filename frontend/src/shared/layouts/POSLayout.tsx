@@ -31,7 +31,7 @@ export function POSLayout({ children }: POSLayoutProps) {
   }
 
   return (
-    <div className="flex h-screen w-screen flex-col bg-grafito-50 dark:bg-grafito-950 text-grafito-900 dark:text-white overflow-hidden transition-colors duration-200">
+    <div className="flex h-dvh w-screen flex-col bg-grafito-50 dark:bg-grafito-950 text-grafito-900 dark:text-white overflow-hidden transition-colors duration-200">
 
       {/* ── POS Top Bar ─────────────────────────────────── */}
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-grafito-200 dark:border-white/5 bg-white dark:bg-grafito-900 px-4 transition-colors duration-200">
