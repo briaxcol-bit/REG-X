@@ -306,6 +306,11 @@ export async function createProduct(
 }
 
 // ── Products ───────────────────────────────────────────────────
+/** Normaliza texto para búsqueda: minúsculas y sin tildes/diacríticos. */
+function normalizeText(s: string): string {
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+}
+
 export async function getProducts(
   tenantId: string,
   params?: { search?: string; categoryId?: string; status?: string },
@@ -327,14 +332,33 @@ export async function getProducts(
 
   if (params?.categoryId) q = q.eq('category_id', params.categoryId)
 
-  if (params?.search) {
-    const s = params.search.trim()
-    q = q.or(`name.ilike.%${s}%,sku.ilike.%${s}%,barcode.ilike.%${s}%`)
-  }
-
   const { data, error } = await q
   if (error) throw error
-  return (data ?? []) as unknown as ProductRow[]
+  const rows = (data ?? []) as unknown as ProductRow[]
+
+  // Búsqueda en cliente: insensible a mayúsculas y tildes, por palabras clave
+  // ("coca 350" encuentra "Coca-Cola 350ml"; "cafe" encuentra "Café").
+  const search = params?.search?.trim()
+  if (!search) return rows
+
+  const tokens = normalizeText(search).split(/\s+/).filter(Boolean)
+  const haystack = (r: ProductRow) => {
+    const cat = r.categories as any
+    return normalizeText(`${r.name} ${r.sku} ${r.barcode ?? ''} ${cat?.name ?? ''}`)
+  }
+
+  // 1) Todas las palabras presentes (en cualquier orden)
+  const allMatch = rows.filter(r => {
+    const hay = haystack(r)
+    return tokens.every(t => hay.includes(t))
+  })
+  if (allMatch.length > 0) return allMatch
+
+  // 2) Fallback: al menos una palabra coincide (búsqueda más laxa)
+  return rows.filter(r => {
+    const hay = haystack(r)
+    return tokens.some(t => hay.includes(t))
+  })
 }
 
 export async function getCategories(tenantId: string): Promise<CategoryRow[]> {
