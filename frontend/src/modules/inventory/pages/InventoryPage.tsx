@@ -3,6 +3,7 @@ import { Package, Loader2, Search, Tag, X, Pencil, Plus, Minus, CheckCircle2, Tr
 import { Link, useSearchParams } from 'react-router-dom'
 import { getInventory, updateStock, deleteProduct } from '@lib/db'
 import { useAuthStore } from '@store/auth.store'
+import { usePOSTerminal } from '@modules/pos/hooks/usePOSTerminal'
 import { cn } from '@shared/utils/cn'
 import { toast } from 'sonner'
 import type { InventoryRow } from '@lib/db'
@@ -188,6 +189,8 @@ function DeleteConfirmModal({ name, onConfirm, onCancel, deleting }: DeleteConfi
 export default function InventoryPage() {
   const { tenant, branch, hasRole } = useAuthStore()
   const isOwner = hasRole('OWNER')
+  // Categorías permitidas por la terminal asignada (null = todas)
+  const { allowedCategories } = usePOSTerminal()
   const [inventory, setInventory] = useState<InventoryRow[]>([])
   const [loading, setLoading]     = useState(true)
   const [search, setSearch]       = useState('')
@@ -228,6 +231,8 @@ const [deletingRow, setDeletingRow]   = useState<InventoryRow | null>(null)
 
   const filtered = inventory.filter(row => {
     const p = row.products as any
+    // Restricción por terminal: solo categorías permitidas (los sin categoría siguen visibles)
+    if (allowedCategories && p?.category_id && !allowedCategories.includes(p.category_id)) return false
     if (categoryId && p?.category_id !== categoryId) return false
     if (!search) return true
     return p?.name?.toLowerCase().includes(search.toLowerCase()) ||
