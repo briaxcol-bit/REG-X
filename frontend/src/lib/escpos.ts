@@ -123,6 +123,8 @@ export interface EscPosReceiptData {
   paperWidth?: 32 | 48
   /** Abrir el cajón monedero conectado a la impresora (ventas en efectivo) */
   openDrawer?: boolean
+  /** Ticket de comanda: sin bloque de cliente, forma de pago ni pie fiscal */
+  isComanda?: boolean
 }
 
 const METHOD_LABEL: Record<string, string> = {
@@ -154,7 +156,7 @@ export function buildEscPosReceipt(d: EscPosReceiptData): Uint8Array {
   if (d.businessNit) push(...line(`NIT: ${d.businessNit}`))
   if (d.address)     push(...line(d.address))
   if (d.phone)       push(...line(`Tel: ${d.phone}`))
-  push(CMD.boldOn, ...line('* FACTURA DE VENTA *'), CMD.boldOff)
+  push(CMD.boldOn, ...line(d.isComanda ? '* COMANDA *' : '* FACTURA DE VENTA *'), CMD.boldOff)
 
   // ── Datos de la venta ──────────────────────────────────────
   push(CMD.alignLeft)
@@ -165,17 +167,19 @@ export function buildEscPosReceipt(d: EscPosReceiptData): Uint8Array {
   if (d.cashierName) push(...line(`Cajero: ${d.cashierName}`))
   push(...sep('=', W))
 
-  // ── Cliente ────────────────────────────────────────────────
-  push(CMD.boldOn, ...line('CLIENTE:'), CMD.boldOff)
-  if (d.customerName) {
-    push(...line(`  ${d.customerName}`))
-    if (d.customerDocId) push(...line(`  CC/NIT: ${d.customerDocId}`))
-    if (d.customerPhone) push(...line(`  Tel: ${d.customerPhone}`))
-  } else {
-    push(...line('  Consumidor final'))
-    push(...line('  CC/NIT: 222222222222'))
+  // ── Cliente (no aplica en comanda) ─────────────────────────
+  if (!d.isComanda) {
+    push(CMD.boldOn, ...line('CLIENTE:'), CMD.boldOff)
+    if (d.customerName) {
+      push(...line(`  ${d.customerName}`))
+      if (d.customerDocId) push(...line(`  CC/NIT: ${d.customerDocId}`))
+      if (d.customerPhone) push(...line(`  Tel: ${d.customerPhone}`))
+    } else {
+      push(...line('  Consumidor final'))
+      push(...line('  CC/NIT: 222222222222'))
+    }
+    push(...sep('=', W))
   }
-  push(...sep('=', W))
 
   // ── Ítems ──────────────────────────────────────────────────
   push(CMD.boldOn, ...line(padRight('DESCRIPCION', W - 10) + padLeft('TOTAL', 10)), CMD.boldOff)
@@ -205,30 +209,38 @@ export function buildEscPosReceipt(d: EscPosReceiptData): Uint8Array {
   push(CMD.wideOff, CMD.boldOff)
   push(...sep('=', W))
 
-  // ── Forma de pago ──────────────────────────────────────────
-  push(CMD.boldOn, ...line('FORMA DE PAGO:'), CMD.boldOff)
-  for (const p of d.payments) {
-    const label = METHOD_LABEL[p.method] ?? p.method
-    push(...row(`  ${label}`, formatMoney(p.amount), W))
-  }
-  if (d.cashReceived && d.cashReceived > 0) {
-    push(...row('  Efectivo recibido', formatMoney(d.cashReceived), W))
-  }
-  if (d.change && d.change > 0) {
-    push(...row('  Cambio entregado', formatMoney(d.change), W))
-  }
+  if (!d.isComanda) {
+    // ── Forma de pago ────────────────────────────────────────
+    push(CMD.boldOn, ...line('FORMA DE PAGO:'), CMD.boldOff)
+    for (const p of d.payments) {
+      const label = METHOD_LABEL[p.method] ?? p.method
+      push(...row(`  ${label}`, formatMoney(p.amount), W))
+    }
+    if (d.cashReceived && d.cashReceived > 0) {
+      push(...row('  Efectivo recibido', formatMoney(d.cashReceived), W))
+    }
+    if (d.change && d.change > 0) {
+      push(...row('  Cambio entregado', formatMoney(d.change), W))
+    }
 
-  // ── Pie ────────────────────────────────────────────────────
-  push(...sep('-', W))
-  push(CMD.alignCenter)
-  push(...line('Regimen Comun - Responsable IVA'))
-  push(...line('Esta factura es titulo valor'))
-  push(...line('segun Art. 616-1 E.T.'))
-  push(...line())
-  push(CMD.boldOn, ...line('¡Gracias por su compra!'), CMD.boldOff)
-  push(...line('Conserve esta factura'))
-  if (d.footer) push(...line(d.footer))
-  push(...line('www.reg-x.com'))
+    // ── Pie ──────────────────────────────────────────────────
+    push(...sep('-', W))
+    push(CMD.alignCenter)
+    push(...line('Regimen Comun - Responsable IVA'))
+    push(...line('Esta factura es titulo valor'))
+    push(...line('segun Art. 616-1 E.T.'))
+    push(...line())
+    push(CMD.boldOn, ...line('¡Gracias por su compra!'), CMD.boldOff)
+    push(...line('Conserve esta factura'))
+    if (d.footer) push(...line(d.footer))
+    push(...line('www.reg-x.com'))
+  } else {
+    // ── Pie de comanda ───────────────────────────────────────
+    push(...sep('-', W))
+    push(CMD.alignCenter)
+    push(CMD.boldOn, ...line('** NO ES FACTURA DE VENTA **'), CMD.boldOff)
+    if (d.footer) push(...line(d.footer))
+  }
 
   // Avanzar y cortar
   push(...CMD.feedCut)

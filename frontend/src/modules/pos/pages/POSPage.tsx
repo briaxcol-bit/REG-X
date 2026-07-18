@@ -11,6 +11,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { usePOSStore, type CartItem } from '@store/pos.store'
 import { useAuthStore } from '@store/auth.store'
 import { supabase } from '@lib/supabase'
+import { buildEscPosReceipt } from '@lib/escpos'
+import { printEscPosDirect } from '@lib/print'
 import { ReceiptTemplate } from '@modules/pos/components/ReceiptTemplate'
 import { cn } from '@shared/utils/cn'
 import { formatCurrency } from '@shared/utils/format'
@@ -468,7 +470,31 @@ export default function POSPage() {
         isComanda:     true,
       }
       setLastReceipt(receipt)
-      setTimeout(() => window.print(), 80)
+
+      // Impresión directa ESC/POS (USB o bridge de red), igual que la caja
+      // principal. Si no hay impresora directa, cae al diálogo del navegador.
+      const escBytes = buildEscPosReceipt({
+        businessName: receipt.businessName,
+        branchName:   receipt.branchName,
+        orderNumber:  receipt.orderNumber,
+        cashierName:  receipt.cashierName,
+        date:         receipt.date.toLocaleString('es-CO'),
+        items: items.map(it => ({
+          name:      it.name,
+          quantity:  it.quantity,
+          unitPrice: it.price,
+          total:     it.total,
+        })),
+        subtotal:      getSubtotal(),
+        taxTotal:      getTaxTotal(),
+        discountTotal: getDiscountTotal(),
+        total:         getTotal(),
+        payments:      [],
+        isComanda:     true,
+        openDrawer:    false,
+      })
+      const printed = await printEscPosDirect(escBytes)
+      if (!printed.ok) setTimeout(() => window.print(), 80)
 
       clearCart()
       toast.success('Comanda enviada')
