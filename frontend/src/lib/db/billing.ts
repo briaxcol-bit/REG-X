@@ -144,6 +144,15 @@ export async function renewSubscription(tenantId: string): Promise<void> {
   if (error) throw error
 }
 
+/** Otorga un demo (TRIAL) hasta una fecha. Al vencer, el trigger de BD bloquea las ventas. */
+export async function setSubscriptionDemo(tenantId: string, untilDate: string): Promise<void> {
+  const { error } = await (supabase.rpc as any)('set_subscription_demo', {
+    p_tenant_id: tenantId,
+    p_until: untilDate, // 'YYYY-MM-DD'
+  })
+  if (error) throw error
+}
+
 /** Cancela la suscripción de un tenant. */
 export async function cancelSubscription(tenantId: string, reason?: string): Promise<void> {
   const { error } = await (supabase.rpc as any)('cancel_subscription', {

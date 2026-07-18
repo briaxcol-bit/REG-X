@@ -91,6 +91,11 @@ function AuthInitializer() {
         setSession(session)
         setUser(session?.user ?? null)
         if (!session && !localStorage.getItem('regx:access_token')) {
+          // No desloguear por fallos de red: si la tablet estaba dormida o sin
+          // internet cuando tocaba refrescar el token, supabase reporta sesión
+          // nula transitoriamente. Solo cerramos sesión con un SIGNED_OUT
+          // explícito y estando online; al volver la red el token se refresca solo.
+          if (event !== 'SIGNED_OUT' || !navigator.onLine) return
           logout()
           return
         }

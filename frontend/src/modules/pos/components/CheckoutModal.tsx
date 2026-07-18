@@ -305,6 +305,8 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
       payments: [{ method: r.paymentMethod, amount: r.total }],
       cashReceived:  r.cashReceived,
       change:        r.change,
+      // El pulso de apertura del cajón viaja con cada factura impresa
+      openDrawer:    true,
     })
 
     // 1) USB directo — funciona en tablet/móvil Android (imprime sin driver del SO).

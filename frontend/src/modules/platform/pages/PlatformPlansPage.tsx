@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   getPlans, setPlanPrice, setPlanFeatures, setPlanActive, createPlan, deletePlan,
-  getTenantSubscriptions, activateSubscription, renewSubscription, cancelSubscription,
+  getTenantSubscriptions, activateSubscription, renewSubscription, cancelSubscription, setSubscriptionDemo,
   type PlanCode, type PlanRow, type TenantSubscriptionRow,
 } from '@lib/db'
 import {
@@ -392,6 +392,7 @@ function SubRow({ row, plans }: { row: TenantSubscriptionRow; plans: PlanRow[] }
   const sub = row.subscriptions?.[0]
   const [plan, setPlan] = useState<string>(sub?.plan ?? row.plan ?? 'BASIC')
   const [override, setOverride] = useState('')
+  const [demoUntil, setDemoUntil] = useState('')
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['tenant-subscriptions'] })
@@ -404,8 +405,12 @@ function SubRow({ row, plans }: { row: TenantSubscriptionRow; plans: PlanRow[] }
   })
   const renew  = useMutation({ mutationFn: () => renewSubscription(row.id), onSuccess: invalidate })
   const cancel = useMutation({ mutationFn: () => cancelSubscription(row.id), onSuccess: invalidate })
+  const demo   = useMutation({
+    mutationFn: () => setSubscriptionDemo(row.id, demoUntil),
+    onSuccess: () => { setDemoUntil(''); invalidate() },
+  })
 
-  const busy = activate.isPending || renew.isPending || cancel.isPending
+  const busy = activate.isPending || renew.isPending || cancel.isPending || demo.isPending
   const end  = sub?.current_period_end ?? null
   const dl   = daysLeft(end)
   const expired = dl !== null && dl < 0
@@ -487,6 +492,28 @@ function SubRow({ row, plans }: { row: TenantSubscriptionRow; plans: PlanRow[] }
           >
             <XCircle className="h-3.5 w-3.5" />
           </button>
+
+          {/* Demo hasta una fecha: TRIAL hasta ese día; al vencer, la BD bloquea las ventas */}
+          <div className="flex items-center gap-1.5 basis-full mt-1">
+            <input
+              type="date"
+              value={demoUntil}
+              min={new Date().toISOString().slice(0, 10)}
+              onChange={(e) => setDemoUntil(e.target.value)}
+              disabled={busy}
+              title="Fecha en que termina el demo"
+              className="text-xs px-2 py-1.5 rounded-lg border border-grafito-200 dark:border-white/10 bg-white dark:bg-grafito-800 text-grafito-900 dark:text-white"
+            />
+            <button
+              onClick={() => demo.mutate()}
+              disabled={busy || !demoUntil}
+              title="Dar acceso demo hasta la fecha elegida; después se bloquean las ventas hasta activar el plan"
+              className="inline-flex items-center gap-1 rounded-lg border border-amber-400/40 bg-amber-500/10 px-2.5 py-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 disabled:opacity-40"
+            >
+              {demo.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CalendarClock className="h-3.5 w-3.5" />}
+              Demo hasta
+            </button>
+          </div>
         </div>
       </td>
     </tr>

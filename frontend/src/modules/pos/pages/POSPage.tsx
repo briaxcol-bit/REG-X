@@ -257,6 +257,7 @@ export default function POSPage() {
     getSubtotal, getTaxTotal, getDiscountTotal, getTotal, getTip, getGrandTotal,
     lastReceipt, setLastReceipt,
     addTab, removeTab, switchTab, renameTab,
+    isOffline,
   } = usePOSStore()
 
   // Derivar datos de la tab activa directamente (reactivo con Zustand)
@@ -525,7 +526,8 @@ export default function POSPage() {
 
       {/* Modales */}
       <OpenCashModal
-        open={!loadingSession && !hasOpenSession}
+        // Sin internet no se puede consultar ni abrir caja — no molestar con el modal
+        open={!loadingSession && !hasOpenSession && !isOffline}
         isCommandsOnly={isCommandsOnly}
         terminalName={terminal?.name}
       />

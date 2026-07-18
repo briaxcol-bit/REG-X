@@ -8,10 +8,11 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      // PWA instalable como app de escritorio. selfDestroying estuvo activo
-      // mientras un SW viejo servía builds cacheados; con autoUpdate +
-      // skipWaiting + cleanupOutdatedCaches las actualizaciones aplican solas.
-      registerType: 'autoUpdate',
+      // PWA instalable como app de escritorio.
+      // 'prompt': la versión nueva NO recarga la página sola (un POS no puede
+      // reiniciarse en plena venta). main.tsx decide: si no hay carritos con
+      // ítems actualiza de inmediato; si los hay, muestra un aviso con botón.
+      registerType: 'prompt',
       includeAssets: ['favicon.ico', 'favicon.png', 'apple-touch-icon.png'],
       manifest: {
         name: 'REG-X ERP/POS',
@@ -61,7 +62,9 @@ export default defineConfig({
             handler: 'NetworkFirst',
             options: {
               cacheName: 'supabase-api-cache',
-              expiration: { maxEntries: 200, maxAgeSeconds: 60 * 5 },
+              // 3 días: NetworkFirst siempre prefiere la red; el cache solo se usa
+              // como respaldo offline (catálogo, categorías, etc.)
+              expiration: { maxEntries: 500, maxAgeSeconds: 60 * 60 * 24 * 3 },
               networkTimeoutSeconds: 10,
             },
           },
@@ -91,8 +94,10 @@ export default defineConfig({
             },
           },
         ],
-        skipWaiting: true,
-        clientsClaim: true,
+        // skipWaiting/clientsClaim desactivados: el SW nuevo espera a que
+        // main.tsx lo active (updateSW) — evita recargas a mitad de venta.
+        skipWaiting: false,
+        clientsClaim: false,
         cleanupOutdatedCaches: true,
       },
       devOptions: {
