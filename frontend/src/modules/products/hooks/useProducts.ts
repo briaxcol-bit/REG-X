@@ -11,6 +11,7 @@ export interface Product {
   price: number
   imageUrl?: string
   sku: string
+  barcode?: string
   stock: number
   categoryColor?: string
   categoryName?: string
@@ -19,7 +20,7 @@ export interface Product {
   status: string
 }
 
-function toProduct(row: ProductRow): Product {
+export function toProduct(row: ProductRow): Product {
   const stock = (row.inventory ?? []).reduce((s, i) => s + Number(i.quantity), 0)
   const cat   = row.categories as any
   return {
@@ -28,6 +29,7 @@ function toProduct(row: ProductRow): Product {
     price:         Number(row.price),
     imageUrl:      row.image_url ?? undefined,
     sku:           row.sku,
+    barcode:       row.barcode ?? undefined,
     stock,
     categoryColor: cat?.color ?? '#374151',
     categoryName:  cat?.name  ?? undefined,

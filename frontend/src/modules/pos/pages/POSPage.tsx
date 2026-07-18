@@ -14,7 +14,7 @@ import { supabase } from '@lib/supabase'
 import { ReceiptTemplate } from '@modules/pos/components/ReceiptTemplate'
 import { cn } from '@shared/utils/cn'
 import { formatCurrency } from '@shared/utils/format'
-import { useProducts, useCategories } from '@modules/products/hooks/useProducts'
+import { useProducts, useCategories, toProduct } from '@modules/products/hooks/useProducts'
 import { CheckoutModal } from '@modules/pos/components/CheckoutModal'
 import { BarcodeScanner } from '@modules/pos/components/BarcodeScanner'
 import { CustomerPicker } from '@modules/pos/components/CustomerPicker'
@@ -27,7 +27,7 @@ import { usePosPricing } from '@modules/pos/hooks/usePosPricing'
 import { useCashSession } from '@modules/pos/hooks/useCashSession'
 import { usePOSTerminal } from '@modules/pos/hooks/usePOSTerminal'
 import { useCreateSale } from '@modules/pos/hooks/useCreateSale'
-import { getPendingSales, getPOSTerminals, getActiveTableOrders, getAllActiveOrdersForTable, closeAllOrdersForTable, type SaleHistoryRow, type RestaurantOrderRow, type TableRow } from '@lib/db'
+import { getPendingSales, getPOSTerminals, getActiveTableOrders, getAllActiveOrdersForTable, closeAllOrdersForTable, getProducts, type SaleHistoryRow, type RestaurantOrderRow, type TableRow } from '@lib/db'
 import { TableMapModal } from '@modules/pos/components/TableMapModal'
 import { toast } from 'sonner'
 
@@ -492,11 +492,29 @@ export default function POSPage() {
     addItem({ productId: product.id, categoryId: (product as { category_id?: string | null }).category_id ?? null, sku: product.sku, name: product.name, price: product.price, quantity: 1, stock: product.stock, discount: 0, tax: product.tax ?? 0 })
   }, [addItem, items])
 
-  const handleBarcodeScanned = useCallback((barcode: string) => {
+  const handleBarcodeScanned = useCallback(async (barcode: string) => {
     setScannerOpen(false)
-    setSearch(barcode)
+    const code = barcode.trim()
+    if (!code || !tenant?.tenantId) return
+    try {
+      // Buscar coincidencia exacta por código de barras o SKU
+      const rows = await getProducts(tenant.tenantId, { search: code })
+      const exact = rows.filter(r => r.barcode === code || r.sku === code)
+      // Respetar categorías permitidas por la terminal
+      const allowed = allowedCategories
+        ? exact.filter(r => !r.category_id || allowedCategories.includes(r.category_id))
+        : exact
+      if (allowed.length === 1) {
+        const product = toProduct(allowed[0])
+        handleAddProduct(product)
+        setSearch('')
+        return
+      }
+    } catch { /* fallback a búsqueda manual */ }
+    // Sin coincidencia exacta: dejar el código en el buscador
+    setSearch(code)
     searchRef.current?.focus()
-  }, [])
+  }, [tenant?.tenantId, allowedCategories, handleAddProduct])
 
   const subtotal   = getSubtotal()
   const taxes      = getTaxTotal()
@@ -584,6 +602,10 @@ export default function POSPage() {
               ref={searchRef}
               value={search}
               onChange={e => setSearch(e.target.value)}
+              onKeyDown={e => {
+                // Escáner USB: teclea el código y envía Enter → agregar directo si hay coincidencia exacta
+                if (e.key === 'Enter' && search.trim()) handleBarcodeScanned(search)
+              }}
               placeholder="Buscar por nombre, SKU o código de barras…"
               className="flex-1 bg-transparent text-sm text-grafito-900 dark:text-white placeholder:text-grafito-400 outline-none"
             />
