@@ -7,6 +7,7 @@ import { useAuthStore } from '@store/auth.store'
 import { supabase } from '@lib/supabase'
 import { useTheme } from '@shared/hooks/useTheme'
 import { cn } from '@shared/utils/cn'
+import { InstallAppButton } from '@shared/components/InstallAppButton'
 
 interface POSLayoutProps {
   children: React.ReactNode
@@ -155,6 +156,12 @@ export function POSLayout({ children }: POSLayoutProps) {
                     <Boxes className="h-4 w-4" />
                     Inventario
                   </button>
+
+                  {/* Descargar app */}
+                  <InstallAppButton
+                    onAfterClick={() => setMenuOpen(false)}
+                    className="px-3 py-2.5 text-xs font-medium rounded-none"
+                  />
 
                   {/* Cerrar sesión */}
                   <button

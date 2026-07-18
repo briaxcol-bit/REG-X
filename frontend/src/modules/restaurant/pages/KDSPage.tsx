@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@lib/supabase'
 import { useAuthStore } from '@store/auth.store'
+import { InstallAppButton } from '@shared/components/InstallAppButton'
 import {
   getKDSOrders,
   getKDSHistory,
@@ -383,6 +384,8 @@ export default function KDSPage() {
             <History className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Historial</span>
           </button>
+
+          <InstallAppButton variant="button" />
 
           {isChef && (
             <button
