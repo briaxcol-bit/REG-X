@@ -313,7 +313,7 @@ export async function getProducts(
   let q = supabase
     .from('products')
     .select(`
-      id, tenant_id, name, sku, price, cost_price, tax, image_url, status,
+      id, tenant_id, name, sku, barcode, price, cost_price, tax, image_url, status,
       track_inventory, category_id,
       categories(name, color),
       inventory(quantity)
@@ -328,7 +328,8 @@ export async function getProducts(
   if (params?.categoryId) q = q.eq('category_id', params.categoryId)
 
   if (params?.search) {
-    q = q.or(`name.ilike.%${params.search}%,sku.ilike.%${params.search}%`)
+    const s = params.search.trim()
+    q = q.or(`name.ilike.%${s}%,sku.ilike.%${s}%,barcode.ilike.%${s}%`)
   }
 
   const { data, error } = await q
