@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Wifi, WifiOff, Sun, Moon, Boxes, LogOut, User, ChevronDown } from 'lucide-react'
+import { LayoutDashboard, Wifi, WifiOff, Sun, Moon, Boxes, LogOut, User, ChevronDown, Package } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { usePOSStore } from '@store/pos.store'
 import { useAuthStore } from '@store/auth.store'
@@ -139,6 +139,22 @@ export function POSLayout({ children }: POSLayoutProps) {
                       {isCashier ? 'Cajero' : (profile?.businessRole ?? '')}
                     </p>
                   </div>
+
+                  {/* Navegación: productos + inventario */}
+                  <button
+                    onClick={() => { setMenuOpen(false); navigate('/products') }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs font-medium text-grafito-700 dark:text-grafito-200 hover:bg-grafito-100 dark:hover:bg-white/5 transition-colors"
+                  >
+                    <Package className="h-4 w-4" />
+                    Productos
+                  </button>
+                  <button
+                    onClick={() => { setMenuOpen(false); navigate('/inventory') }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs font-medium text-grafito-700 dark:text-grafito-200 hover:bg-grafito-100 dark:hover:bg-white/5 transition-colors"
+                  >
+                    <Boxes className="h-4 w-4" />
+                    Inventario
+                  </button>
 
                   {/* Cerrar sesión */}
                   <button
