@@ -4,7 +4,7 @@ import {
   ArrowLeft, Lock, Unlock, RotateCcw, Loader2,
   Plus, X, ImageIcon, Trash2,
 } from 'lucide-react'
-import { createTable, type TableRow } from '@lib/db'
+import { createTable, updateTable, deleteTable, type TableRow } from '@lib/db'
 import { useAuthStore } from '@store/auth.store'
 import { TableOrderPanel } from '../components/TableOrderPanel'
 import {
@@ -133,6 +133,174 @@ function AddTableModal({ onClose, onSaved }: AddTableModalProps) {
   )
 }
 
+// ── Modal editar / eliminar mesa ───────────────────────────────
+
+interface EditTableModalProps {
+  table: TableRow
+  onClose: () => void
+  onSaved: (table: TableRow) => void
+  onDeleted: (tableId: string) => void
+}
+
+function EditTableModal({ table, onClose, onSaved, onDeleted }: EditTableModalProps) {
+  const { tenant } = useAuthStore()
+  const [number,   setNumber]   = useState(table.number)
+  const [name,     setName]     = useState(table.name ?? '')
+  const [capacity, setCapacity] = useState(String(table.capacity))
+  const [saving,   setSaving]   = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  const isOccupied = table.status === 'OCCUPIED'
+  const inputCls = 'w-full rounded-xl bg-grafito-50 dark:bg-grafito-800 border border-grafito-200 dark:border-white/10 px-3 py-2.5 text-sm text-grafito-900 dark:text-white placeholder:text-grafito-400 outline-none focus:border-brand-500 transition-colors'
+
+  const handleSave = async () => {
+    if (!number.trim()) { toast.warning('El número de mesa es requerido.'); return }
+    if (!tenant?.tenantId) return
+    setSaving(true)
+    try {
+      const row = await updateTable(tenant.tenantId, table.id, {
+        number:   number.trim(),
+        name:     name.trim() || null,
+        capacity: Math.max(1, parseInt(capacity) || 4),
+      })
+      toast.success(`Mesa "${row.number}" actualizada.`)
+      onSaved({ ...table, ...row })
+      onClose()
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Error al actualizar la mesa.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!tenant?.tenantId) return
+    setDeleting(true)
+    try {
+      await deleteTable(tenant.tenantId, table.id)
+      toast.success(`Mesa "${table.number}" eliminada.`)
+      onDeleted(table.id)
+      onClose()
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Error al eliminar la mesa.')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-grafito-900 border border-grafito-200 dark:border-white/10 shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-grafito-100 dark:border-white/5">
+          <h2 className="text-sm font-bold text-grafito-900 dark:text-white">Editar Mesa {table.number}</h2>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-grafito-400 hover:bg-grafito-100 dark:hover:bg-white/10 transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-grafito-600 dark:text-grafito-300 mb-1.5">
+              Número / ID <span className="text-red-400">*</span>
+            </label>
+            <input value={number} onChange={e => setNumber(e.target.value)} autoFocus className={inputCls} />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-grafito-600 dark:text-grafito-300 mb-1.5">
+              Nombre descriptivo <span className="text-grafito-400 font-normal">(opcional)</span>
+            </label>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="Ej: Terraza, VIP..." className={inputCls} />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-grafito-600 dark:text-grafito-300 mb-1.5">
+              Capacidad (personas)
+            </label>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCapacity(v => String(Math.max(1, (parseInt(v) || 4) - 1)))}
+                className="h-10 w-10 rounded-xl border border-grafito-200 dark:border-white/10 bg-grafito-100 dark:bg-grafito-800 text-grafito-600 dark:text-grafito-300 hover:bg-grafito-200 dark:hover:bg-grafito-700 transition-colors font-bold text-lg"
+              >−</button>
+              <input
+                type="number" min={1} max={20} value={capacity}
+                onChange={e => setCapacity(e.target.value)}
+                className="flex-1 text-center rounded-xl bg-grafito-50 dark:bg-grafito-800 border border-grafito-200 dark:border-white/10 py-2.5 text-sm font-bold text-grafito-900 dark:text-white outline-none focus:border-brand-500"
+              />
+              <button
+                type="button"
+                onClick={() => setCapacity(v => String(Math.min(20, (parseInt(v) || 4) + 1)))}
+                className="h-10 w-10 rounded-xl border border-grafito-200 dark:border-white/10 bg-grafito-100 dark:bg-grafito-800 text-grafito-600 dark:text-grafito-300 hover:bg-grafito-200 dark:hover:bg-grafito-700 transition-colors font-bold text-lg"
+              >+</button>
+            </div>
+          </div>
+
+          {/* Eliminar */}
+          {confirmingDelete ? (
+            <div className="rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 p-3 space-y-2">
+              <p className="text-xs font-semibold text-red-600 dark:text-red-400">
+                ¿Eliminar la mesa "{table.number}"? Esta acción no se puede deshacer.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setConfirmingDelete(false)}
+                  disabled={deleting}
+                  className="flex-1 rounded-lg border border-grafito-200 dark:border-white/10 py-2 text-xs font-semibold text-grafito-600 dark:text-grafito-300 hover:bg-white dark:hover:bg-white/5 transition-colors disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-red-500 py-2 text-xs font-bold text-white hover:bg-red-600 transition-colors disabled:opacity-50"
+                >
+                  {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                  {deleting ? 'Eliminando…' : 'Sí, eliminar'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => {
+                if (isOccupied) { toast.error('La mesa está ocupada: cobra o elimina su orden antes de eliminarla.'); return }
+                setConfirmingDelete(true)
+              }}
+              className={cn(
+                'flex w-full items-center justify-center gap-1.5 rounded-xl border py-2 text-xs font-semibold transition-colors',
+                isOccupied
+                  ? 'border-grafito-200 dark:border-white/10 text-grafito-400 cursor-not-allowed'
+                  : 'border-red-200 dark:border-red-500/30 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10',
+              )}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Eliminar mesa
+            </button>
+          )}
+        </div>
+
+        <div className="px-5 pb-5 flex gap-2">
+          <button
+            onClick={onClose}
+            className="flex-1 rounded-xl border border-grafito-200 dark:border-white/10 py-2.5 text-sm font-semibold text-grafito-600 dark:text-grafito-300 hover:bg-grafito-50 dark:hover:bg-white/5 transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || !number.trim()}
+            className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-brand-500 py-2.5 text-sm font-bold text-white hover:bg-brand-600 disabled:opacity-50 transition-colors"
+          >
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {saving ? 'Guardando...' : 'Guardar cambios'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Página principal ────────────────────────────────────────────
 
 export default function TablesPage() {
@@ -143,11 +311,12 @@ export default function TablesPage() {
   const [editMode,       setEditMode]       = useState(false)
   const [addOpen,        setAddOpen]        = useState(false)
   const [selectedTable,  setSelectedTable]  = useState<TableRow | null>(null)
+  const [editingTable,   setEditingTable]   = useState<TableRow | null>(null)
   const bgInputRef = useRef<HTMLInputElement>(null)
 
   // ── Shared hook (SST) ────────────────────────────────────────
   const {
-    tables, loading, positions, orderInfoMap,
+    tables, setTables, loading, positions, orderInfoMap,
     zoom, changeZoom, fitToScreen,
     bgImage, setBgImage, saveCfg,
     scrollRef,
@@ -166,9 +335,13 @@ export default function TablesPage() {
   // ── Handlers locales ─────────────────────────────────────────
 
   const handleTableClick = useCallback((table: TableRow) => {
-    if (editMode) return
+    if (editMode) {
+      // En modo edición, clic en la mesa abre editar/eliminar
+      if (canManageTables) setEditingTable(table)
+      return
+    }
     setSelectedTable(table)
-  }, [editMode])
+  }, [editMode, canManageTables])
 
   const handleTableUpdated = useCallback((updated: TableRow) => {
     updateTableInStore(updated)
@@ -230,6 +403,15 @@ export default function TablesPage() {
         />
       )}
 
+      {editingTable && (
+        <EditTableModal
+          table={editingTable}
+          onClose={() => setEditingTable(null)}
+          onSaved={updateTableInStore}
+          onDeleted={(id) => setTables(prev => prev.filter(t => t.id !== id))}
+        />
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-grafito-200 dark:border-white/5 bg-white dark:bg-grafito-900 shrink-0">
         <div className="flex items-center gap-3">
@@ -243,7 +425,7 @@ export default function TablesPage() {
             <h1 className="text-lg font-bold text-grafito-900 dark:text-white">Mapa de Mesas</h1>
             <p className="text-xs text-grafito-500 dark:text-grafito-400">
               {editMode
-                ? 'Arrastra las mesas para posicionarlas · Ctrl+scroll para zoom.'
+                ? 'Arrastra para posicionar · clic en una mesa para editarla o eliminarla.'
                 : 'Haz clic en una mesa para gestionar su pedido.'}
             </p>
           </div>

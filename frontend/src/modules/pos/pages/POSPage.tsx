@@ -244,6 +244,8 @@ export default function POSPage() {
   const [checkoutOpen, setCheckoutOpen]       = useState(false)
   const [scannerOpen, setScannerOpen]         = useState(false)
   const [customerPickerOpen, setCustomerPickerOpen] = useState(false)
+  const [confirmDeleteOrder, setConfirmDeleteOrder] = useState(false)
+  const [deletingOrder, setDeletingOrder]           = useState(false)
   const [customerName, setCustomerName]             = useState<string | null>(null)
   const [closeModalOpen, setCloseModalOpen]   = useState(false)
   const [editingTabId, setEditingTabId]       = useState<string | null>(null)
@@ -608,6 +610,58 @@ export default function POSPage() {
           onClose={() => setMesasOpen(false)}
           onTableSelect={handleTableSelectFromMap}
         />
+      )}
+
+      {/* Confirmación: eliminar orden / liberar mesa */}
+      {confirmDeleteOrder && activeTab && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="relative w-full max-w-sm rounded-2xl border border-red-200 dark:border-red-500/20 bg-white dark:bg-grafito-900 shadow-2xl p-6 space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-100 dark:bg-red-500/10 shrink-0">
+                <Trash2 className="h-5 w-5 text-red-500" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-grafito-900 dark:text-white">
+                  {activeTab.tableId ? 'Eliminar orden de la mesa' : 'Eliminar orden'}
+                </h3>
+                <p className="text-sm text-grafito-500 dark:text-grafito-400 mt-0.5">
+                  Se eliminarán los {itemCount} producto{itemCount !== 1 ? 's' : ''} de esta orden
+                  {activeTab.tableId ? ' y la mesa quedará libre' : ''}. Esta acción no se puede deshacer.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setConfirmDeleteOrder(false)}
+                disabled={deletingOrder}
+                className="flex-1 rounded-xl border border-grafito-200 dark:border-white/10 py-2.5 text-sm font-semibold text-grafito-600 dark:text-grafito-300 hover:bg-grafito-100 dark:hover:bg-white/5 transition-all disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  setDeletingOrder(true)
+                  try {
+                    if (activeTab.tableId && tenant?.tenantId) {
+                      await closeAllOrdersForTable(tenant.tenantId, activeTab.tableId)
+                    }
+                    removeTab(activeTab.id)
+                    toast.success(activeTab.tableId ? 'Orden eliminada y mesa liberada.' : 'Orden eliminada.')
+                    setConfirmDeleteOrder(false)
+                  } catch {
+                    toast.error('No se pudo eliminar la orden.')
+                  } finally {
+                    setDeletingOrder(false)
+                  }
+                }}
+                disabled={deletingOrder}
+                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-red-500 py-2.5 text-sm font-bold text-white hover:bg-red-600 transition-all disabled:opacity-50"
+              >
+                {deletingOrder ? 'Eliminando…' : 'Sí, eliminar'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       <CustomerPicker
         open={customerPickerOpen}
@@ -1046,6 +1100,17 @@ export default function POSPage() {
               >
                 <X className="h-3.5 w-3.5" />
                 Cerrar pestaña de mesa
+              </button>
+            )}
+
+            {/* Eliminar orden (mesa u orden normal) — pide confirmación */}
+            {activeTab && items.length > 0 && (
+              <button
+                onClick={() => setConfirmDeleteOrder(true)}
+                className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-red-200 dark:border-red-500/30 py-2 text-xs font-semibold text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {activeTab.tableId ? 'Eliminar orden y liberar mesa' : 'Eliminar orden'}
               </button>
             )}
 

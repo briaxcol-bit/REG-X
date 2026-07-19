@@ -51,6 +51,36 @@ export async function createTable(
   return row as unknown as TableRow
 }
 
+export async function updateTable(
+  tenantId: string,
+  tableId: string,
+  data: { number: string; name?: string | null; capacity: number },
+): Promise<TableRow> {
+  const { data: row, error } = await supabase
+    .from('tables')
+    .update({
+      number:   data.number,
+      name:     data.name ?? null,
+      capacity: data.capacity,
+    })
+    .eq('id', tableId)
+    .eq('tenant_id', tenantId)
+    .select('id, number, name, capacity, status, area_id')
+    .single()
+  if (error) throw error
+  return row as unknown as TableRow
+}
+
+/** Elimina (desactiva) una mesa. No borra su historial de órdenes. */
+export async function deleteTable(tenantId: string, tableId: string): Promise<void> {
+  const { error } = await supabase
+    .from('tables')
+    .update({ is_active: false })
+    .eq('id', tableId)
+    .eq('tenant_id', tenantId)
+  if (error) throw error
+}
+
 export async function updateTableStatus(tableId: string, status: TableRow['status']) {
   const { error } = await supabase
     .from('tables')

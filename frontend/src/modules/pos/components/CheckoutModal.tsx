@@ -15,7 +15,7 @@ import { buildEscPosReceipt, bytesToBase64 } from '@lib/escpos'
 import { isUsbPrinterSupported, usbPrinterLinked, linkUsbPrinter, printUsbRaw, openDrawerUsb, usbAccessDenied, lastUsbError } from '@lib/usb-printer'
 
 // ── Métodos de pago ────────────────────────────────────────────────────────────
-type PaymentMethod = 'CASH' | 'CARD' | 'NEQUI' | 'DAVIPLATA' | 'TRANSFER' | 'CREDIT' | 'GIFT_CARD'
+type PaymentMethod = 'CASH' | 'CARD' | 'NEQUI' | 'DAVIPLATA' | 'TRANSFER' | 'MIXED' | 'GIFT_CARD'
 
 const METHODS: {
   method: PaymentMethod
@@ -72,9 +72,9 @@ const METHODS: {
     icon:   Smartphone,
   },
   {
-    method: 'CREDIT',
-    label:  'Fiado',
-    sub:    'Cuenta por cobrar',
+    method: 'MIXED',
+    label:  'Combinado',
+    sub:    'Efectivo + Transferencia',
     color:  'text-orange-600 dark:text-orange-400',
     border: 'border-orange-500',
     bg:     'bg-orange-50 dark:bg-orange-500/10',
@@ -134,9 +134,15 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
 
   const cashReceived = parseInt(cashInput.replace(/\D/g, ''), 10) || 0
   const change       = method === 'CASH' ? Math.max(0, cashReceived - total) : 0
+
+  // Pago combinado: parte en efectivo + resto por transferencia
+  const [mixedCashInput, setMixedCashInput] = useState('')
+  const mixedCash     = parseInt(mixedCashInput.replace(/\D/g, ''), 10) || 0
+  const mixedTransfer = Math.max(0, total - mixedCash)
+
   const canComplete  =
     method === 'CASH'      ? cashReceived >= total :
-    method === 'CREDIT'    ? !!customerId :
+    method === 'MIXED'     ? mixedCash > 0 && mixedCash < total :
     method === 'GIFT_CARD' ? giftCardCode.trim().length > 0 :
     true
 
@@ -175,11 +181,16 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
           tax_amount:      it.taxAmount,
           total:           it.total,
         })),
-        payments: [{
-          method:    method === 'NEQUI' || method === 'DAVIPLATA' ? 'QR' : method,
-          amount:    paidAmount,
-          reference: method === 'GIFT_CARD' ? giftCardCode.trim().toUpperCase() : undefined,
-        }],
+        payments: method === 'MIXED'
+          ? [
+              { method: 'CASH',     amount: mixedCash },
+              { method: 'TRANSFER', amount: mixedTransfer },
+            ]
+          : [{
+              method:    method === 'NEQUI' || method === 'DAVIPLATA' ? 'QR' : method,
+              amount:    paidAmount,
+              reference: method === 'GIFT_CARD' ? giftCardCode.trim().toUpperCase() : undefined,
+            }],
         customer_id:      customerId,
         notes:            tip > 0 ? `${notes ? notes + ' | ' : ''}Propina: ${tip}` : notes,
         subtotal:         subtotalAmt,
@@ -195,7 +206,7 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
       })
 
       // Abrir el cajón monedero en ventas en efectivo (silencioso si no está vinculado)
-      if (method === 'CASH') {
+      if (method === 'CASH' || method === 'MIXED') {
         if (await usbPrinterLinked()) openDrawerUsb().catch(() => {})
         else openCashDrawer().catch(() => {})
       }
@@ -263,7 +274,9 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
         taxTotal:       taxTotalAmt,
         tip:            tip > 0 ? tip : undefined,
         total,
-        paymentMethod:  METHODS.find(m => m.method === method)?.label ?? method,
+        paymentMethod:  method === 'MIXED'
+          ? `Efectivo ${formatCurrency(mixedCash, currency)} + Transf. ${formatCurrency(mixedTransfer, currency)}`
+          : METHODS.find(m => m.method === method)?.label ?? method,
         cashReceived:   method === 'CASH' ? cashReceived : undefined,
         change:         method === 'CASH' ? change : undefined,
         currency,
@@ -458,6 +471,7 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
     clearCart()
     setSuccess(false)
     setCashInput('')
+    setMixedCashInput('')
     setGiftCardCode('')
     setMethod('CASH')
     setPrintMsg('')
@@ -717,26 +731,50 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
                       </motion.div>
                     )}
 
-                    {method === 'CREDIT' && (
+                    {method === 'MIXED' && (
                       <motion.div
                         initial={{ opacity: 0, y: 8 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="rounded-xl bg-orange-50 dark:bg-orange-500/10 border border-orange-200 dark:border-orange-500/20 p-4 space-y-1"
+                        className="space-y-3"
                       >
-                        {customerId ? (
-                          <>
-                            <p className="text-sm font-semibold text-grafito-900 dark:text-white">
-                              Se creará una cuenta por cobrar {customerData ? `a ${customerData.full_name}` : 'al cliente'}
-                            </p>
-                            <p className="text-xs text-grafito-500">
-                              Por {formatCurrency(total, currency)} · vence en 30 días · se gestiona en Finanzas → Cuentas por Cobrar
-                            </p>
-                          </>
-                        ) : (
-                          <p className="text-sm font-semibold text-orange-600 dark:text-orange-400">
-                            Para fiar debes seleccionar primero un cliente en el carrito
+                        <p className="text-xs font-bold text-grafito-500 uppercase tracking-wider">¿Cuánto paga en efectivo?</p>
+                        <div className="relative">
+                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-grafito-400 font-bold text-lg">$</span>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={mixedCashInput}
+                            autoFocus
+                            onChange={e => {
+                              const digits = e.target.value.replace(/\D/g, '')
+                              setMixedCashInput(digits ? new Intl.NumberFormat('es-CO').format(parseInt(digits, 10)) : '')
+                            }}
+                            placeholder="0"
+                            className="w-full rounded-xl border-2 border-grafito-200 dark:border-white/10 bg-grafito-50 dark:bg-white/5 pl-8 pr-4 py-3.5 text-2xl font-black text-grafito-900 dark:text-white placeholder-grafito-300 dark:placeholder-grafito-600 outline-none focus:border-brand-500 transition-colors"
+                          />
+                        </div>
+
+                        {/* Desglose */}
+                        <div className="rounded-xl bg-orange-50 dark:bg-orange-500/10 border border-orange-200 dark:border-orange-500/20 p-4 space-y-2">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-grafito-500">Efectivo</span>
+                            <span className="font-bold text-grafito-900 dark:text-white">{formatCurrency(mixedCash, currency)}</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-grafito-500">Transferencia</span>
+                            <span className="font-bold text-grafito-900 dark:text-white">{formatCurrency(mixedTransfer, currency)}</span>
+                          </div>
+                          <div className="flex justify-between text-sm border-t border-orange-200 dark:border-orange-500/20 pt-2">
+                            <span className="text-grafito-500">Total</span>
+                            <span className="font-black text-orange-600 dark:text-orange-400">{formatCurrency(total, currency)}</span>
+                          </div>
+                        </div>
+                        {mixedCash >= total && (
+                          <p className="text-xs font-semibold text-orange-600 dark:text-orange-400">
+                            El efectivo cubre el total: usa el método "Efectivo" en su lugar.
                           </p>
                         )}
+                        <p className="text-xs text-grafito-400">Confirma que la transferencia fue recibida antes de completar la venta.</p>
                       </motion.div>
                     )}
 
