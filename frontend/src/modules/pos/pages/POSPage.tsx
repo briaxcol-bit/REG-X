@@ -44,9 +44,10 @@ async function sendBrowserPush(title: string, body: string, tag: string) {
 
 // ── Product card ─────────────────────────────────────────────
 function ProductCard({ product, onAdd }: {
-  product: { id: string; name: string; price: number; imageUrl?: string; sku: string; stock: number; categoryColor?: string; tax: number }
+  product: { id: string; name: string; price: number; imageUrl?: string; sku: string; stock: number; trackStock?: boolean; categoryColor?: string; tax: number }
   onAdd: () => void
 }) {
+  const tracks = product.trackStock !== false
   return (
     <motion.button
       whileTap={{ scale: 0.95 }}
@@ -69,18 +70,20 @@ function ProductCard({ product, onAdd }: {
             {product.name[0]?.toUpperCase()}
           </div>
         )}
-        {/* Badge de stock — siempre visible */}
-        <span className={cn(
-          'absolute top-1.5 right-1.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold border',
-          product.stock === 0
-            ? 'bg-red-500 text-white border-red-600/20'
-            : product.stock <= 5
-              ? 'bg-amber-400 text-amber-900 border-amber-500/20'
-              : 'bg-white/90 dark:bg-grafito-900/90 text-grafito-700 dark:text-grafito-200 border-black/5 dark:border-white/10',
-        )}>
-          {product.stock} uds
-        </span>
-        {product.stock === 0 && (
+        {/* Badge de stock — oculto si la categoría no maneja stock */}
+        {tracks && (
+          <span className={cn(
+            'absolute top-1.5 right-1.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold border',
+            product.stock === 0
+              ? 'bg-red-500 text-white border-red-600/20'
+              : product.stock <= 5
+                ? 'bg-amber-400 text-amber-900 border-amber-500/20'
+                : 'bg-white/90 dark:bg-grafito-900/90 text-grafito-700 dark:text-grafito-200 border-black/5 dark:border-white/10',
+          )}>
+            {product.stock} uds
+          </span>
+        )}
+        {tracks && product.stock === 0 && (
           <div className="absolute inset-0 flex items-center justify-center bg-grafito-900/60">
             <span className="text-[10px] font-bold text-white uppercase tracking-wider">Agotado</span>
           </div>

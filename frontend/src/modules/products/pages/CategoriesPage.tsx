@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Plus, Loader2, Pencil, Trash2 } from 'lucide-react'
-import { getCategories, createCategory, updateCategory, deleteCategory } from '@lib/db'
+import { ArrowLeft, Plus, Loader2, Pencil, Trash2, Boxes, ChefHat } from 'lucide-react'
+import { getCategories, createCategory, updateCategory, deleteCategory, setCategoryTrackInventory } from '@lib/db'
 import type { CategoryRow } from '@lib/db'
 import { useAuthStore } from '@store/auth.store'
 import { createPortal } from 'react-dom'
@@ -55,6 +55,21 @@ export default function CategoriesPage() {
     setIsModalOpen(true)
   }
 
+  const handleToggleStock = async (e: React.MouseEvent, c: CategoryRow) => {
+    e.stopPropagation()
+    if (!tenant) return
+    const next = !(c.track_inventory ?? true)
+    try {
+      const updated = await setCategoryTrackInventory(tenant.tenantId, c.id, next)
+      setCategories(prev => prev.map(x => x.id === c.id ? updated : x))
+      toast.success(next
+        ? `"${c.name}" ahora maneja stock: sus productos validan inventario.`
+        : `"${c.name}" ya no maneja stock: sus productos se venden sin límite (ideal para platos preparados).`)
+    } catch {
+      toast.error('Error al cambiar el control de stock')
+    }
+  }
+
   const handleDeleteCategory = async () => {
     if (!tenant || !deletingCategory) return
     try {
@@ -105,9 +120,28 @@ export default function CategoriesPage() {
               onClick={() => navigate(`/${from}?category=${c.id}`)}
               className="group flex items-center justify-between rounded-2xl border border-grafito-200 dark:border-white/5 bg-white dark:bg-grafito-900/60 p-5 backdrop-blur-md cursor-pointer hover:border-brand-500/50 hover:bg-brand-500/5 transition-all"
             >
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 min-w-0">
                 <span className="h-4 w-4 rounded-full flex-none" style={{ background: c.color }}></span>
-                <h3 className="font-bold text-grafito-900 dark:text-white text-sm group-hover:text-brand-500 transition-colors truncate">{c.name}</h3>
+                <div className="min-w-0">
+                  <h3 className="font-bold text-grafito-900 dark:text-white text-sm group-hover:text-brand-500 transition-colors truncate">{c.name}</h3>
+                  {/* Toggle: ¿los productos de esta categoría manejan stock? */}
+                  <button
+                    type="button"
+                    onClick={(e) => handleToggleStock(e, c)}
+                    title={(c.track_inventory ?? true)
+                      ? 'Click para vender sin control de stock (p. ej. platos de comida)'
+                      : 'Click para volver a controlar el stock'}
+                    className={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold border transition-colors ${
+                      (c.track_inventory ?? true)
+                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/25 hover:bg-emerald-500/20'
+                        : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/25 hover:bg-amber-500/20'
+                    }`}
+                  >
+                    {(c.track_inventory ?? true)
+                      ? <><Boxes className="h-3 w-3" /> Con stock</>
+                      : <><ChefHat className="h-3 w-3" /> Sin stock</>}
+                  </button>
+                </div>
               </div>
               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button

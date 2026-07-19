@@ -19,7 +19,7 @@ export interface ProductRow {
   track_inventory: boolean
   category_id: string | null
   min_stock?: number
-  categories?: { name: string; color: string } | null
+  categories?: { name: string; color: string; track_inventory?: boolean } | null
   inventory?: { quantity: number; warehouse_id: string }[]
 }
 
@@ -30,6 +30,8 @@ export interface CategoryRow {
   color: string
   icon: string | null
   is_active: boolean
+  /** FALSE = sus productos se venden sin validar stock (p. ej. platos preparados) */
+  track_inventory: boolean
 }
 
 // ── Create Product ─────────────────────────────────────────────
@@ -320,7 +322,7 @@ export async function getProducts(
     .select(`
       id, tenant_id, name, sku, barcode, price, cost_price, tax, image_url, status,
       track_inventory, category_id,
-      categories(name, color),
+      categories(name, color, track_inventory),
       inventory(quantity)
     `)
     .eq('tenant_id', tenantId)
@@ -361,10 +363,12 @@ export async function getProducts(
   })
 }
 
+const CATEGORY_COLS = 'id, tenant_id, name, color, icon, is_active, track_inventory'
+
 export async function getCategories(tenantId: string): Promise<CategoryRow[]> {
   const { data, error } = await supabase
     .from('categories')
-    .select('id, tenant_id, name, color, icon, is_active')
+    .select(CATEGORY_COLS)
     .eq('tenant_id', tenantId)
     .eq('is_active', true)
     .is('deleted_at', null)
@@ -377,7 +381,7 @@ export async function createCategory(tenantId: string, name: string, color: stri
   const { data, error } = await supabase
     .from('categories')
     .insert({ tenant_id: tenantId, name: name.trim(), color, is_active: true })
-    .select('id, tenant_id, name, color, icon, is_active')
+    .select(CATEGORY_COLS)
     .single()
   if (error) throw error
   return data as unknown as CategoryRow
@@ -389,7 +393,20 @@ export async function updateCategory(tenantId: string, categoryId: string, name:
     .update({ name: name.trim(), color })
     .eq('id', categoryId)
     .eq('tenant_id', tenantId)
-    .select('id, tenant_id, name, color, icon, is_active')
+    .select(CATEGORY_COLS)
+    .single()
+  if (error) throw error
+  return data as unknown as CategoryRow
+}
+
+/** Activa/desactiva el control de stock para los productos de una categoría. */
+export async function setCategoryTrackInventory(tenantId: string, categoryId: string, track: boolean): Promise<CategoryRow> {
+  const { data, error } = await supabase
+    .from('categories')
+    .update({ track_inventory: track })
+    .eq('id', categoryId)
+    .eq('tenant_id', tenantId)
+    .select(CATEGORY_COLS)
     .single()
   if (error) throw error
   return data as unknown as CategoryRow

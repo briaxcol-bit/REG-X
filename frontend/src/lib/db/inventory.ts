@@ -83,7 +83,7 @@ export async function getInventory(
     .from('inventory')
     .select(`
       id, product_id, warehouse_id, quantity, reserved,
-      products(name, sku, price, cost_price, min_stock, status, image_url, category_id, deleted_at, categories(name, color))
+      products(name, sku, price, cost_price, min_stock, status, image_url, category_id, deleted_at, categories(name, color, track_inventory))
     `)
     .eq('tenant_id', tenantId)
     .eq('branch_id', branchId)

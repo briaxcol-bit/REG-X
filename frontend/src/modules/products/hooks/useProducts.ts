@@ -13,6 +13,8 @@ export interface Product {
   sku: string
   barcode?: string
   stock: number
+  /** false = se vende sin validar inventario (categoría "sin stock", p. ej. platos) */
+  trackStock: boolean
   categoryColor?: string
   categoryName?: string
   tax: number
@@ -23,6 +25,9 @@ export interface Product {
 export function toProduct(row: ProductRow): Product {
   const stock = (row.inventory ?? []).reduce((s, i) => s + Number(i.quantity), 0)
   const cat   = row.categories as any
+  // La categoría puede desactivar el control de stock (platos preparados):
+  // esos productos siempre están disponibles para la venta.
+  const trackStock = (cat?.track_inventory ?? true) && row.track_inventory !== false
   return {
     id:            row.id,
     name:          row.name,
@@ -30,7 +35,8 @@ export function toProduct(row: ProductRow): Product {
     imageUrl:      row.image_url ?? undefined,
     sku:           row.sku,
     barcode:       row.barcode ?? undefined,
-    stock,
+    stock:         trackStock ? stock : 9999,
+    trackStock,
     categoryColor: cat?.color ?? '#374151',
     categoryName:  cat?.name  ?? undefined,
     tax:           Number(row.tax),

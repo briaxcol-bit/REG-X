@@ -231,6 +231,8 @@ const [deletingRow, setDeletingRow]   = useState<InventoryRow | null>(null)
 
   const filtered = inventory.filter(row => {
     const p = row.products as any
+    // Categorías "sin stock" (platos preparados) no se listan en inventario
+    if ((p?.categories as any)?.track_inventory === false) return false
     // Restricción por terminal: solo categorías permitidas (los sin categoría siguen visibles)
     if (allowedCategories && p?.category_id && !allowedCategories.includes(p.category_id)) return false
     if (categoryId && p?.category_id !== categoryId) return false
