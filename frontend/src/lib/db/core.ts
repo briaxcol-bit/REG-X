@@ -37,39 +37,39 @@ export interface UserTenantRoleRow {
 
 // ── Auth / Tenant Resolution ───────────────────────────────────
 export async function resolveUserContext(userId: string) {
-  // 1. User profile
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('id, full_name, avatar_url, platform_role')
-    .eq('id', userId)
-    .single()
-
-  // 2. Tenant role
-  const { data: role } = await supabase
-    .from('user_tenant_roles')
-    .select('tenant_id, branch_id, role')
-    .eq('user_id', userId)
-    .eq('is_active', true)
-    .single()
+  // 1+2. Perfil y rol en paralelo (menos round-trips en redes lentas)
+  const [{ data: profile }, { data: role }] = await Promise.all([
+    supabase
+      .from('user_profiles')
+      .select('id, full_name, avatar_url, platform_role')
+      .eq('id', userId)
+      .single(),
+    supabase
+      .from('user_tenant_roles')
+      .select('tenant_id, branch_id, role')
+      .eq('user_id', userId)
+      .eq('is_active', true)
+      .single(),
+  ])
 
   // No retornar null si no hay rol de tenant: el usuario puede ser SUPER_ADMIN de plataforma
   if (!role) return { profile, role: null, tenant: null, branch: null }
 
-  // 3. Tenant
-  const { data: tenant } = await supabase
-    .from('tenants')
-    .select('id, name, slug, plan, business_type, logo_url, primary_color, secondary_color, currency, country, timezone')
-    .eq('id', role.tenant_id)
-    .single()
-
-  // 4. Branch
-  const { data: branch } = role.branch_id
-    ? await supabase
-        .from('branches')
-        .select('id, name, code, currency, timezone')
-        .eq('id', role.branch_id)
-        .single()
-    : { data: null }
+  // 3+4. Tenant y branch en paralelo
+  const [{ data: tenant }, { data: branch }] = await Promise.all([
+    supabase
+      .from('tenants')
+      .select('id, name, slug, plan, business_type, logo_url, primary_color, secondary_color, currency, country, timezone')
+      .eq('id', role.tenant_id)
+      .single(),
+    role.branch_id
+      ? supabase
+          .from('branches')
+          .select('id, name, code, currency, timezone')
+          .eq('id', role.branch_id)
+          .single()
+      : Promise.resolve({ data: null }),
+  ])
 
   return { profile, role, tenant, branch }
 }

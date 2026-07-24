@@ -65,15 +65,27 @@ function AuthInitializer() {
       }
     }
 
+    // ── Failsafe ───────────────────────────────────────
+    // Si getSession() se cuelga (lock de auth, red lenta), no dejar la app
+    // en el loader para siempre: el perfil/tenant ya están persistidos en
+    // localStorage (zustand persist), así que la UI puede renderizar.
+    const failsafe = setTimeout(() => {
+      setLoading(false)
+      setInitialized(true)
+    }, 4000)
+
     // ── Bootstrap session ──────────────────────────────
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      clearTimeout(failsafe)
       const backendToken = localStorage.getItem('regx:access_token')
 
       if (session?.user) {
-        // Sesión Supabase activa
+        // Sesión Supabase activa. La hidratación corre en segundo plano:
+        // NO se espera antes de soltar el loader (el perfil persistido
+        // en localStorage cubre el primer render).
         setSession(session)
         setUser(session.user)
-        await hydrateProfile(session.user.id, session.user.email ?? '')
+        void hydrateProfile(session.user.id, session.user.email ?? '')
       } else if (backendToken) {
         // JWT del backend presente — no desloguear, el perfil ya está en el store (persist)
         setSession(null)
@@ -86,8 +98,13 @@ function AuthInitializer() {
     })
 
     // ── Listen to auth changes ─────────────────────────
+    // IMPORTANTE: el callback debe ser síncrono y no hacer llamadas a
+    // Supabase con await. Cada query llama internamente a getSession(),
+    // que espera el lock de auth retenido mientras este callback corre
+    // → deadlock (la app se queda cargando hasta recargar). Por eso la
+    // hidratación se difiere con setTimeout(0), fuera del lock.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         setSession(session)
         setUser(session?.user ?? null)
         if (!session && !localStorage.getItem('regx:access_token')) {
@@ -101,7 +118,8 @@ function AuthInitializer() {
         }
         // Re-hidrata el perfil al iniciar sesión o restaurar el token
         if (session && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
-          await hydrateProfile(session.user.id, session.user.email ?? '')
+          const { id, email } = session.user
+          setTimeout(() => void hydrateProfile(id, email ?? ''), 0)
         }
       },
     )
@@ -117,6 +135,7 @@ function AuthInitializer() {
     const stopSync = startOfflineSalesSync()
 
     return () => {
+      clearTimeout(failsafe)
       subscription.unsubscribe()
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
