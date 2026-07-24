@@ -8,6 +8,7 @@ import { cn } from '@shared/utils/cn'
 import { useAuthStore } from '@store/auth.store'
 import {
   getExpenses, createExpense, updateExpense, deleteExpense, getExpenseSummary, getSuppliers,
+  getActiveCashRegister,
   type ExpenseRow, type ExpenseInput, type ExpensePaymentMethod,
 } from '@lib/db'
 
@@ -50,6 +51,14 @@ function ExpenseModal({ tenantId, editing, onClose }: { tenantId: string; editin
     enabled: !!tenantId,
   })
 
+  // Caja abierta: los gastos en efectivo se vinculan a ella para el cierre del día
+  const { data: activeRegister } = useQuery({
+    queryKey: ['cash-register-active', tenantId, branchId],
+    queryFn: () => getActiveCashRegister(tenantId, branchId!),
+    enabled: !!tenantId && !!branchId,
+    staleTime: 10_000,
+  })
+
   const [category, setCategory] = useState(editing?.category ?? 'Otros')
   const [amount, setAmount]     = useState(editing ? String(editing.amount) : '')
 
@@ -71,6 +80,10 @@ function ExpenseModal({ tenantId, editing, onClose }: { tenantId: string; editin
         reference: reference.trim() || null,
         description: description.trim() || null,
         branch_id: editing ? undefined : (branchId ?? null),
+        // Efectivo con caja abierta → ligado a esa sesión para el cierre
+        cash_register_id: editing
+          ? undefined
+          : (method === 'CASH' && activeRegister ? activeRegister.id : null),
       }
       return editing ? updateExpense(tenantId, editing.id, input) : createExpense(tenantId, input)
     },

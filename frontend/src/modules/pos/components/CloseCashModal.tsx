@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Lock, Loader2, TrendingUp, DollarSign, AlertTriangle, CheckCircle, Clock, X, StopCircle, ClipboardList, ChevronDown } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useCashSession, type ActiveCashRegister } from '@modules/pos/hooks/useCashSession'
-import { getSalesHistory } from '@lib/db'
+import { getSalesHistory, getCashExpensesForRegister } from '@lib/db'
 import { formatCurrency } from '@shared/utils/format'
 import { useAuthStore } from '@store/auth.store'
 import { cn } from '@shared/utils/cn'
@@ -50,7 +50,15 @@ export function CloseCashModal({ open, onClose, register, isCommandsOnly = false
       ? totalFromDenom
       : parseFloat(manualCounted.replace(/[^0-9.]/g, '') || '0')
 
-  const expectedCash = register.opening_cash + register.cash_sales
+  // Gastos en efectivo pagados desde esta caja: reducen el efectivo esperado
+  const { data: cashExpenses } = useQuery({
+    queryKey: ['register-cash-expenses', register.id],
+    queryFn: () => getCashExpensesForRegister(tenant?.tenantId ?? '', register.id),
+    enabled: open && !!tenant?.tenantId,
+  })
+  const cashExpensesTotal = cashExpenses?.total ?? 0
+
+  const expectedCash = register.opening_cash + register.cash_sales - cashExpensesTotal
   const difference   = countedCash - expectedCash
   const diffPositive = difference >= 0
 
@@ -147,9 +155,26 @@ export function CloseCashModal({ open, onClose, register, isCommandsOnly = false
                 {/* Conteo de efectivo — solo modo normal */}
                 {!isCommandsOnly && (
                   <>
+                    {/* Gastos en efectivo del turno */}
+                    {cashExpensesTotal > 0 && (
+                      <div className="rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 px-5 py-3 flex justify-between items-center">
+                        <span className="text-sm text-red-600 dark:text-red-400">
+                          Gastos en efectivo ({cashExpenses?.items.length ?? 0})
+                        </span>
+                        <span className="font-bold text-red-600 dark:text-red-400">
+                          -{formatCurrency(cashExpensesTotal, currency)}
+                        </span>
+                      </div>
+                    )}
+
                     {/* Esperado */}
                     <div className="rounded-xl bg-grafito-100 dark:bg-grafito-800 px-5 py-3 flex justify-between items-center">
-                      <span className="text-sm text-grafito-500">Efectivo esperado en caja</span>
+                      <span className="text-sm text-grafito-500">
+                        Efectivo esperado en caja
+                        {cashExpensesTotal > 0 && (
+                          <span className="block text-[10px] text-grafito-400">apertura + ventas efectivo − gastos</span>
+                        )}
+                      </span>
                       <span className="font-bold text-grafito-900 dark:text-white">{formatCurrency(expectedCash, currency)}</span>
                     </div>
 

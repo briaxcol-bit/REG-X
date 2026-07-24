@@ -33,7 +33,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { to: '/dashboard',     icon: LayoutDashboard, label: 'Dashboard',   group: 'Principal' },
   { to: '/pos',           icon: Zap,             label: 'POS',         permission: 'sales.create', group: 'Principal', cashierVisible: true },
-  { to: '/products',      icon: Package,         label: 'Productos',   permission: 'products.view', group: 'Catalogo' },
+  { to: '/products',      icon: Package,         label: 'Productos',   permission: 'products.view', group: 'Catalogo', cashierVisible: true },
   {
     to: '/inventory',
     icon: Boxes,

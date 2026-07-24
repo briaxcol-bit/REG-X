@@ -317,6 +317,7 @@ export type Database = {
           slug: string | null
           sort_order: number | null
           tenant_id: string
+          track_inventory: boolean
           updated_at: string
           updated_by: string | null
         }
@@ -335,6 +336,7 @@ export type Database = {
           slug?: string | null
           sort_order?: number | null
           tenant_id: string
+          track_inventory?: boolean
           updated_at?: string
           updated_by?: string | null
         }
@@ -353,6 +355,7 @@ export type Database = {
           slug?: string | null
           sort_order?: number | null
           tenant_id?: string
+          track_inventory?: boolean
           updated_at?: string
           updated_by?: string | null
         }

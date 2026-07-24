@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { Plus, Search, Tag, Pencil, Package, Loader2, Trash2, AlertTriangle, X } from 'lucide-react'
 import { getProducts, deleteProduct } from '@lib/db'
 import { useAuthStore } from '@store/auth.store'
+import { usePOSTerminal } from '@modules/pos/hooks/usePOSTerminal'
 import type { ProductRow } from '@lib/db'
 import { cn } from '@shared/utils/cn'
 
@@ -93,6 +94,8 @@ function DeleteModal({
 // ── Page ──────────────────────────────────────────────────────
 export default function ProductsPage() {
   const { tenant } = useAuthStore()
+  // Categorías permitidas por la terminal asignada (null = todas)
+  const { allowedCategories } = usePOSTerminal()
   const [products, setProducts]     = useState<ProductRow[]>([])
   const [loading, setLoading]       = useState(true)
   const [search, setSearch]         = useState('')
@@ -113,6 +116,11 @@ export default function ProductsPage() {
   }
 
   useEffect(() => { loadProducts() }, [tenant?.tenantId, search, categoryId])
+
+  // Restricción por terminal: solo categorías permitidas (los sin categoría siguen visibles)
+  const visibleProducts = allowedCategories
+    ? products.filter(p => !p.category_id || allowedCategories.includes(p.category_id))
+    : products
 
   const handleDelete = async () => {
     if (!toDelete || !tenant?.tenantId) return
@@ -195,7 +203,7 @@ export default function ProductsPage() {
           <Loader2 className="h-5 w-5 animate-spin" />
           <span className="text-sm">Cargando productos...</span>
         </div>
-      ) : products.length === 0 ? (
+      ) : visibleProducts.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-3 py-16 text-grafito-400 bg-white dark:bg-grafito-900/60 rounded-2xl border border-grafito-200 dark:border-white/5">
           <Package className="h-10 w-10 opacity-30" />
           <p className="text-sm">No hay productos registrados.</p>
@@ -209,7 +217,7 @@ export default function ProductsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6">
-          {products.map((p) => {
+          {visibleProducts.map((p) => {
             const stock = (p.inventory ?? []).reduce((s, i) => s + Number(i.quantity), 0)
             const cat = p.categories as any
             return (

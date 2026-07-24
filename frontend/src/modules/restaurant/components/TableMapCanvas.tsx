@@ -133,7 +133,9 @@ export function TableCard({ table, pos, editMode, zoom, orderInfo, onDragEnd, on
   }
 
   const handleClick = () => {
-    if (editMode || didMove.current) return
+    // En modo edición un clic sin arrastre también dispara (editar/eliminar mesa);
+    // si hubo arrastre, no.
+    if (didMove.current) return
     onClick(table)
   }
 

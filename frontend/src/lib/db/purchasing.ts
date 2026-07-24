@@ -138,6 +138,8 @@ export interface ExpenseRow {
   payment_method: ExpensePaymentMethod
   reference: string | null
   created_at: string
+  /** Sesión de caja de la que salió el efectivo (para el cierre del día) */
+  cash_register_id: string | null
   suppliers?: { name: string } | null
 }
 
@@ -151,6 +153,7 @@ export interface ExpenseInput {
   reference?: string | null
   supplier_id?: string | null
   branch_id?: string | null
+  cash_register_id?: string | null
 }
 
 export interface ExpenseFilters {
@@ -163,7 +166,7 @@ export interface ExpenseFilters {
 export async function getExpenses(tenantId: string, filters?: ExpenseFilters): Promise<ExpenseRow[]> {
   let q = supabase
     .from('expenses')
-    .select('id, tenant_id, branch_id, supplier_id, category, description, amount, currency, expense_date, payment_method, reference, created_at, suppliers(name)')
+    .select('id, tenant_id, branch_id, supplier_id, category, description, amount, currency, expense_date, payment_method, reference, created_at, cash_register_id, suppliers(name)')
     .eq('tenant_id', tenantId)
     .is('deleted_at', null)
     .order('expense_date', { ascending: false })
@@ -181,7 +184,7 @@ export async function createExpense(tenantId: string, input: ExpenseInput): Prom
   const { data, error } = await supabase
     .from('expenses')
     .insert({ tenant_id: tenantId, currency: input.currency ?? 'COP', ...cleanInput(input) })
-    .select('id, tenant_id, branch_id, supplier_id, category, description, amount, currency, expense_date, payment_method, reference, created_at, suppliers(name)')
+    .select('id, tenant_id, branch_id, supplier_id, category, description, amount, currency, expense_date, payment_method, reference, created_at, cash_register_id, suppliers(name)')
     .single()
   if (error) throw error
   return data as unknown as ExpenseRow
@@ -203,6 +206,24 @@ export async function deleteExpense(tenantId: string, id: string): Promise<void>
     .eq('tenant_id', tenantId)
     .eq('id', id)
   if (error) throw error
+}
+
+/** Gastos en EFECTIVO pagados desde una sesión de caja (para el cierre). */
+export async function getCashExpensesForRegister(
+  tenantId: string,
+  cashRegisterId: string,
+): Promise<{ total: number; items: ExpenseRow[] }> {
+  const { data, error } = await supabase
+    .from('expenses')
+    .select('id, tenant_id, branch_id, supplier_id, category, description, amount, currency, expense_date, payment_method, reference, created_at, cash_register_id, suppliers(name)')
+    .eq('tenant_id', tenantId)
+    .eq('cash_register_id', cashRegisterId)
+    .eq('payment_method', 'CASH')
+    .is('deleted_at', null)
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  const items = (data ?? []) as unknown as ExpenseRow[]
+  return { total: items.reduce((s, r) => s + Number(r.amount || 0), 0), items }
 }
 
 export interface ExpenseSummary {

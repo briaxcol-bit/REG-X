@@ -11,10 +11,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { usePOSStore, type CartItem } from '@store/pos.store'
 import { useAuthStore } from '@store/auth.store'
 import { supabase } from '@lib/supabase'
+import { buildEscPosReceipt } from '@lib/escpos'
+import { printEscPosDirect } from '@lib/print'
 import { ReceiptTemplate } from '@modules/pos/components/ReceiptTemplate'
 import { cn } from '@shared/utils/cn'
 import { formatCurrency } from '@shared/utils/format'
-import { useProducts, useCategories } from '@modules/products/hooks/useProducts'
+import { useProducts, useCategories, toProduct } from '@modules/products/hooks/useProducts'
 import { CheckoutModal } from '@modules/pos/components/CheckoutModal'
 import { BarcodeScanner } from '@modules/pos/components/BarcodeScanner'
 import { CustomerPicker } from '@modules/pos/components/CustomerPicker'
@@ -27,7 +29,7 @@ import { usePosPricing } from '@modules/pos/hooks/usePosPricing'
 import { useCashSession } from '@modules/pos/hooks/useCashSession'
 import { usePOSTerminal } from '@modules/pos/hooks/usePOSTerminal'
 import { useCreateSale } from '@modules/pos/hooks/useCreateSale'
-import { getPendingSales, getPOSTerminals, getActiveTableOrders, getAllActiveOrdersForTable, closeAllOrdersForTable, type SaleHistoryRow, type RestaurantOrderRow, type TableRow } from '@lib/db'
+import { getPendingSales, getPOSTerminals, getActiveTableOrders, getAllActiveOrdersForTable, closeAllOrdersForTable, getProducts, type SaleHistoryRow, type RestaurantOrderRow, type TableRow } from '@lib/db'
 import { TableMapModal } from '@modules/pos/components/TableMapModal'
 import { toast } from 'sonner'
 
@@ -42,9 +44,10 @@ async function sendBrowserPush(title: string, body: string, tag: string) {
 
 // ── Product card ─────────────────────────────────────────────
 function ProductCard({ product, onAdd }: {
-  product: { id: string; name: string; price: number; imageUrl?: string; sku: string; stock: number; categoryColor?: string; tax: number }
+  product: { id: string; name: string; price: number; imageUrl?: string; sku: string; stock: number; trackStock?: boolean; categoryColor?: string; tax: number }
   onAdd: () => void
 }) {
+  const tracks = product.trackStock !== false
   return (
     <motion.button
       whileTap={{ scale: 0.95 }}
@@ -67,18 +70,20 @@ function ProductCard({ product, onAdd }: {
             {product.name[0]?.toUpperCase()}
           </div>
         )}
-        {/* Badge de stock — siempre visible */}
-        <span className={cn(
-          'absolute top-1.5 right-1.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold border',
-          product.stock === 0
-            ? 'bg-red-500 text-white border-red-600/20'
-            : product.stock <= 5
-              ? 'bg-amber-400 text-amber-900 border-amber-500/20'
-              : 'bg-white/90 dark:bg-grafito-900/90 text-grafito-700 dark:text-grafito-200 border-black/5 dark:border-white/10',
-        )}>
-          {product.stock} uds
-        </span>
-        {product.stock === 0 && (
+        {/* Badge de stock — oculto si la categoría no maneja stock */}
+        {tracks && (
+          <span className={cn(
+            'absolute top-1.5 right-1.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold border',
+            product.stock === 0
+              ? 'bg-red-500 text-white border-red-600/20'
+              : product.stock <= 5
+                ? 'bg-amber-400 text-amber-900 border-amber-500/20'
+                : 'bg-white/90 dark:bg-grafito-900/90 text-grafito-700 dark:text-grafito-200 border-black/5 dark:border-white/10',
+          )}>
+            {product.stock} uds
+          </span>
+        )}
+        {tracks && product.stock === 0 && (
           <div className="absolute inset-0 flex items-center justify-center bg-grafito-900/60">
             <span className="text-[10px] font-bold text-white uppercase tracking-wider">Agotado</span>
           </div>
@@ -239,6 +244,8 @@ export default function POSPage() {
   const [checkoutOpen, setCheckoutOpen]       = useState(false)
   const [scannerOpen, setScannerOpen]         = useState(false)
   const [customerPickerOpen, setCustomerPickerOpen] = useState(false)
+  const [confirmDeleteOrder, setConfirmDeleteOrder] = useState(false)
+  const [deletingOrder, setDeletingOrder]           = useState(false)
   const [customerName, setCustomerName]             = useState<string | null>(null)
   const [closeModalOpen, setCloseModalOpen]   = useState(false)
   const [editingTabId, setEditingTabId]       = useState<string | null>(null)
@@ -468,7 +475,31 @@ export default function POSPage() {
         isComanda:     true,
       }
       setLastReceipt(receipt)
-      setTimeout(() => window.print(), 80)
+
+      // Impresión directa ESC/POS (USB o bridge de red), igual que la caja
+      // principal. Si no hay impresora directa, cae al diálogo del navegador.
+      const escBytes = buildEscPosReceipt({
+        businessName: receipt.businessName,
+        branchName:   receipt.branchName,
+        orderNumber:  receipt.orderNumber,
+        cashierName:  receipt.cashierName,
+        date:         receipt.date.toLocaleString('es-CO'),
+        items: items.map(it => ({
+          name:      it.name,
+          quantity:  it.quantity,
+          unitPrice: it.price,
+          total:     it.total,
+        })),
+        subtotal:      getSubtotal(),
+        taxTotal:      getTaxTotal(),
+        discountTotal: getDiscountTotal(),
+        total:         getTotal(),
+        payments:      [],
+        isComanda:     true,
+        openDrawer:    false,
+      })
+      const printed = await printEscPosDirect(escBytes)
+      if (!printed.ok) setTimeout(() => window.print(), 80)
 
       clearCart()
       toast.success('Comanda enviada')
@@ -492,11 +523,29 @@ export default function POSPage() {
     addItem({ productId: product.id, categoryId: (product as { category_id?: string | null }).category_id ?? null, sku: product.sku, name: product.name, price: product.price, quantity: 1, stock: product.stock, discount: 0, tax: product.tax ?? 0 })
   }, [addItem, items])
 
-  const handleBarcodeScanned = useCallback((barcode: string) => {
+  const handleBarcodeScanned = useCallback(async (barcode: string) => {
     setScannerOpen(false)
-    setSearch(barcode)
+    const code = barcode.trim()
+    if (!code || !tenant?.tenantId) return
+    try {
+      // Buscar coincidencia exacta por código de barras o SKU
+      const rows = await getProducts(tenant.tenantId, { search: code })
+      const exact = rows.filter(r => r.barcode === code || r.sku === code)
+      // Respetar categorías permitidas por la terminal
+      const allowed = allowedCategories
+        ? exact.filter(r => !r.category_id || allowedCategories.includes(r.category_id))
+        : exact
+      if (allowed.length === 1) {
+        const product = toProduct(allowed[0])
+        handleAddProduct(product)
+        setSearch('')
+        return
+      }
+    } catch { /* fallback a búsqueda manual */ }
+    // Sin coincidencia exacta: dejar el código en el buscador
+    setSearch(code)
     searchRef.current?.focus()
-  }, [])
+  }, [tenant?.tenantId, allowedCategories, handleAddProduct])
 
   const subtotal   = getSubtotal()
   const taxes      = getTaxTotal()
@@ -562,6 +611,58 @@ export default function POSPage() {
           onTableSelect={handleTableSelectFromMap}
         />
       )}
+
+      {/* Confirmación: eliminar orden / liberar mesa */}
+      {confirmDeleteOrder && activeTab && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="relative w-full max-w-sm rounded-2xl border border-red-200 dark:border-red-500/20 bg-white dark:bg-grafito-900 shadow-2xl p-6 space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-100 dark:bg-red-500/10 shrink-0">
+                <Trash2 className="h-5 w-5 text-red-500" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-grafito-900 dark:text-white">
+                  {activeTab.tableId ? 'Eliminar orden de la mesa' : 'Eliminar orden'}
+                </h3>
+                <p className="text-sm text-grafito-500 dark:text-grafito-400 mt-0.5">
+                  Se eliminarán los {itemCount} producto{itemCount !== 1 ? 's' : ''} de esta orden
+                  {activeTab.tableId ? ' y la mesa quedará libre' : ''}. Esta acción no se puede deshacer.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setConfirmDeleteOrder(false)}
+                disabled={deletingOrder}
+                className="flex-1 rounded-xl border border-grafito-200 dark:border-white/10 py-2.5 text-sm font-semibold text-grafito-600 dark:text-grafito-300 hover:bg-grafito-100 dark:hover:bg-white/5 transition-all disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  setDeletingOrder(true)
+                  try {
+                    if (activeTab.tableId && tenant?.tenantId) {
+                      await closeAllOrdersForTable(tenant.tenantId, activeTab.tableId)
+                    }
+                    removeTab(activeTab.id)
+                    toast.success(activeTab.tableId ? 'Orden eliminada y mesa liberada.' : 'Orden eliminada.')
+                    setConfirmDeleteOrder(false)
+                  } catch {
+                    toast.error('No se pudo eliminar la orden.')
+                  } finally {
+                    setDeletingOrder(false)
+                  }
+                }}
+                disabled={deletingOrder}
+                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-red-500 py-2.5 text-sm font-bold text-white hover:bg-red-600 transition-all disabled:opacity-50"
+              >
+                {deletingOrder ? 'Eliminando…' : 'Sí, eliminar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <CustomerPicker
         open={customerPickerOpen}
         onClose={() => setCustomerPickerOpen(false)}
@@ -584,6 +685,10 @@ export default function POSPage() {
               ref={searchRef}
               value={search}
               onChange={e => setSearch(e.target.value)}
+              onKeyDown={e => {
+                // Escáner USB: teclea el código y envía Enter → agregar directo si hay coincidencia exacta
+                if (e.key === 'Enter' && search.trim()) handleBarcodeScanned(search)
+              }}
               placeholder="Buscar por nombre, SKU o código de barras…"
               className="flex-1 bg-transparent text-sm text-grafito-900 dark:text-white placeholder:text-grafito-400 outline-none"
             />
@@ -995,6 +1100,17 @@ export default function POSPage() {
               >
                 <X className="h-3.5 w-3.5" />
                 Cerrar pestaña de mesa
+              </button>
+            )}
+
+            {/* Eliminar orden (mesa u orden normal) — pide confirmación */}
+            {activeTab && items.length > 0 && (
+              <button
+                onClick={() => setConfirmDeleteOrder(true)}
+                className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-red-200 dark:border-red-500/30 py-2 text-xs font-semibold text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {activeTab.tableId ? 'Eliminar orden y liberar mesa' : 'Eliminar orden'}
               </button>
             )}
 

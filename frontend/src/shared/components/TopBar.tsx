@@ -7,6 +7,7 @@ import { supabase } from '@lib/supabase'
 import { cn } from '@shared/utils/cn'
 import { useTheme } from '@shared/hooks/useTheme'
 import { useInventory } from '@modules/inventory/hooks/useInventory'
+import { InstallAppButton } from '@shared/components/InstallAppButton'
 
 // Role display config
 const ROLE_DISPLAY: Record<string, { label: string; style: string }> = {
@@ -377,6 +378,11 @@ export function TopBar({ onMenuClick }: { onMenuClick?: () => void } = {}) {
                       </button>
                     </div>
                   )}
+
+                  {/* Descargar app — visible para todos los roles */}
+                  <div className="p-1.5 border-t border-grafito-100 dark:border-white/5">
+                    <InstallAppButton onAfterClick={() => setUserMenuOpen(false)} />
+                  </div>
 
                   <div className="p-1.5 border-t border-grafito-100 dark:border-white/5">
                     <button
