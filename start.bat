@@ -65,33 +65,14 @@ if not exist "frontend\node_modules" (
   call npm install --workspace=frontend
 )
 
-if not exist "backend\node_modules" (
-  echo [INFO] Instalando dependencias del backend...
-  call npm install --workspace=backend
-)
+:: (backend NestJS archivado en _archive/ — la app usa Supabase directamente)
 
-:: ── Levantar servicios Docker (opcional) ─────────────────────
-where docker >nul 2>&1
-if %ERRORLEVEL% EQU 0 (
-  echo.
-  echo [INFO] Docker detectado.
-  set /p START_DOCKER="Levantar Postgres/Redis/Kong con Docker? (s/n): "
-  if /i "%START_DOCKER%"=="s" (
-    echo [INFO] Iniciando contenedores...
-    docker-compose up -d postgres redis
-    echo [OK] Contenedores iniciados
-    timeout /t 3 /nobreak >nul
-  )
-)
-
-:: ── Iniciar dev servers ───────────────────────────────────────
+:: ── Iniciar dev server ────────────────────────────────────────
 echo.
-echo [INFO] Iniciando servidores de desarrollo...
-echo        Backend   → http://localhost:3000
+echo [INFO] Iniciando servidor de desarrollo...
 echo        Frontend  → http://localhost:5173
-echo        API Docs  → http://localhost:3000/api/docs
 echo.
-echo  Presiona Ctrl+C para detener ambos servidores.
+echo  Presiona Ctrl+C para detener el servidor.
 echo.
 
 call npm run dev

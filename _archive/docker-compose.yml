@@ -1,0 +1,185 @@
+version: "3.9"
+
+# ============================================================
+# REG-X ERP/POS SaaS Enterprise — Docker Compose (Windows)
+# ============================================================
+
+networks:
+  regx-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+  postgres-data:
+  grafana-data:
+  prometheus-data:
+
+services:
+  # ── PostgreSQL (local dev — prod usa Supabase) ──────────────
+  postgres:
+    image: supabase/postgres:15.1.0.117
+    container_name: regx-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: regx
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./database/migrations:/docker-entrypoint-initdb.d/migrations:ro
+      - ./database/seeds:/docker-entrypoint-initdb.d/seeds:ro
+    networks:
+      - regx-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ───────────────────────────────────────────────────
+  redis:
+    image: redis:7.2-alpine
+    container_name: regx-redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:-}
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - regx-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Backend (NestJS) ────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: regx-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/regx
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    ports:
+      - "3000:3000"
+      - "9229:9229"   # Node.js debugger
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - regx-network
+    command: npm run start:dev
+
+  # ── Frontend (React/Vite) ───────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development
+    container_name: regx-frontend
+    restart: unless-stopped
+    environment:
+      VITE_SUPABASE_URL: ${SUPABASE_URL}
+      VITE_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      VITE_API_URL: http://localhost:3000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - regx-network
+    command: npm run dev -- --host
+
+  # ── Kong API Gateway ────────────────────────────────────────
+  kong:
+    image: kong:3.5
+    container_name: regx-kong
+    restart: unless-stopped
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong/declarative/kong.yml
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: "0.0.0.0:8001"
+    ports:
+      - "8000:8000"   # Proxy
+      - "8001:8001"   # Admin API
+      - "8443:8443"   # Proxy SSL
+    volumes:
+      - ./infra/docker/kong:/kong/declarative:ro
+    networks:
+      - regx-network
+    depends_on:
+      - backend
+
+  # ── Prometheus ──────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: regx-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./infra/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - regx-network
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
+
+  # ── Grafana ─────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: regx-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infra/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    networks:
+      - regx-network
+
+  # ── OpenTelemetry Collector ─────────────────────────────────
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.91.0
+    container_name: regx-otel
+    restart: unless-stopped
+    volumes:
+      - ./infra/monitoring/otel/otel-collector.yml:/etc/otel-collector.yml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "8888:8888"   # Prometheus metrics
+    command: ["--config=/etc/otel-collector.yml"]
+    networks:
+      - regx-network

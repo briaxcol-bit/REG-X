@@ -140,6 +140,8 @@ export async function getGiftCards(tenantId: string, filters?: { search?: string
     .order('created_at', { ascending: false })
   if (filters?.status) q = q.eq('status', filters.status)
   if (filters?.search?.trim()) q = q.ilike('code', `%${filters.search.trim()}%`)
+  // Tope de seguridad: evita descargar historicos completos en tenants grandes
+  q = q.limit(1000)
   const { data, error } = await q
   if (error) throw error
   return (data ?? []) as unknown as GiftCardRow[]
@@ -207,6 +209,7 @@ export async function getGiftCardTransactions(tenantId: string, cardId: string):
     .select('id, type, amount, note, created_at')
     .eq('tenant_id', tenantId).eq('gift_card_id', cardId)
     .order('created_at', { ascending: false })
+    .limit(1000)
   if (error) throw error
   return (data ?? []) as unknown as GiftCardTxRow[]
 }
@@ -257,6 +260,8 @@ export async function getLayaways(tenantId: string, filters?: { status?: Layaway
     .is('deleted_at', null)
     .order('created_at', { ascending: false })
   if (filters?.status) q = q.eq('status', filters.status)
+  // Tope de seguridad: evita descargar historicos completos en tenants grandes
+  q = q.limit(500)
   const { data, error } = await q
   if (error) throw error
   return (data ?? []) as unknown as LayawayRow[]

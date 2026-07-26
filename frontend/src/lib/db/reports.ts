@@ -44,8 +44,7 @@ export async function getDashboardStats(
 
   // Camino rápido: RPC que agrega todo en el servidor en UNA llamada
   // (ver database/migrations/058_performance_rls_indexes.sql).
-  // (cast: la función aún no existe en los tipos generados database.types.ts)
-  const { data: rpcData, error: rpcErr } = await (supabase.rpc as any)('get_dashboard_stats', {
+  const { data: rpcData, error: rpcErr } = await supabase.rpc('get_dashboard_stats', {
     p_tenant_id:       tenantId,
     p_branch_id:       branchId,
     p_today_start:     todayStart,
@@ -173,6 +172,37 @@ export async function getDashboardStats(
   }
 }
 
+// ── Sales Report (agregado en servidor · migración 060) ────────
+export interface SalesReportStats {
+  current:  { total: number; count: number; tax_total: number }
+  previous: { total: number; count: number }
+  daily_current:      { day: string; total: number }[]
+  daily_prev_offsets: { offset: number; total: number }[]
+  by_method:    { method: string; amount: number }[]
+  top_products: { name: string; revenue: number; qty: number }[]
+}
+
+/**
+ * Estadísticas del reporte de ventas calculadas en el servidor (1 llamada,
+ * totales exactos sin tope de filas). Devuelve null si el RPC aún no existe
+ * (migración 060 sin aplicar) — el caller debe usar el camino anterior.
+ */
+export async function getSalesReportStats(
+  tenantId: string,
+  branchId: string,
+  params: { since: string; until: string; prevSince: string },
+): Promise<SalesReportStats | null> {
+  const { data, error } = await supabase.rpc('get_sales_report_stats', {
+    p_tenant_id:  tenantId,
+    p_branch_id:  branchId,
+    p_since:      params.since,
+    p_until:      params.until,
+    p_prev_since: params.prevSince,
+  })
+  if (error || !data) return null
+  return data as unknown as SalesReportStats
+}
+
 // ── Sales Report ───────────────────────────────────────────────
 export interface SalesReportData {
   totalRevenue:    number
@@ -203,6 +233,8 @@ export async function getSalesReport(
   if (from) q = q.gte('created_at', from)
   if (to)   q = q.lte('created_at', to)
 
+  // Tope de seguridad: evita descargar historicos completos en tenants grandes
+  q = q.limit(2000)
   const { data, error } = await q
   if (error) throw error
 

@@ -4,7 +4,7 @@
     REG-X — Script de inicio para Windows (PowerShell)
 .DESCRIPTION
     Verifica prerequisitos, instala dependencias y levanta los servidores de
-    desarrollo (backend NestJS + frontend Vite) con un solo comando.
+    desarrollo (frontend Vite + Supabase; backend NestJS archivado en _archive/).
 .EXAMPLE
     .\start.ps1
     .\start.ps1 -Docker        # También levanta Postgres y Redis vía Docker
@@ -101,8 +101,7 @@ if ($Clean) {
 Write-Step "Verificando dependencias..."
 
 $needsInstall = (-not (Test-Path "node_modules")) -or
-               (-not (Test-Path "frontend\node_modules")) -or
-               (-not (Test-Path "backend\node_modules"))
+               (-not (Test-Path "frontend\node_modules"))
 
 if ($needsInstall) {
   Write-Info "Instalando paquetes del monorepo (puede tardar 2-3 min la primera vez)..."
@@ -148,36 +147,25 @@ if ($Docker) {
 # ── Modo producción ───────────────────────────────────────────────────────────
 if ($Production) {
   Write-Step "Compilando para produccion..."
-  Write-Info "1/2 Build del backend..."
-  npm run build:backend
-  if ($LASTEXITCODE -ne 0) { Exit-WithError "Fallo el build del backend" }
-
-  Write-Info "2/2 Build del frontend..."
+  Write-Info "Build del frontend..."
   npm run build:frontend
   if ($LASTEXITCODE -ne 0) { Exit-WithError "Fallo el build del frontend" }
 
   Write-OK "Build completo"
   Write-Host ""
-  Write-Host "  Iniciando servidor unificado..." -ForegroundColor Green
-  Write-Host "  URL → " -NoNewline; Write-Host "http://localhost:3000" -ForegroundColor Cyan
+  Write-Host "  Iniciando preview del build..." -ForegroundColor Green
+  Write-Host "  URL → " -NoNewline; Write-Host "http://localhost:4173" -ForegroundColor Cyan
   Write-Host ""
-  $env:NODE_ENV = "production"
-  npm run start
+  npm run preview --workspace=frontend
   exit 0
 }
 
 # ── Dev servers ───────────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "  ┌─────────────────────────────────────────────┐" -ForegroundColor DarkGray
-Write-Host "  │  Backend  →  " -NoNewline -ForegroundColor DarkGray
-Write-Host "http://localhost:3000" -NoNewline -ForegroundColor Cyan
-Write-Host "             │" -ForegroundColor DarkGray
 Write-Host "  │  Frontend →  " -NoNewline -ForegroundColor DarkGray
 Write-Host "http://localhost:5173" -NoNewline -ForegroundColor Magenta
 Write-Host "             │" -ForegroundColor DarkGray
-Write-Host "  │  Swagger  →  " -NoNewline -ForegroundColor DarkGray
-Write-Host "http://localhost:3000/api/docs" -NoNewline -ForegroundColor Yellow
-Write-Host "  │" -ForegroundColor DarkGray
 Write-Host "  └─────────────────────────────────────────────┘" -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "  Presiona " -NoNewline -ForegroundColor Gray

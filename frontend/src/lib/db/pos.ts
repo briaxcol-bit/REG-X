@@ -247,6 +247,29 @@ export interface SaleHistoryRow {
   created_by_profile: { full_name: string } | null
 }
 
+/**
+ * Huella liviana del historial de ventas (solo id+status, sin joins).
+ * Permite hacer polling barato y re-descargar el historial COMPLETO
+ * (con ítems, pagos y cliente) únicamente cuando algo cambió.
+ * Debe cubrir el mismo universo de filas que getSalesHistory.
+ */
+export async function getSalesFingerprint(
+  tenantId: string,
+  branchId: string,
+  since: string,
+): Promise<string> {
+  const { data, error } = await supabase
+    .from('sales')
+    .select('id, status')
+    .eq('tenant_id', tenantId)
+    .eq('branch_id', branchId)
+    .gte('created_at', since)
+    .order('created_at', { ascending: false })
+    .limit(1000)
+  if (error) throw error
+  return (data ?? []).map(r => `${r.id}:${r.status}`).join('|')
+}
+
 export async function getSalesHistory(
   tenantId: string,
   branchId: string,

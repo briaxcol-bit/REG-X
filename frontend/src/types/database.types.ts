@@ -2720,7 +2720,12 @@ export type Database = {
     }
     Functions: {
       create_sale_transaction: {
-        Args: { p_items: Json; p_payments: Json; p_sale: Json }
+        Args: {
+          p_items: Json
+          p_payments: Json
+          p_sale: Json
+          p_skip_stock_check?: boolean
+        }
         Returns: string
       }
       create_tenant_with_owner: {
@@ -2761,6 +2766,27 @@ export type Database = {
           warehouse_id: string
         }[]
       }
+      get_dashboard_stats: {
+        Args: {
+          p_branch_id: string
+          p_tenant_id: string
+          p_today_start: string
+          p_year_start: string
+          p_yesterday_start: string
+        }
+        Returns: Json
+      }
+      get_sales_report_stats: {
+        Args: {
+          p_branch_id: string
+          p_prev_since: string
+          p_since: string
+          p_tenant_id: string
+          p_until: string
+        }
+        Returns: Json
+      }
+      get_user_role_tenant_ids: { Args: { p_roles: string[] }; Returns: string[] }
       get_user_tenant_ids: { Args: never; Returns: string[] }
       increment_loyalty_points: {
         Args: {

@@ -300,12 +300,19 @@ export default function POSPage() {
     refetchInterval: 15_000,
   })
 
-  // Cuentas de mesa activas — visible para el cajero
+  // ¿El canal Realtime de mesas está conectado? (ver useEffect más abajo)
+  const [realtimeOk, setRealtimeOk] = useState(false)
+
+  // Cuentas de mesa activas — visible para el cajero.
+  // Con Realtime conectado los cambios llegan al instante (invalidate en el
+  // canal), así que el polling queda como respaldo lento; si el canal se cae,
+  // vuelve automáticamente a 5s como antes. Requiere migración 060 (agrega
+  // orders/order_items a la publicación supabase_realtime).
   const { data: tableOrders = [] } = useQuery<RestaurantOrderRow[]>({
     queryKey: ['active-table-orders', tenant?.tenantId, branch?.branchId],
     queryFn:  () => getActiveTableOrders(tenant!.tenantId, branch!.branchId),
     enabled:  !!tenant?.tenantId && !!branch?.branchId,
-    refetchInterval: 5_000,   // polling cada 5s como fallback
+    refetchInterval: realtimeOk ? 30_000 : 5_000,
   })
 
   // Refs para evitar closures stale en los callbacks de Realtime
@@ -347,10 +354,14 @@ export default function POSPage() {
         tableIds.forEach(refreshTabForTable)
       })
       .subscribe((status) => {
+        setRealtimeOk(status === 'SUBSCRIBED')
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') invalidate()
       })
 
-    return () => { supabase.removeChannel(channel) }
+    return () => {
+      setRealtimeOk(false)
+      supabase.removeChannel(channel)
+    }
   }, [tenant?.tenantId, queryClient])
 
   // Cargar cuenta de mesa en el POS — consolida TODAS las comandas activas de la mesa

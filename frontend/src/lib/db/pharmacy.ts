@@ -105,6 +105,8 @@ export const BATCH_COLS = 'id, tenant_id, product_id, supplier_id, batch_number,
 export async function getBatches(tenantId: string, filters?: { productId?: string }): Promise<BatchRow[]> {
   let q = supabase.from('product_batches').select(BATCH_COLS).eq('tenant_id', tenantId).is('deleted_at', null).order('expiry_date', { ascending: true, nullsFirst: false })
   if (filters?.productId) q = q.eq('product_id', filters.productId)
+  // Tope de seguridad: evita descargar historicos completos en tenants grandes
+  q = q.limit(2000)
   const { data, error } = await q
   if (error) throw error
   return (data ?? []) as unknown as BatchRow[]
@@ -181,6 +183,8 @@ export async function getPrescriptions(tenantId: string, filters?: { status?: Pr
     .order('prescription_date', { ascending: false })
     .order('created_at', { ascending: false })
   if (filters?.status) q = q.eq('status', filters.status)
+  // Tope de seguridad: evita descargar historicos completos en tenants grandes
+  q = q.limit(1000)
   const { data, error } = await q
   if (error) throw error
   return (data ?? []) as unknown as PrescriptionRow[]

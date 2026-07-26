@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { useAuthStore } from '@store/auth.store'
 import { usePOSStore } from '@store/pos.store'
-import { getSalesHistory, getOpenCashRegisters, cancelSale, type SaleHistoryRow, type CashRegisterRow } from '@lib/db'
+import { getSalesHistory, getSalesFingerprint, getOpenCashRegisters, cancelSale, type SaleHistoryRow, type CashRegisterRow } from '@lib/db'
 import { type ReceiptData } from './ReceiptTemplate'
 import type { ActiveCashRegister } from '@lib/db'
 import { formatCurrency } from '@shared/utils/format'
@@ -278,12 +278,22 @@ export function SalesHistoryModal({ open, onClose, activeRegister }: Props) {
     ? openRegisters.reduce((min, r) => r.opened_at < min ? r.opened_at : min, openRegisters[0].opened_at)
     : activeRegister?.opened_at
 
-  // Todas las ventas del branch en el período actual
-  const { data: allBranchSales = [], isLoading } = useQuery({
-    queryKey: ['sales-history', tenantId, branchId, 'all', earliestOpened],
-    queryFn:  () => getSalesHistory(tenantId, branchId, { since: earliestOpened, limit: 1000 }),
+  // Huella liviana cada 5s (solo id+status, sin joins): el historial completo
+  // se re-descarga ÚNICAMENTE cuando algo cambió. Misma frescura que antes
+  // (5s), pero sin bajar cientos de ventas con ítems y pagos en cada tick.
+  const { data: salesFingerprint } = useQuery({
+    queryKey: ['sales-history-fp', tenantId, branchId, earliestOpened],
+    queryFn:  () => getSalesFingerprint(tenantId, branchId, earliestOpened!),
     enabled:  open && !!tenantId && !!branchId && !!earliestOpened,
     refetchInterval: 5_000,
+  })
+
+  // Todas las ventas del branch en el período actual
+  const { data: allBranchSales = [], isLoading } = useQuery({
+    queryKey: ['sales-history', tenantId, branchId, 'all', earliestOpened, salesFingerprint],
+    queryFn:  () => getSalesHistory(tenantId, branchId, { since: earliestOpened, limit: 1000 }),
+    enabled:  open && !!tenantId && !!branchId && !!earliestOpened && salesFingerprint !== undefined,
+    placeholderData: (prev) => prev,   // mantiene la lista visible mientras llega la nueva (sin parpadeo)
   })
 
   // Tabs: si es manager mostramos todas las cajas abiertas, sino solo la activa

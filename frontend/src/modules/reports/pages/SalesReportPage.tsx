@@ -11,7 +11,7 @@ import {
   Calendar, ChevronDown,
 } from 'lucide-react'
 import { useAuthStore } from '@store/auth.store'
-import { getSalesHistory, getCashRegisterHistory } from '@lib/db'
+import { getSalesHistory, getCashRegisterHistory, getSalesReportStats, type SaleHistoryRow } from '@lib/db'
 import { formatCurrency } from '@shared/utils/format'
 import { cn } from '@shared/utils/cn'
 
@@ -153,17 +153,31 @@ export default function SalesReportPage() {
 
   const { since, until, prevSince, prevUntil } = useMemo(() => getRangeDates(range), [range])
 
-  // Fetch current + previous period together
-  const { data: allSales = [], isLoading } = useQuery({
+  // Fetch current + previous period together.
+  // Camino rápido: agregación en el SERVIDOR (RPC de la migración 060) — una
+  // llamada liviana y totales exactos sin tope de filas. Fallback: camino
+  // anterior (hasta 2000 ventas agregadas en cliente) si el RPC no existe aún.
+  const { data: report, isLoading } = useQuery({
     queryKey: ['sales-report', tenantId, branchId, range],
-    queryFn: () => getSalesHistory(tenantId, branchId, {
-      since:  prevSince.toISOString(),
-      until:  until.toISOString(),
-      limit:  2000,
-    }),
+    queryFn: async () => {
+      const stats = await getSalesReportStats(tenantId, branchId, {
+        since:     since.toISOString(),
+        until:     until.toISOString(),
+        prevSince: prevSince.toISOString(),
+      })
+      if (stats) return { stats, rows: [] as SaleHistoryRow[] }
+      const rows = await getSalesHistory(tenantId, branchId, {
+        since:  prevSince.toISOString(),
+        until:  until.toISOString(),
+        limit:  2000,
+      })
+      return { stats: null, rows }
+    },
     enabled: !!tenantId && !!branchId,
     staleTime: 60_000,
   })
+  const stats    = report?.stats ?? null
+  const allSales = report?.rows  ?? []
 
   const { data: registers = [] } = useQuery({
     queryKey: ['cash-registers-history', tenantId, branchId, range],
@@ -185,14 +199,14 @@ export default function SalesReportPage() {
     [allSales, prevSince, since],
   )
 
-  // KPIs
-  const kpiTotal     = currentSales.reduce((a, s) => a + s.total, 0)
-  const kpiPrevTotal = prevSales.reduce((a, s) => a + s.total, 0)
-  const kpiCount     = currentSales.length
-  const kpiPrevCount = prevSales.length
+  // KPIs — del RPC si está disponible; si no, agregación en cliente (fallback)
+  const kpiTotal     = stats ? Number(stats.current.total)     : currentSales.reduce((a, s) => a + s.total, 0)
+  const kpiPrevTotal = stats ? Number(stats.previous.total)    : prevSales.reduce((a, s) => a + s.total, 0)
+  const kpiCount     = stats ? Number(stats.current.count)     : currentSales.length
+  const kpiPrevCount = stats ? Number(stats.previous.count)    : prevSales.length
   const kpiAvg       = kpiCount > 0 ? kpiTotal / kpiCount : 0
   const kpiPrevAvg   = kpiPrevCount > 0 ? kpiPrevTotal / kpiPrevCount : 0
-  const kpiTax       = currentSales.reduce((a, s) => a + s.tax_total, 0)
+  const kpiTax       = stats ? Number(stats.current.tax_total) : currentSales.reduce((a, s) => a + s.tax_total, 0)
 
   // ── Revenue chart (daily) ──────────────────────────────────
   const chartData = useMemo(() => {
@@ -205,6 +219,21 @@ export default function SalesReportPage() {
       days[key] = { date: fmtDay(cur.toISOString()), current: 0, anterior: 0 }
       cur.setDate(cur.getDate() + 1)
     }
+    const prevDays = Object.keys(days).sort()
+
+    if (stats) {
+      // Camino RPC: mismas agrupaciones, ya sumadas en el servidor
+      for (const d of stats.daily_current) {
+        if (days[d.day]) days[d.day].current += Number(d.total)
+      }
+      for (const d of stats.daily_prev_offsets) {
+        if (d.offset >= 0 && d.offset < prevDays.length) {
+          const key = prevDays[d.offset]
+          if (key && days[key]) days[key].anterior += Number(d.total)
+        }
+      }
+      return Object.values(days)
+    }
 
     // Aggregate current
     for (const s of currentSales) {
@@ -213,7 +242,6 @@ export default function SalesReportPage() {
     }
 
     // Aggregate previous (aligned to same index offset)
-    const prevDays = Object.keys(days).sort()
     for (const s of prevSales) {
       const d = new Date(s.created_at)
       const diffMs = d.getTime() - prevSince.getTime()
@@ -225,10 +253,19 @@ export default function SalesReportPage() {
     }
 
     return Object.values(days)
-  }, [currentSales, prevSales, since, until, prevSince])
+  }, [stats, currentSales, prevSales, since, until, prevSince])
 
   // ── Payment methods ───────────────────────────────────────
   const paymentData = useMemo(() => {
+    if (stats) {
+      // Ya viene sumado y ordenado desc desde el servidor
+      return stats.by_method.map(({ method, amount }) => ({
+        method,
+        label: METHOD_LABELS[method] ?? method,
+        amount: Number(amount),
+        color: METHOD_COLORS[method] ?? '#6366f1',
+      }))
+    }
     const totals: Record<string, number> = {}
     for (const s of currentSales) {
       for (const p of s.sale_payments) {
@@ -238,12 +275,18 @@ export default function SalesReportPage() {
     return Object.entries(totals)
       .map(([method, amount]) => ({ method, label: METHOD_LABELS[method] ?? method, amount, color: METHOD_COLORS[method] ?? '#6366f1' }))
       .sort((a, b) => b.amount - a.amount)
-  }, [currentSales])
+  }, [stats, currentSales])
 
   const paymentTotal = paymentData.reduce((a, p) => a + p.amount, 0)
 
   // ── Top products ─────────────────────────────────────────
   const topProducts = useMemo(() => {
+    if (stats) {
+      // Top 8 por ingreso, ya calculado en el servidor
+      return stats.top_products.map(t => ({
+        name: t.name, revenue: Number(t.revenue), qty: Number(t.qty),
+      }))
+    }
     const totals: Record<string, { name: string; revenue: number; qty: number }> = {}
     for (const s of currentSales) {
       for (const it of s.sale_items) {
@@ -253,7 +296,7 @@ export default function SalesReportPage() {
       }
     }
     return Object.values(totals).sort((a, b) => b.revenue - a.revenue).slice(0, 8)
-  }, [currentSales])
+  }, [stats, currentSales])
 
   const maxProductRevenue = topProducts[0]?.revenue ?? 1
 

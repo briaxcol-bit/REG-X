@@ -197,6 +197,8 @@ export async function getAttendance(
   if (opts?.from)   q = q.gte('work_date', opts.from)
   if (opts?.to)     q = q.lte('work_date', opts.to)
   if (opts?.userId) q = q.eq('user_id', opts.userId)
+  // Tope de seguridad: evita descargar historicos completos en tenants grandes
+  q = q.limit(1000)
   const { data, error } = await q
   if (error) throw error
   return (data ?? []) as unknown as AttendanceRow[]
@@ -384,6 +386,8 @@ export async function getTips(tenantId: string, opts?: { from?: string; to?: str
     .order('created_at', { ascending: false })
   if (opts?.from) q = q.gte('tip_date', opts.from)
   if (opts?.to)   q = q.lte('tip_date', opts.to)
+  // Tope de seguridad: evita descargar historicos completos en tenants grandes
+  q = q.limit(1000)
   const { data, error } = await q
   if (error) throw error
   return (data ?? []) as unknown as TipRow[]

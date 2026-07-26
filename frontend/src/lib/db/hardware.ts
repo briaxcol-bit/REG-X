@@ -40,6 +40,8 @@ export async function getQuotes(tenantId: string, filters?: { status?: QuoteStat
     .eq('tenant_id', tenantId).is('deleted_at', null)
     .order('quote_date', { ascending: false }).order('created_at', { ascending: false })
   if (filters?.status) q = q.eq('status', filters.status)
+  // Tope de seguridad: evita descargar historicos completos en tenants grandes
+  q = q.limit(500)
   const { data, error } = await q
   if (error) throw error
   return (data ?? []) as unknown as QuoteRow[]
@@ -110,6 +112,8 @@ export async function getWorkOrders(tenantId: string, filters?: { status?: WorkO
     .select('id, tenant_id, customer_id, code, title, description, priority, status, due_date, total, currency, notes, created_at, customers(full_name)')
     .eq('tenant_id', tenantId).is('deleted_at', null).order('created_at', { ascending: false })
   if (filters?.status) q = q.eq('status', filters.status)
+  // Tope de seguridad: evita descargar historicos completos en tenants grandes
+  q = q.limit(500)
   const { data, error } = await q
   if (error) throw error
   return (data ?? []) as unknown as WorkOrderRow[]
@@ -259,6 +263,8 @@ export async function getSerials(tenantId: string, filters?: { search?: string; 
   if (filters?.status) q = q.eq('status', filters.status)
   if (filters?.productId) q = q.eq('product_id', filters.productId)
   if (filters?.search?.trim()) q = q.ilike('serial_number', `%${filters.search.trim()}%`)
+  // Tope de seguridad: evita descargar historicos completos en tenants grandes
+  q = q.limit(2000)
   const { data, error } = await q
   if (error) throw error
   return (data ?? []) as unknown as SerialRow[]

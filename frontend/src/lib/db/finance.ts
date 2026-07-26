@@ -128,6 +128,8 @@ export async function getReceivables(tenantId: string, filters?: { status?: 'OPE
     .select('id, tenant_id, customer_id, reference, description, amount, paid, currency, due_date, status, created_at, customers(full_name)')
     .eq('tenant_id', tenantId).is('deleted_at', null).order('created_at', { ascending: false })
   if (filters?.status) q = q.eq('status', filters.status)
+  // Tope de seguridad: evita descargar historicos completos en tenants grandes
+  q = q.limit(1000)
   const { data, error } = await q
   if (error) throw error
   return (data ?? []) as unknown as ReceivableRow[]
@@ -171,6 +173,8 @@ export async function getPayables(tenantId: string, filters?: { status?: 'OPEN' 
     .select('id, tenant_id, supplier_id, reference, description, amount, paid, currency, due_date, status, created_at, suppliers(name)')
     .eq('tenant_id', tenantId).is('deleted_at', null).order('created_at', { ascending: false })
   if (filters?.status) q = q.eq('status', filters.status)
+  // Tope de seguridad: evita descargar historicos completos en tenants grandes
+  q = q.limit(1000)
   const { data, error } = await q
   if (error) throw error
   return (data ?? []) as unknown as PayableRow[]
@@ -234,6 +238,7 @@ export async function getPayrollEntries(tenantId: string): Promise<PayrollRow[]>
   const { data, error } = await supabase.from('payroll_entries')
     .select('id, tenant_id, employee_id, employee_name, period_label, base_salary, bonuses, deductions, net_pay, status, paid_at, notes, created_at')
     .eq('tenant_id', tenantId).order('created_at', { ascending: false })
+    .limit(1000)
   if (error) throw error
   return (data ?? []) as unknown as PayrollRow[]
 }

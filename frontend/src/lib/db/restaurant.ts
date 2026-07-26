@@ -124,6 +124,8 @@ export async function getOrders(
 
   if (status) q = q.eq('status', status as any)
 
+  // Tope de seguridad: evita descargar historicos completos en tenants grandes
+  q = q.limit(500)
   const { data, error } = await q
   if (error) throw error
   return (data ?? []) as unknown as OrderRow[]
@@ -490,6 +492,8 @@ export async function getReservations(tenantId: string, opts?: { from?: string; 
     .order('reserved_at', { ascending: true })
   if (opts?.from) q = q.gte('reserved_at', opts.from)
   if (opts?.to)   q = q.lte('reserved_at', `${opts.to}T23:59:59`)
+  // Tope de seguridad: evita descargar historicos completos en tenants grandes
+  q = q.limit(500)
   const { data, error } = await q
   if (error) throw error
   return (data ?? []) as unknown as ReservationRow[]
@@ -679,6 +683,8 @@ export async function getDeliveries(tenantId: string, opts?: { status?: Delivery
     .eq('tenant_id', tenantId)
     .order('created_at', { ascending: false })
   if (opts?.status) q = q.eq('status', opts.status)
+  // Tope de seguridad: evita descargar historicos completos en tenants grandes
+  q = q.limit(500)
   const { data, error } = await q
   if (error) throw error
   return (data ?? []) as unknown as DeliveryRow[]

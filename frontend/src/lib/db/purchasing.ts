@@ -175,6 +175,8 @@ export async function getExpenses(tenantId: string, filters?: ExpenseFilters): P
   if (filters?.to)         q = q.lte('expense_date', filters.to)
   if (filters?.category)   q = q.eq('category', filters.category)
   if (filters?.supplierId) q = q.eq('supplier_id', filters.supplierId)
+  // Tope de seguridad: evita descargar historicos completos en tenants grandes
+  q = q.limit(1000)
   const { data, error } = await q
   if (error) throw error
   return (data ?? []) as unknown as ExpenseRow[]
@@ -299,6 +301,8 @@ export async function getPurchaseOrders(
     .order('order_date', { ascending: false })
     .order('created_at', { ascending: false })
   if (filters?.status) q = q.eq('status', filters.status)
+  // Tope de seguridad: evita descargar historicos completos en tenants grandes
+  q = q.limit(500)
   const { data, error } = await q
   if (error) throw error
   return (data ?? []) as unknown as PurchaseOrderRow[]
