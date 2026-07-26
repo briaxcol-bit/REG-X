@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Plus, Search, Tag, Pencil, Package, Loader2, Trash2, AlertTriangle, X } from 'lucide-react'
-import { getProducts, deleteProduct } from '@lib/db'
+import { getProducts, deleteProduct, filterProductsBySearch } from '@lib/db'
 import { useAuthStore } from '@store/auth.store'
 import { usePOSTerminal } from '@modules/pos/hooks/usePOSTerminal'
 import type { ProductRow } from '@lib/db'
@@ -109,18 +109,25 @@ export default function ProductsPage() {
   const loadProducts = () => {
     if (!tenant?.tenantId) return
     setLoading(true)
-    getProducts(tenant.tenantId, { search: search || undefined, categoryId: categoryId || undefined })
+    // La búsqueda se filtra en cliente (mismo algoritmo de siempre) para no
+    // re-descargar el catálogo en cada tecla.
+    getProducts(tenant.tenantId, { categoryId: categoryId || undefined })
       .then(setProducts)
       .catch(() => setProducts([]))
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { loadProducts() }, [tenant?.tenantId, search, categoryId])
+  useEffect(() => { loadProducts() }, [tenant?.tenantId, categoryId])
+
+  const searchedProducts = useMemo(
+    () => filterProductsBySearch(products, search),
+    [products, search],
+  )
 
   // Restricción por terminal: solo categorías permitidas (los sin categoría siguen visibles)
   const visibleProducts = allowedCategories
-    ? products.filter(p => !p.category_id || allowedCategories.includes(p.category_id))
-    : products
+    ? searchedProducts.filter(p => !p.category_id || allowedCategories.includes(p.category_id))
+    : searchedProducts
 
   const handleDelete = async () => {
     if (!toDelete || !tenant?.tenantId) return

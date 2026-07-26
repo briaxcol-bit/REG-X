@@ -183,6 +183,25 @@ export interface RestaurantOrderRow {
   order_items?: RestaurantOrderItemRow[]
 }
 
+/**
+ * Inserta ítems de comanda en UN solo request, incluyendo las columnas
+ * denormalizadas name/sku. Si esas columnas aún no existen (migración sin
+ * aplicar), reintenta sin ellas — mismo estado final que el esquema viejo,
+ * sin el bucle de updates por ítem (N+1).
+ */
+async function insertOrderItems(rows: Record<string, unknown>[]): Promise<void> {
+  const { error } = await supabase.from('order_items').insert(rows as any)
+  if (!error) return
+  // PGRST204 = columna desconocida para PostgREST; 42703 = undefined column
+  if (error.code === 'PGRST204' || error.code === '42703') {
+    const legacy = rows.map(({ name: _n, sku: _s, ...rest }) => rest)
+    const { error: e2 } = await supabase.from('order_items').insert(legacy as any)
+    if (e2) throw e2
+    return
+  }
+  throw error
+}
+
 export async function createRestaurantOrder(
   tenantId:   string,
   branchId:   string,
@@ -217,29 +236,22 @@ export async function createRestaurantOrder(
 
   // Insertar ítems — unit_price es NOT NULL en el esquema original.
   // added_by / added_by_name registran quién agregó cada ítem (migración 023).
-  const { error: itemsErr } = await supabase.from('order_items').insert(
+  // name/sku van en el MISMO insert (con fallback si no existen las columnas).
+  await insertOrderItems(
     items.map(item => ({
       order_id:      order.id,
       product_id:    item.product_id,
       quantity:      item.quantity,
       unit_price:    item.unit_price,
-      status:        'PENDING' as any,
+      status:        'PENDING',
       destination:   item.destination ?? 'KITCHEN',
       notes:         item.notes ?? null,
       added_by:      waiterId,
       added_by_name: waiterName,
-    } as any)),
+      name:          item.name,
+      sku:           item.sku,
+    })),
   )
-  if (itemsErr) throw itemsErr
-
-  // Guardar campos denormalizados si la migración ya fue aplicada (name, sku)
-  try {
-    for (const item of items) {
-      await (supabase.from('order_items').update({
-        name: item.name, sku: item.sku,
-      } as any).eq('order_id', order.id).eq('product_id', item.product_id)) as any
-    }
-  } catch { /* ignorar si las columnas name/sku no existen aún */ }
 
   // Marcar mesa como OCUPADA
   const { error: tableErr } = await supabase
@@ -307,29 +319,22 @@ export async function addItemsToOrder(
   addedByName?: string,
 ): Promise<void> {
   // added_by / added_by_name registran quién agregó cada ítem (migración 023).
-  const { error } = await supabase.from('order_items').insert(
+  // name/sku van en el MISMO insert (con fallback si no existen las columnas).
+  await insertOrderItems(
     items.map(item => ({
       order_id:      orderId,
       product_id:    item.product_id,
       quantity:      item.quantity,
       unit_price:    item.unit_price,
-      status:        'PENDING' as any,
+      status:        'PENDING',
       destination:   item.destination ?? 'KITCHEN',
       notes:         item.notes ?? null,
       added_by:      addedById ?? null,
       added_by_name: addedByName ?? null,
-    } as any)),
+      name:          item.name,
+      sku:           item.sku,
+    })),
   )
-  if (error) throw error
-
-  // Guardar campos denormalizados si la migración ya fue aplicada (name, sku)
-  try {
-    for (const item of items) {
-      await (supabase.from('order_items').update({
-        name: item.name, sku: item.sku,
-      } as any).eq('order_id', orderId).eq('product_id', item.product_id)) as any
-    }
-  } catch { /* ignorar si las columnas name/sku no existen aún */ }
 }
 
 // Órdenes activas para la pantalla KDS (incluye notas por ítem)

@@ -314,37 +314,24 @@ function normalizeText(s: string): string {
   return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
 }
 
-export async function getProducts(
-  tenantId: string,
-  params?: { search?: string; categoryId?: string; status?: string },
-): Promise<ProductRow[]> {
-  let q = supabase
-    .from('products')
-    .select(`
+const PRODUCT_COLS = `
       id, tenant_id, name, sku, barcode, price, cost_price, tax, image_url, status,
       track_inventory, category_id, min_stock, max_stock,
       categories(name, color, track_inventory),
       inventory(quantity)
-    `)
-    .eq('tenant_id', tenantId)
-    .is('deleted_at', null)
-    .order('name')
+    `
 
-  if (params?.status) q = q.eq('status', params.status as any)
-  else q = q.eq('status', 'ACTIVE')
+/**
+ * Filtro de búsqueda en cliente: insensible a mayúsculas y tildes, por
+ * palabras clave ("coca 350" encuentra "Coca-Cola 350ml"; "cafe" → "Café").
+ * Exportado para poder filtrar sobre datos ya cacheados sin re-descargar
+ * el catálogo (POS / página de productos).
+ */
+export function filterProductsBySearch(rows: ProductRow[], search?: string): ProductRow[] {
+  const term = search?.trim()
+  if (!term) return rows
 
-  if (params?.categoryId) q = q.eq('category_id', params.categoryId)
-
-  const { data, error } = await q
-  if (error) throw error
-  const rows = (data ?? []) as unknown as ProductRow[]
-
-  // Búsqueda en cliente: insensible a mayúsculas y tildes, por palabras clave
-  // ("coca 350" encuentra "Coca-Cola 350ml"; "cafe" encuentra "Café").
-  const search = params?.search?.trim()
-  if (!search) return rows
-
-  const tokens = normalizeText(search).split(/\s+/).filter(Boolean)
+  const tokens = normalizeText(term).split(/\s+/).filter(Boolean)
   const haystack = (r: ProductRow) => {
     const cat = r.categories as any
     return normalizeText(`${r.name} ${r.sku} ${r.barcode ?? ''} ${cat?.name ?? ''}`)
@@ -362,6 +349,54 @@ export async function getProducts(
     const hay = haystack(r)
     return tokens.some(t => hay.includes(t))
   })
+}
+
+export async function getProducts(
+  tenantId: string,
+  params?: { search?: string; categoryId?: string; status?: string },
+): Promise<ProductRow[]> {
+  let q = supabase
+    .from('products')
+    .select(PRODUCT_COLS)
+    .eq('tenant_id', tenantId)
+    .is('deleted_at', null)
+    .order('name')
+
+  if (params?.status) q = q.eq('status', params.status as any)
+  else q = q.eq('status', 'ACTIVE')
+
+  if (params?.categoryId) q = q.eq('category_id', params.categoryId)
+
+  const { data, error } = await q
+  if (error) throw error
+  const rows = (data ?? []) as unknown as ProductRow[]
+
+  return filterProductsBySearch(rows, params?.search)
+}
+
+/**
+ * Búsqueda EXACTA por código de barras o SKU en el servidor (escáner del POS).
+ * Evita descargar el catálogo completo por cada escaneo. Devuelve null si el
+ * código contiene caracteres no aptos para el filtro (el caller debe hacer
+ * fallback a getProducts, comportamiento anterior).
+ */
+export async function getProductByCode(
+  tenantId: string,
+  code: string,
+): Promise<ProductRow[] | null> {
+  // Solo códigos "seguros" para la sintaxis .or() de PostgREST
+  if (!/^[\w\-\.]+$/.test(code)) return null
+
+  const { data, error } = await supabase
+    .from('products')
+    .select(PRODUCT_COLS)
+    .eq('tenant_id', tenantId)
+    .eq('status', 'ACTIVE')
+    .is('deleted_at', null)
+    .or(`barcode.eq.${code},sku.eq.${code}`)
+    .limit(10)
+  if (error) return null   // fallback al camino anterior
+  return (data ?? []) as unknown as ProductRow[]
 }
 
 // ── Carga masiva de productos ──────────────────────────────────
@@ -543,7 +578,13 @@ export async function bulkImportProducts(
       .in('product_id', prodIds)
     const invByProd = new Map((invExisting ?? []).map(i => [i.product_id, i]))
 
-    for (const { r, ex } of toUpdate) {
+    // Los movimientos de stock se acumulan y se insertan en UN solo request
+    // al final (antes: un insert por fila).
+    const updateMovements: Record<string, unknown>[] = []
+
+    // Misma lógica por fila que antes, pero procesada en paralelo por lotes
+    // (antes: totalmente secuencial — un viaje al servidor por campo por fila).
+    const processRow = async ({ r, ex }: { r: typeof preValid[number]; ex: ExistingProd }) => {
       let changed = false
 
       // Campos del producto: solo los que vienen en la plantilla y difieren.
@@ -560,7 +601,7 @@ export async function bulkImportProducts(
       if (Object.keys(patch).length > 0) {
         patch['updated_at'] = new Date().toISOString()
         const { error } = await supabase.from('products').update(patch).eq('id', ex.id).eq('tenant_id', tenantId)
-        if (error) { errors.push({ row: r.__row, message: error.message }); continue }
+        if (error) { errors.push({ row: r.__row, message: error.message }); return }
         changed = true
       }
 
@@ -573,14 +614,14 @@ export async function bulkImportProducts(
             const { error } = await supabase.from('inventory')
               .update({ quantity: r.stock, updated_at: new Date().toISOString() })
               .eq('id', inv.id)
-            if (error) { errors.push({ row: r.__row, message: error.message }); continue }
+            if (error) { errors.push({ row: r.__row, message: error.message }); return }
           } else {
             const { error } = await supabase.from('inventory')
               .insert({ tenant_id: tenantId, branch_id: branchId, warehouse_id: wh!.id, product_id: ex.id, quantity: r.stock })
-            if (error) { errors.push({ row: r.__row, message: error.message }); continue }
+            if (error) { errors.push({ row: r.__row, message: error.message }); return }
           }
           const delta = Number(r.stock) - current
-          await supabase.from('stock_movements').insert({
+          updateMovements.push({
             tenant_id: tenantId, branch_id: branchId, warehouse_id: wh!.id, product_id: ex.id,
             type: 'ADJUSTMENT', quantity: Math.abs(delta), reference_type: 'MANUAL_ADJUSTMENT',
             notes: `Carga masiva: ajuste ${delta > 0 ? '+' : ''}${delta} uds`,
@@ -591,6 +632,16 @@ export async function bulkImportProducts(
 
       if (changed) updated++
       else skipped++
+    }
+
+    const CHUNK = 8
+    for (let i = 0; i < toUpdate.length; i += CHUNK) {
+      await Promise.all(toUpdate.slice(i, i + CHUNK).map(processRow))
+    }
+
+    if (updateMovements.length > 0) {
+      const { error } = await supabase.from('stock_movements').insert(updateMovements)
+      if (error) console.error('[bulkImportProducts] stock_movements (updates):', error)
     }
   }
 

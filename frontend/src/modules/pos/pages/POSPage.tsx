@@ -29,7 +29,7 @@ import { usePosPricing } from '@modules/pos/hooks/usePosPricing'
 import { useCashSession } from '@modules/pos/hooks/useCashSession'
 import { usePOSTerminal } from '@modules/pos/hooks/usePOSTerminal'
 import { useCreateSale } from '@modules/pos/hooks/useCreateSale'
-import { getPendingSales, getPOSTerminals, getActiveTableOrders, getAllActiveOrdersForTable, closeAllOrdersForTable, getProducts, type SaleHistoryRow, type RestaurantOrderRow, type TableRow } from '@lib/db'
+import { getPendingSales, getPOSTerminals, getActiveTableOrders, getAllActiveOrdersForTable, closeAllOrdersForTable, getProducts, getProductByCode, type SaleHistoryRow, type RestaurantOrderRow, type TableRow } from '@lib/db'
 import { TableMapModal } from '@modules/pos/components/TableMapModal'
 import { toast } from 'sonner'
 
@@ -528,8 +528,12 @@ export default function POSPage() {
     const code = barcode.trim()
     if (!code || !tenant?.tenantId) return
     try {
-      // Buscar coincidencia exacta por código de barras o SKU
-      const rows = await getProducts(tenant.tenantId, { search: code })
+      // Buscar coincidencia exacta por código de barras o SKU.
+      // Lookup exacto en servidor (barato); si el código tiene caracteres
+      // raros, fallback al camino anterior (catálogo + filtro en cliente).
+      const rows =
+        (await getProductByCode(tenant.tenantId, code)) ??
+        (await getProducts(tenant.tenantId, { search: code }))
       const exact = rows.filter(r => r.barcode === code || r.sku === code)
       // Respetar categorías permitidas por la terminal
       const allowed = allowedCategories

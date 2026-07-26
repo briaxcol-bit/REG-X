@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { getProducts, getCategories, type ProductRow, type CategoryRow } from '@lib/db'
+import { getProducts, getCategories, filterProductsBySearch, type ProductRow, type CategoryRow } from '@lib/db'
 import { useAuthStore } from '@store/auth.store'
 
 export type { CategoryRow as Category }
@@ -53,16 +53,22 @@ interface UseProductsParams {
 
 export function useProducts(params?: UseProductsParams) {
   const tenantId = useAuthStore((s) => s.tenant?.tenantId)
+  const search = params?.search
 
+  // La búsqueda SIEMPRE fue un filtro en cliente (getProducts descarga lo
+  // mismo con o sin `search`). Sacarla del queryKey/queryFn evita re-descargar
+  // el catálogo completo en cada tecla: se filtra el caché con el MISMO
+  // algoritmo → resultados idénticos.
   return useQuery({
-    queryKey: ['products', tenantId, params],
+    queryKey: ['products', tenantId, { categoryId: params?.categoryId, status: params?.status }],
     enabled:  !!tenantId,
-    queryFn:  async () => {
-      const rows = await getProducts(tenantId!, params)
-      return rows.map(toProduct)
-    },
+    queryFn:  () => getProducts(tenantId!, { categoryId: params?.categoryId, status: params?.status }),
+    select:   (rows: ProductRow[]) => filterProductsBySearch(rows, search).map(toProduct),
     placeholderData: [],
-    staleTime: 30_000,
+    // El catálogo se invalida explícitamente en cada venta (useCreateSale) y
+    // edición (ProductFormPage), así que puede vivir más en caché sin perder
+    // frescura. Evita re-descargas al volver a la pestaña (focus refetch).
+    staleTime: 5 * 60_000,
   })
 }
 
