@@ -24,6 +24,15 @@ export interface DashboardStats {
 }
 
 // ── Dashboard ──────────────────────────────────────────────────
+function relativeTime(createdAt: string): string {
+  const diffMin = Math.round((Date.now() - new Date(createdAt).getTime()) / 60000)
+  return diffMin < 60
+    ? `Hace ${diffMin} min`
+    : diffMin < 1440
+      ? `Hace ${Math.round(diffMin / 60)} h`
+      : `Hace ${Math.round(diffMin / 1440)} días`
+}
+
 export async function getDashboardStats(
   tenantId: string,
   branchId: string,
@@ -31,74 +40,106 @@ export async function getDashboardStats(
   const now  = new Date()
   const todayStart  = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
   const yesterdayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1).toISOString()
-
-  // Ventas de hoy
-  const { data: salesTodayRows } = await supabase
-    .from('sales')
-    .select('total, status')
-    .eq('tenant_id', tenantId)
-    .eq('branch_id', branchId)
-    .eq('status', 'COMPLETED')
-    .gte('created_at', todayStart)
-
-  // Ventas de ayer
-  const { data: salesYesterdayRows } = await supabase
-    .from('sales')
-    .select('total')
-    .eq('tenant_id', tenantId)
-    .eq('branch_id', branchId)
-    .eq('status', 'COMPLETED')
-    .gte('created_at', yesterdayStart)
-    .lt('created_at', todayStart)
-
-  // Órdenes activas (PENDING)
-  const { count: activeOrders } = await supabase
-    .from('sales')
-    .select('id', { count: 'exact', head: true })
-    .eq('tenant_id', tenantId)
-    .eq('branch_id', branchId)
-    .eq('status', 'PENDING')
-
-  // Clientes nuevos hoy
-  const { count: newCustomersToday } = await supabase
-    .from('customers')
-    .select('id', { count: 'exact', head: true })
-    .eq('tenant_id', tenantId)
-    .gte('created_at', todayStart)
-
-  // Clientes nuevos ayer
-  const { count: newCustomersYesterday } = await supabase
-    .from('customers')
-    .select('id', { count: 'exact', head: true })
-    .eq('tenant_id', tenantId)
-    .gte('created_at', yesterdayStart)
-    .lt('created_at', todayStart)
-
-  // Stock total
-  const { data: stockRows } = await supabase
-    .from('inventory')
-    .select('quantity')
-    .eq('tenant_id', tenantId)
-    .eq('branch_id', branchId)
-
-  // Últimas ventas
-  const { data: recentRows } = await supabase
-    .from('sales')
-    .select('id, total, status, created_at, customers(full_name)')
-    .eq('tenant_id', tenantId)
-    .eq('branch_id', branchId)
-    .order('created_at', { ascending: false })
-    .limit(5)
-
-  // Ventas por mes (año actual)
   const yearStart = new Date(now.getFullYear(), 0, 1).toISOString()
-  const { data: monthlyRows } = await supabase
-    .from('sales')
-    .select('created_at, total')
-    .eq('tenant_id', tenantId)
-    .eq('branch_id', branchId)
-    .eq('status', 'COMPLETED')
-    .gte('created_at', yearStart)
+
+  // Camino rápido: RPC que agrega todo en el servidor en UNA llamada
+  // (ver database/migrations/058_performance_rls_indexes.sql).
+  // (cast: la función aún no existe en los tipos generados database.types.ts)
+  const { data: rpcData, error: rpcErr } = await (supabase.rpc as any)('get_dashboard_stats', {
+    p_tenant_id:       tenantId,
+    p_branch_id:       branchId,
+    p_today_start:     todayStart,
+    p_yesterday_start: yesterdayStart,
+    p_year_start:      yearStart,
+  })
+
+  if (!rpcErr && rpcData) {
+    const d = rpcData as any
+    const monthly: { [k: number]: number } = {}
+    for (let i = 1; i <= 12; i++) monthly[i] = 0
+    for (const m of d.monthly_sales ?? []) monthly[m.month] = Number(m.total)
+    return {
+      salesToday:            Number(d.sales_today ?? 0),
+      salesYesterday:        Number(d.sales_yesterday ?? 0),
+      activeOrders:          Number(d.active_orders ?? 0),
+      newCustomersToday:     Number(d.new_customers_today ?? 0),
+      newCustomersYesterday: Number(d.new_customers_yesterday ?? 0),
+      totalStock:            Math.round(Number(d.total_stock ?? 0)),
+      recentSales: (d.recent_sales ?? []).map((r: any) => ({
+        id:       r.id,
+        customer: r.customer_name ?? 'Cliente anónimo',
+        amount:   Number(r.total),
+        time:     relativeTime(r.created_at),
+        status:   r.status === 'COMPLETED' ? 'Completado' : 'Pendiente',
+      })),
+      monthlySales: Object.entries(monthly).map(([m, t]) => ({ month: Number(m), total: t })),
+    }
+  }
+
+  // Fallback (migración 058 aún no aplicada): mismas queries de antes,
+  // pero en PARALELO en lugar de 8 requests secuenciales.
+  const [
+    { data: salesTodayRows },
+    { data: salesYesterdayRows },
+    { count: activeOrders },
+    { count: newCustomersToday },
+    { count: newCustomersYesterday },
+    { data: stockRows },
+    { data: recentRows },
+    { data: monthlyRows },
+  ] = await Promise.all([
+    supabase
+      .from('sales')
+      .select('total, status')
+      .eq('tenant_id', tenantId)
+      .eq('branch_id', branchId)
+      .eq('status', 'COMPLETED')
+      .gte('created_at', todayStart),
+    supabase
+      .from('sales')
+      .select('total')
+      .eq('tenant_id', tenantId)
+      .eq('branch_id', branchId)
+      .eq('status', 'COMPLETED')
+      .gte('created_at', yesterdayStart)
+      .lt('created_at', todayStart),
+    supabase
+      .from('sales')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', tenantId)
+      .eq('branch_id', branchId)
+      .eq('status', 'PENDING'),
+    supabase
+      .from('customers')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', tenantId)
+      .gte('created_at', todayStart),
+    supabase
+      .from('customers')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', tenantId)
+      .gte('created_at', yesterdayStart)
+      .lt('created_at', todayStart),
+    supabase
+      .from('inventory')
+      .select('quantity')
+      .eq('tenant_id', tenantId)
+      .eq('branch_id', branchId),
+    supabase
+      .from('sales')
+      .select('id, total, status, created_at, customers(full_name)')
+      .eq('tenant_id', tenantId)
+      .eq('branch_id', branchId)
+      .order('created_at', { ascending: false })
+      .limit(5),
+    supabase
+      .from('sales')
+      .select('created_at, total')
+      .eq('tenant_id', tenantId)
+      .eq('branch_id', branchId)
+      .eq('status', 'COMPLETED')
+      .gte('created_at', yearStart),
+  ])
 
   // Agrupar mensual
   const monthly: { [k: number]: number } = {}
@@ -112,22 +153,13 @@ export async function getDashboardStats(
   const salesYesterday = (salesYesterdayRows ?? []).reduce((s, r) => s + Number(r.total), 0)
   const totalStock     = (stockRows ?? []).reduce((s, r) => s + Number(r.quantity), 0)
 
-  const recentSales = (recentRows ?? []).map((r) => {
-    const created = new Date(r.created_at)
-    const diffMin = Math.round((Date.now() - created.getTime()) / 60000)
-    const time    = diffMin < 60
-      ? `Hace ${diffMin} min`
-      : diffMin < 1440
-        ? `Hace ${Math.round(diffMin / 60)} h`
-        : `Hace ${Math.round(diffMin / 1440)} días`
-    return {
-      id:       r.id,
-      customer: (r.customers as any)?.full_name ?? 'Cliente anónimo',
-      amount:   Number(r.total),
-      time,
-      status:   r.status === 'COMPLETED' ? 'Completado' : 'Pendiente',
-    }
-  })
+  const recentSales = (recentRows ?? []).map((r) => ({
+    id:       r.id,
+    customer: (r.customers as any)?.full_name ?? 'Cliente anónimo',
+    amount:   Number(r.total),
+    time:     relativeTime(r.created_at),
+    status:   r.status === 'COMPLETED' ? 'Completado' : 'Pendiente',
+  }))
 
   return {
     salesToday,

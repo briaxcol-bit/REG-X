@@ -43,7 +43,9 @@ export async function getSales(
     .order('created_at', { ascending: false })
 
   if (params?.status) q = q.eq('status', params.status as any)
-  if (params?.limit)  q = q.limit(params.limit)
+  // Límite por defecto: evita bajar TODO el histórico de ventas
+  // (con joins a customers y sale_payments) en tenants con años de datos.
+  q = q.limit(params?.limit ?? 200)
 
   const { data, error } = await q
   if (error) throw error
@@ -245,55 +247,64 @@ export async function getPosPricingData(
 
   // Nota: NO encadenar dos .or() — genera query params duplicados que PostgREST rechaza.
   // Se traen todas las activas y se filtra por fecha en JS.
-  const { data: promosRaw, error: pErr } = await supabase
-    .from('promotions')
-    .select()
-    .eq('tenant_id', tenantId)
-    .eq('is_active', true)
+  // Las 3 consultas base son independientes → en PARALELO (antes: en cascada).
+  const [
+    { data: promosRaw, error: pErr },
+    { data: volLists, error: vErr },
+    custRes,
+  ] = await Promise.all([
+    supabase
+      .from('promotions')
+      .select()
+      .eq('tenant_id', tenantId)
+      .eq('is_active', true),
+    supabase
+      .from('price_lists')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('list_type', 'VOLUME')
+      .eq('is_active', true)
+      .is('deleted_at', null),
+    customerId
+      ? supabase
+          .from('customers')
+          .select('price_list_id')
+          .eq('tenant_id', tenantId)
+          .eq('id', customerId)
+          .single()
+      : Promise.resolve(null),
+  ])
   if (pErr) throw pErr
+  if (vErr) throw vErr
+
   const promos = (promosRaw ?? []).filter(p => {
     const startOk = !p.starts_at || p.starts_at <= today
     const endOk   = !p.ends_at   || p.ends_at   >= today
     return startOk && endOk
   })
 
-  const { data: volLists, error: vErr } = await supabase
-    .from('price_lists')
-    .select('id')
-    .eq('tenant_id', tenantId)
-    .eq('list_type', 'VOLUME')
-    .eq('is_active', true)
-    .is('deleted_at', null)
-  if (vErr) throw vErr
+  const custPriceListId = custRes && !custRes.error ? custRes.data?.price_list_id : null
 
-  let volumeItems: PriceListItemRow[] = []
-  if ((volLists ?? []).length > 0) {
-    const { data, error } = await supabase
-      .from('price_list_items')
-      .select()
-      .eq('tenant_id', tenantId)
-      .in('price_list_id', (volLists ?? []).map(l => l.id))
-    if (error) throw error
-    volumeItems = (data ?? []) as PriceListItemRow[]
-  }
-  let customerItems: PriceListItemRow[] = []
-  if (customerId) {
-    const { data: cust, error: cErr } = await supabase
-      .from('customers')
-      .select('price_list_id')
-      .eq('tenant_id', tenantId)
-      .eq('id', customerId)
-      .single()
-    if (!cErr && cust?.price_list_id) {
-      const { data, error } = await supabase
-        .from('price_list_items')
-        .select()
-        .eq('tenant_id', tenantId)
-        .eq('price_list_id', cust.price_list_id)
-      if (error) throw error
-      customerItems = (data ?? []) as PriceListItemRow[]
-    }
-  }
+  const [volumeItemsRes, customerItemsRes] = await Promise.all([
+    (volLists ?? []).length > 0
+      ? supabase
+          .from('price_list_items')
+          .select()
+          .eq('tenant_id', tenantId)
+          .in('price_list_id', (volLists ?? []).map(l => l.id))
+      : Promise.resolve(null),
+    custPriceListId
+      ? supabase
+          .from('price_list_items')
+          .select()
+          .eq('tenant_id', tenantId)
+          .eq('price_list_id', custPriceListId)
+      : Promise.resolve(null),
+  ])
+  if (volumeItemsRes?.error) throw volumeItemsRes.error
+  if (customerItemsRes?.error) throw customerItemsRes.error
+  const volumeItems   = (volumeItemsRes?.data ?? []) as PriceListItemRow[]
+  const customerItems = (customerItemsRes?.data ?? []) as PriceListItemRow[]
 
   return { promotions: promos as PromotionRow[], volumeItems, customerItems }
 }
