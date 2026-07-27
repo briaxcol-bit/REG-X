@@ -248,6 +248,126 @@ export function buildEscPosReceipt(d: EscPosReceiptData): Uint8Array {
   return new Uint8Array(bytes)
 }
 
+// ── Reporte de cierre de caja (arqueo) ────────────────────────
+export interface EscPosCashReportData {
+  businessName:  string
+  branchName?:   string
+  registerName:  string
+  cashierName?:  string
+  openedAt:      string
+  closedAt:      string
+  duration?:     string
+  openingCash:   number
+  cashSales:     number
+  cashExpenses?: number
+  expectedCash:  number
+  countedCash:   number
+  difference:    number
+  /** Ventas por método de pago: [['Efectivo', 120000], ['Tarjeta', 80000]] */
+  byMethod?:     [string, number][]
+  salesCount?:   number
+  salesTotal?:   number
+  notes?:        string
+  paperWidth?:   number
+  /** Solo comandas: no hubo manejo de efectivo */
+  isCommandsOnly?: boolean
+}
+
+/**
+ * Genera el reporte de cierre de caja en ESC/POS.
+ * Usa el mismo camino de impresión que la factura (printEscPosDirect):
+ * USB directo → bridge de red → fallback al diálogo del navegador.
+ */
+export function buildEscPosCashReport(d: EscPosCashReportData): Uint8Array {
+  const W = d.paperWidth ?? 32
+  const bytes: number[] = []
+  const push = (...args: (number | number[])[]) =>
+    args.forEach(a => Array.isArray(a) ? bytes.push(...a) : bytes.push(a))
+
+  push(CMD.init)
+
+  // ── Encabezado ─────────────────────────────────────────────
+  push(CMD.alignCenter)
+  push(CMD.doubleOn, CMD.boldOn, ...line(d.businessName.toUpperCase()), CMD.boldOff, CMD.doubleOff)
+  if (d.branchName) push(...line(d.branchName))
+  push(CMD.boldOn, ...line(d.isCommandsOnly ? '* CIERRE DE TURNO *' : '* CIERRE DE CAJA *'), CMD.boldOff)
+
+  // ── Datos del turno ────────────────────────────────────────
+  push(CMD.alignLeft)
+  push(...sep('=', W))
+  push(...line(`Caja  : ${d.registerName}`))
+  if (d.cashierName) push(...line(`Cajero: ${d.cashierName}`))
+  push(...line(`Apertura: ${d.openedAt}`))
+  push(...line(`Cierre  : ${d.closedAt}`))
+  if (d.duration) push(...line(`Duracion: ${d.duration}`))
+  push(...sep('=', W))
+
+  // ── Ventas del turno ───────────────────────────────────────
+  if (d.salesCount !== undefined || (d.byMethod && d.byMethod.length > 0)) {
+    push(CMD.boldOn, ...line('VENTAS DEL TURNO'), CMD.boldOff)
+    if (d.salesCount !== undefined) {
+      push(...row('  Transacciones', String(d.salesCount), W))
+    }
+    for (const [method, amount] of d.byMethod ?? []) {
+      push(...row(`  ${method}`, formatMoney(amount), W))
+    }
+    if (d.salesTotal !== undefined) {
+      push(...sep('-', W))
+      push(CMD.boldOn, ...row('TOTAL VENDIDO', formatMoney(d.salesTotal), W), CMD.boldOff)
+    }
+    push(...sep('=', W))
+  }
+
+  // ── Arqueo de efectivo ─────────────────────────────────────
+  if (!d.isCommandsOnly) {
+    push(CMD.boldOn, ...line('ARQUEO DE EFECTIVO'), CMD.boldOff)
+    push(...row('  Base inicial', formatMoney(d.openingCash), W))
+    push(...row('  + Ventas efectivo', formatMoney(d.cashSales), W))
+    if (d.cashExpenses && d.cashExpenses > 0) {
+      push(...row('  - Gastos efectivo', formatMoney(d.cashExpenses), W))
+    }
+    push(...sep('-', W))
+    push(CMD.boldOn, ...row('EFECTIVO ESPERADO', formatMoney(d.expectedCash), W), CMD.boldOff)
+    push(...row('EFECTIVO CONTADO', formatMoney(d.countedCash), W))
+    push(...sep('-', W))
+    const diffLabel = d.difference === 0 ? 'CUADRADO'
+      : d.difference > 0 ? 'SOBRANTE' : 'FALTANTE'
+    push(CMD.boldOn, ...row(diffLabel, formatMoney(Math.abs(d.difference)), W), CMD.boldOff)
+    push(...sep('=', W))
+  }
+
+  // ── Observaciones ──────────────────────────────────────────
+  if (d.notes) {
+    push(CMD.boldOn, ...line('OBSERVACIONES:'), CMD.boldOff)
+    // Partir el texto para que quepa en el ancho del papel
+    let rest = d.notes
+    while (rest.length > 0) {
+      push(...line(rest.slice(0, W)))
+      rest = rest.slice(W)
+    }
+    push(...sep('=', W))
+  }
+
+  // ── Firmas ─────────────────────────────────────────────────
+  push(...line())
+  push(...line())
+  push(...line('_______________________'))
+  push(...line('Firma cajero'))
+  push(...line())
+  push(...line())
+  push(...line('_______________________'))
+  push(...line('Firma responsable'))
+
+  push(...line())
+  push(CMD.alignCenter)
+  push(...line('Documento interno de control'))
+  push(...line('www.reg-x.com'))
+
+  push(...CMD.feedCut)
+
+  return new Uint8Array(bytes)
+}
+
 /** Convierte Uint8Array a base64 para enviar por HTTP */
 export function bytesToBase64(bytes: Uint8Array): string {
   let binary = ''

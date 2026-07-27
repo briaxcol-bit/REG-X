@@ -4,8 +4,9 @@
  * Las ventas hechas sin internet se encolan en pendingSync (persistido en
  * localStorage). Este módulo las reenvía al volver la conexión:
  *
- *  - order_number FIJO por venta + índice único (migración 047) →
+ *  - client_ref FIJO por venta + índice único (migración 062) →
  *    un reintento duplicado falla con 23505 y se trata como "ya sincronizada".
+ *    (El número de orden visible lo asigna el servidor: consecutivo por tenant.)
  *  - Error de stock (el servidor valida al sincronizar) → la venta queda en
  *    estado REVIEW con el motivo, para resolución manual.
  *  - Error de red → se detiene el ciclo (seguimos offline) y se reintenta
@@ -40,7 +41,7 @@ export async function syncPendingSales(): Promise<void> {
         synced++
       } catch (e: unknown) {
         const err = e as { code?: string; message?: string }
-        if (err?.code === '23505' || /uq_sales_tenant_order_number|duplicate key/i.test(err?.message ?? '')) {
+        if (err?.code === '23505' || /uq_sales_tenant_client_ref|uq_sales_tenant_order_number|duplicate key/i.test(err?.message ?? '')) {
           // Ya existe en el servidor (reintento previo llegó): sincronizada.
           usePOSStore.getState().removePendingSale(p.id)
           synced++
@@ -49,7 +50,7 @@ export async function syncPendingSales(): Promise<void> {
         } else {
           // Rechazo del servidor (p.ej. stock insuficiente): requiere revisión
           usePOSStore.getState().markPendingReview(p.id, err?.message ?? 'Error desconocido')
-          toast.error(`Venta offline ${p.payload.order_number} requiere revisión: ${err?.message ?? ''}`, { duration: 8000 })
+          toast.error(`Una venta offline requiere revisión: ${err?.message ?? ''}`, { duration: 8000 })
         }
       }
     }

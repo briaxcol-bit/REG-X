@@ -18,11 +18,11 @@ export function useCreateSale() {
 
   return useMutation({
     mutationFn: async (payload: CreateSalePayload) => {
-      // Número de orden fijo desde el cliente: si la venta termina en la
-      // cola offline, los reintentos son idempotentes (migración 047).
-      const orderNumber = payload.order_number
-        ?? `ORD-${Date.now().toString(36).toUpperCase()}`
-      const finalPayload = { ...payload, order_number: orderNumber }
+      // El NÚMERO de orden lo asigna el servidor (consecutivo del tenant,
+      // migración 062). Lo que sí fija el cliente es `client_ref`: un id
+      // local único que hace idempotentes los reintentos de la cola offline.
+      const clientRef = payload.client_ref ?? crypto.randomUUID()
+      const finalPayload = { ...payload, client_ref: clientRef }
 
       const queueOffline = () => {
         if (finalPayload.payments.some(p => ONLINE_ONLY_METHODS.includes(p.method))) {
@@ -33,15 +33,16 @@ export function useCreateSale() {
           tenantId:  tenantId!,
           branchId:  branchId!,
           userId:    userId!,
-          payload:   finalPayload as unknown as Record<string, unknown> & { order_number: string },
+          payload:   finalPayload as unknown as Record<string, unknown> & { client_ref: string },
           createdAt: new Date().toISOString(),
           status:    'PENDING',
         })
-        toast.info(`Sin internet: venta ${orderNumber} guardada, se sincronizará sola al volver la conexión.`, { duration: 6000 })
-        // Resultado sintético con la misma forma que usa el POS
+        toast.info('Sin internet: la venta quedó guardada y se sincronizará sola al volver la conexión.', { duration: 6000 })
+        // Resultado sintético con la misma forma que usa el POS.
+        // El número definitivo lo pondrá el servidor al sincronizar.
         return {
           id: null,
-          order_number: orderNumber,
+          order_number: 'Pendiente',
           total: finalPayload.total,
           status: finalPayload.status ?? 'COMPLETED',
           offline: true,

@@ -260,7 +260,7 @@ export default function POSPage() {
   const {
     tabs, activeTabId,
     addItem, clearCart,
-    setCustomer, setTip, loadTableOrder,
+    setCustomer, setTip, loadTableOrder, loadPendingSale,
     getSubtotal, getTaxTotal, getDiscountTotal, getTotal, getTip, getGrandTotal,
     lastReceipt, setLastReceipt,
     addTab, removeTab, switchTab, renameTab,
@@ -292,11 +292,13 @@ export default function POSPage() {
   })
   const hasComandasMode = allTerminals.some(t => t.mode === 'COMMANDS_ONLY')
 
-  // Comandas pendientes (solo si hay terminales de comandas)
+  // Comandas pendientes. Visibles tanto en la caja principal (para cobrarlas)
+  // como en la caja de comandas (para saber cuáles siguen sin cobrar). Salen
+  // de la lista solas cuando la caja principal las cobra (pasan a COMPLETED).
   const { data: pendingSales = [] } = useQuery({
     queryKey: ['pending-sales', tenant?.tenantId, branch?.branchId],
     queryFn:  () => getPendingSales(tenant!.tenantId, branch!.branchId),
-    enabled:  isManager && hasComandasMode && !!tenant?.tenantId && !!branch?.branchId,
+    enabled:  (isManager || isCommandsOnly) && hasComandasMode && !!tenant?.tenantId && !!branch?.branchId,
     refetchInterval: 15_000,
   })
 
@@ -363,6 +365,100 @@ export default function POSPage() {
       supabase.removeChannel(channel)
     }
   }, [tenant?.tenantId, queryClient])
+
+  // Imprimir la CUENTA de una mesa (pre-cuenta) para llevarla al cliente
+  // antes de cobrar. No toca la venta ni el estado de la mesa.
+  const handlePrintTableBill = useCallback(() => {
+    if (!activeTab?.tableId || items.length === 0) return
+    const fmt = (n: number) =>
+      new Intl.NumberFormat('es-CO', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n)
+
+    const itemRows = items.map(it => `
+      <tr>
+        <td style="padding:3px 0;vertical-align:top">
+          <div>${it.name}</div>
+          <div style="color:#555;font-size:10px">${it.quantity} und × ${fmt(it.price)}</div>
+        </td>
+        <td style="padding:3px 0;text-align:right;vertical-align:top;white-space:nowrap">${fmt(it.total)}</td>
+      </tr>`).join('')
+
+    const now = new Date()
+    const dateStr = now.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    const timeStr = now.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
+
+    const html = `<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>Cuenta ${activeTab.label}</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Courier New',Courier,monospace; font-size:11px; width:302px; padding:8px 6px; color:#000; background:#fff; }
+  .center { text-align:center; } .bold { font-weight:bold; }
+  .sep-solid { border:none; border-top:1px solid #000; margin:5px 0; }
+  .sep-dot   { border:none; border-top:1px dashed #555; margin:4px 0; }
+  table { width:100%; border-collapse:collapse; } td { font-size:11px; }
+  .row-total td { font-weight:bold; font-size:12px; border-top:1px solid #000; padding-top:4px; }
+  @media print { @page { margin:4mm; } body { width:302px; } }
+</style>
+</head><body>
+  <div class="center bold" style="font-size:14px">CUENTA</div>
+  <div class="center" style="font-size:10px">Mesa ${activeTab.label}</div>
+  <hr class="sep-solid">
+  ${activeTab.waiterName ? `<div>Atendió: ${activeTab.waiterName}</div>` : ''}
+  <div>Fecha: ${dateStr} ${timeStr}</div>
+  <hr class="sep-solid">
+  <table>
+    <thead><tr>
+      <th style="text-align:left;font-size:10px;padding-bottom:3px">DESCRIPCIÓN</th>
+      <th style="text-align:right;font-size:10px;padding-bottom:3px">TOTAL</th>
+    </tr></thead>
+    <tbody>${itemRows}</tbody>
+  </table>
+  <hr class="sep-dot">
+  <table>
+    <tr class="row-total"><td>TOTAL A PAGAR</td><td style="text-align:right">${fmt(getTotal())}</td></tr>
+  </table>
+  <hr class="sep-dot" style="margin-top:8px">
+  <div class="center" style="margin-top:8px;font-size:10px">Documento informativo — pendiente de pago</div>
+</body></html>`
+
+    const iframe = document.createElement('iframe')
+    iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none;'
+    document.body.appendChild(iframe)
+    const doc = iframe.contentDocument ?? iframe.contentWindow?.document
+    if (!doc) { document.body.removeChild(iframe); return }
+    doc.open(); doc.write(html); doc.close()
+    setTimeout(() => {
+      iframe.contentWindow?.focus()
+      iframe.contentWindow?.print()
+      setTimeout(() => document.body.removeChild(iframe), 1000)
+    }, 300)
+  }, [activeTab, items, currency, getTotal])
+
+  // Cargar una comanda PENDING (creada en otra caja) como cuenta normal del POS.
+  // Queda en el carrito de la derecha para revisarla y cobrarla con el botón
+  // "Cobrar"; al cobrar se COMPLETA esa venta, no se crea una nueva.
+  const handleLoadPendingSale = useCallback((sale: SaleHistoryRow) => {
+    const posItems = (sale.sale_items ?? []).map(it => ({
+      productId:      (it as any).product_id ?? '',
+      sku:            (it as any).sku ?? '',
+      name:           it.name,
+      price:          Number(it.unit_price),
+      quantity:       Number(it.quantity),
+      stock:          9999,
+      discount:       0,
+      discountAmount: Number(it.discount_amount ?? 0),
+      tax:            Number(it.tax ?? 0),
+      taxAmount:      Number(it.tax_amount ?? 0),
+    }))
+    loadPendingSale({
+      saleId: sale.id,
+      label:  `#${sale.order_number}`,
+      waiterName: sale.created_by_profile?.full_name ?? undefined,
+      items:  posItems,
+    })
+    toast.success(`Comanda #${sale.order_number} cargada`)
+  }, [loadPendingSale])
 
   // Cargar cuenta de mesa en el POS — consolida TODAS las comandas activas de la mesa
   const handleLoadTableOrders = useCallback((orders: RestaurantOrderRow[]) => {
@@ -433,6 +529,12 @@ export default function POSPage() {
   // Enviar comanda (modo COMMANDS_ONLY) — crea venta PENDING e imprime ticket
   const handleSendComanda = async () => {
     if (items.length === 0) return
+    // La comanda ya existe en la BD (se abrió desde la lista de pendientes):
+    // no crear otra venta — solo cerrar la pestaña.
+    if (activeTab?.pendingSaleId) {
+      toast.info('Esta comanda ya fue enviada. La caja principal la cobra.')
+      return
+    }
     try {
       const sale = await createSaleCmd({
         items: items.map(it => ({
@@ -830,10 +932,12 @@ export default function POSPage() {
           })}
 
           {/* Tabs: comandas pendientes de otras cajas */}
-          {isManager && hasComandasMode && pendingSales.map(s => (
+          {pendingSales
+            .filter(s => !tabs.some(t => t.pendingSaleId === s.id))
+            .map(s => (
             <button
               key={s.id}
-              onClick={() => setSelectedComanda(s)}
+              onClick={() => handleLoadPendingSale(s)}
               className="group flex items-center gap-2 shrink-0 border-b-2 border-transparent px-3 py-2.5 text-sm font-medium text-grafito-500 hover:text-grafito-900 dark:hover:text-white hover:border-amber-400 transition-colors whitespace-nowrap"
             >
               <ClipboardList className="h-3.5 w-3.5 text-amber-500 shrink-0" />
@@ -1115,6 +1219,17 @@ export default function POSPage() {
               >
                 <X className="h-3.5 w-3.5" />
                 Cerrar pestaña de mesa
+              </button>
+            )}
+
+            {/* Imprimir cuenta de la mesa (pre-cuenta, sin cobrar) */}
+            {activeTab?.tableId && items.length > 0 && (
+              <button
+                onClick={handlePrintTableBill}
+                className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-grafito-200 dark:border-white/10 py-2 text-xs font-semibold text-grafito-700 dark:text-grafito-200 hover:bg-grafito-100 dark:hover:bg-white/5 transition-colors"
+              >
+                <Printer className="h-3.5 w-3.5" />
+                Imprimir cuenta (sin cobrar)
               </button>
             )}
 

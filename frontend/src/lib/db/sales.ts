@@ -76,8 +76,13 @@ export interface CreateSalePayload {
   currency: string
   status?: 'COMPLETED' | 'PENDING'     // default COMPLETED
   cash_register_id?: string            // vincula la venta a la caja activa
-  /** Número de orden fijo (lo usa la cola offline para reintentos idempotentes) */
+  /** Número de orden fijo. Normalmente NO se envía: el servidor asigna el
+   *  consecutivo del tenant (migración 062). Solo para casos especiales. */
   order_number?: string
+  /** Identificador local de la venta encolada offline. Único por tenant:
+   *  si un reintento llega dos veces, el segundo falla con 23505 y el POS
+   *  lo trata como "ya sincronizada" (migración 062). */
+  client_ref?: string
   /**
    * Si es TRUE, la función no lanza excepción cuando el stock queda negativo.
    * Usar en checkout de mesas de restaurante: la comida ya fue preparada.
@@ -91,10 +96,10 @@ export async function createSale(
   userId: string,
   payload: CreateSalePayload,
 ) {
-  // Número de orden: fijo si viene de la cola offline (reintento idempotente),
-  // generado si es una venta normal.
-  const ts = Date.now().toString(36).toUpperCase()
-  const orderNumber = payload.order_number ?? `ORD-${ts}`
+  // El número de orden lo asigna el SERVIDOR: consecutivo por tenant
+  // (1, 2, 3…) — ver database/migrations/062_sequential_order_numbers.sql.
+  // Solo se envía si el llamador fijó uno explícitamente.
+  const orderNumber = payload.order_number ?? null
   const saleStatus = payload.status ?? 'COMPLETED'
 
   // Venta atómica vía RPC: venta + ítems + pagos + descuento de stock en
@@ -107,6 +112,7 @@ export async function createSale(
       tenant_id:        tenantId,
       branch_id:        branchId,
       order_number:     orderNumber,
+      client_ref:       payload.client_ref ?? null,
       customer_id:      payload.customer_id ?? null,
       subtotal:         payload.subtotal,
       tax_total:        payload.tax_total,

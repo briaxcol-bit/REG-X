@@ -229,7 +229,11 @@ export function CompleteComandaModal({ open, onClose, sale, currency }: Complete
                 <div className="p-5 space-y-5">
                   {/* Items */}
                   <div className="rounded-xl bg-grafito-50 dark:bg-white/5 divide-y divide-grafito-100 dark:divide-white/5 overflow-hidden">
-                    {(sale.sale_items ?? []).map((it, i) => (
+                    {(sale.sale_items ?? []).length === 0 ? (
+                      <p className="px-4 py-3 text-xs text-grafito-500">
+                        No se pudo cargar el detalle de productos de esta comanda.
+                      </p>
+                    ) : (sale.sale_items ?? []).map((it, i) => (
                       <div key={i} className="flex justify-between items-center px-4 py-2.5">
                         <div>
                           <p className="text-sm font-semibold text-grafito-900 dark:text-white">{it.name}</p>

@@ -1,12 +1,131 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Lock, Loader2, TrendingUp, DollarSign, AlertTriangle, CheckCircle, Clock, X, StopCircle, ClipboardList, ChevronDown } from 'lucide-react'
+import { Lock, Loader2, TrendingUp, DollarSign, AlertTriangle, CheckCircle, Clock, X, StopCircle, ClipboardList, ChevronDown, Printer } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { useCashSession, type ActiveCashRegister } from '@modules/pos/hooks/useCashSession'
 import { getSalesHistory, getCashExpensesForRegister } from '@lib/db'
+import { buildEscPosCashReport } from '@lib/escpos'
+import { printEscPosDirect } from '@lib/print'
 import { formatCurrency } from '@shared/utils/format'
 import { useAuthStore } from '@store/auth.store'
 import { cn } from '@shared/utils/cn'
+
+const METHOD_LABELS: Record<string, string> = {
+  CASH: 'Efectivo', CARD: 'Tarjeta', TRANSFER: 'Transferencia',
+  QR: 'QR / App', GIFT_CARD: 'Gift Card', CREDIT: 'Fiado', MIXED: 'Mixto',
+}
+
+interface CashReportPrintData {
+  businessName: string
+  branchName?: string
+  registerName: string
+  cashierName?: string
+  openedAt: string
+  closedAt: string
+  duration?: string
+  openingCash: number
+  cashSales: number
+  cashExpenses?: number
+  expectedCash: number
+  countedCash: number
+  difference: number
+  byMethod?: [string, number][]
+  salesCount?: number
+  salesTotal?: number
+  notes?: string
+  isCommandsOnly?: boolean
+  currency: string
+}
+
+/**
+ * Fallback de impresión cuando NO hay impresora térmica conectada:
+ * renderiza el reporte en un iframe oculto y lanza el diálogo del navegador.
+ * (Llamar window.print() a secas imprimiría la página del POS: hoja en blanco.)
+ */
+function printReportViaBrowser(d: CashReportPrintData) {
+  const fmt = (n: number) =>
+    new Intl.NumberFormat('es-CO', { style: 'currency', currency: d.currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n)
+
+  const rowHtml = (label: string, value: string, bold = false) => `
+    <tr${bold ? ' class="bold"' : ''}>
+      <td style="padding:2px 0">${label}</td>
+      <td style="padding:2px 0;text-align:right;white-space:nowrap">${value}</td>
+    </tr>`
+
+  const methodsHtml = (d.byMethod ?? []).map(([m, amt]) => rowHtml(`&nbsp;&nbsp;${m}`, fmt(amt))).join('')
+
+  const diffLabel = d.difference === 0 ? 'CUADRADO' : d.difference > 0 ? 'SOBRANTE' : 'FALTANTE'
+
+  const cashHtml = d.isCommandsOnly ? '' : `
+    <hr class="sep-solid">
+    <div class="bold">ARQUEO DE EFECTIVO</div>
+    <table>
+      ${rowHtml('&nbsp;&nbsp;Base inicial', fmt(d.openingCash))}
+      ${rowHtml('&nbsp;&nbsp;+ Ventas efectivo', fmt(d.cashSales))}
+      ${d.cashExpenses && d.cashExpenses > 0 ? rowHtml('&nbsp;&nbsp;- Gastos efectivo', fmt(d.cashExpenses)) : ''}
+    </table>
+    <hr class="sep-dot">
+    <table>
+      ${rowHtml('EFECTIVO ESPERADO', fmt(d.expectedCash), true)}
+      ${rowHtml('EFECTIVO CONTADO', fmt(d.countedCash))}
+    </table>
+    <hr class="sep-dot">
+    <table>${rowHtml(diffLabel, fmt(Math.abs(d.difference)), true)}</table>`
+
+  const html = `<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>Cierre de caja ${d.registerName}</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Courier New',Courier,monospace; font-size:11px; width:302px; padding:8px 6px; color:#000; background:#fff; }
+  .center { text-align:center; } .bold { font-weight:bold; }
+  .sep-solid { border:none; border-top:1px solid #000; margin:5px 0; }
+  .sep-dot   { border:none; border-top:1px dashed #555; margin:4px 0; }
+  table { width:100%; border-collapse:collapse; } td { font-size:11px; }
+  .sign { margin-top:22px; }
+  @media print { @page { margin:4mm; } body { width:302px; } }
+</style>
+</head><body>
+  <div class="center bold" style="font-size:14px">${d.businessName.toUpperCase()}</div>
+  ${d.branchName ? `<div class="center" style="font-size:10px">${d.branchName}</div>` : ''}
+  <div class="center bold" style="margin-top:3px">${d.isCommandsOnly ? '* CIERRE DE TURNO *' : '* CIERRE DE CAJA *'}</div>
+  <hr class="sep-solid">
+  <div>Caja: ${d.registerName}</div>
+  ${d.cashierName ? `<div>Cajero: ${d.cashierName}</div>` : ''}
+  <div>Apertura: ${d.openedAt}</div>
+  <div>Cierre: ${d.closedAt}</div>
+  ${d.duration ? `<div>Duración: ${d.duration}</div>` : ''}
+  <hr class="sep-solid">
+  <div class="bold">VENTAS DEL TURNO</div>
+  <table>
+    ${d.salesCount !== undefined ? rowHtml('&nbsp;&nbsp;Transacciones', String(d.salesCount)) : ''}
+    ${methodsHtml}
+  </table>
+  ${d.salesTotal !== undefined ? `<hr class="sep-dot"><table>${rowHtml('TOTAL VENDIDO', fmt(d.salesTotal), true)}</table>` : ''}
+  ${cashHtml}
+  ${d.notes ? `<hr class="sep-solid"><div class="bold">OBSERVACIONES:</div><div>${d.notes}</div>` : ''}
+  <div class="sign">_______________________</div>
+  <div>Firma cajero</div>
+  <div class="sign">_______________________</div>
+  <div>Firma responsable</div>
+  <hr class="sep-dot" style="margin-top:10px">
+  <div class="center" style="font-size:10px">Documento interno de control</div>
+</body></html>`
+
+  const iframe = document.createElement('iframe')
+  iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none;'
+  document.body.appendChild(iframe)
+  const doc = iframe.contentDocument ?? iframe.contentWindow?.document
+  if (!doc) { document.body.removeChild(iframe); return }
+  doc.open(); doc.write(html); doc.close()
+  setTimeout(() => {
+    iframe.contentWindow?.focus()
+    iframe.contentWindow?.print()
+    setTimeout(() => document.body.removeChild(iframe), 1000)
+  }, 300)
+}
 
 interface CloseCashModalProps {
   open:            boolean
@@ -93,6 +212,84 @@ export function CloseCashModal({ open, onClose, register, isCommandsOnly = false
   })
 
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [printing, setPrinting]     = useState(false)
+
+  /**
+   * Imprime el reporte de cierre por el MISMO camino que la factura:
+   * USB directo → bridge de red → si no hay impresora, diálogo del navegador.
+   */
+  const handlePrintReport = async () => {
+    setPrinting(true)
+    try {
+      // Ventas del turno agrupadas por método de pago
+      const methodTotals: Record<string, number> = {}
+      let salesTotal = 0
+      const completed = shiftSales.filter(s => s.status === 'COMPLETED')
+      for (const s of completed) {
+        salesTotal += Number(s.total)
+        for (const p of s.sale_payments ?? []) {
+          methodTotals[p.method] = (methodTotals[p.method] ?? 0) + Number(p.amount)
+        }
+      }
+      const byMethod: [string, number][] = Object.entries(methodTotals)
+        .map(([m, amt]) => [METHOD_LABELS[m] ?? m, amt] as [string, number])
+        .sort((a, b) => b[1] - a[1])
+
+      const bytes = buildEscPosCashReport({
+        businessName:   tenant?.tenantName ?? 'Mi Negocio',
+        branchName:     branch?.branchName ?? '',
+        registerName:   register.name,
+        cashierName:    register.opened_by_name,
+        openedAt:       openedAt.toLocaleString('es-CO'),
+        closedAt:       new Date().toLocaleString('es-CO'),
+        duration,
+        openingCash:    register.opening_cash,
+        cashSales:      register.cash_sales,
+        cashExpenses:   cashExpensesTotal,
+        expectedCash,
+        countedCash,
+        difference,
+        byMethod,
+        salesCount:     completed.length,
+        salesTotal,
+        notes:          notes.trim() || undefined,
+        isCommandsOnly,
+      })
+
+      const printed = await printEscPosDirect(bytes)
+      if (printed.ok) {
+        toast.success('Reporte enviado a la impresora')
+      } else {
+        // Sin impresora directa: imprimir el reporte en un iframe propio.
+        // (window.print() imprimiría la página del POS y saldría en blanco.)
+        printReportViaBrowser({
+          businessName:  tenant?.tenantName ?? 'Mi Negocio',
+          branchName:    branch?.branchName ?? '',
+          registerName:  register.name,
+          cashierName:   register.opened_by_name,
+          openedAt:      openedAt.toLocaleString('es-CO'),
+          closedAt:      new Date().toLocaleString('es-CO'),
+          duration,
+          openingCash:   register.opening_cash,
+          cashSales:     register.cash_sales,
+          cashExpenses:  cashExpensesTotal,
+          expectedCash,
+          countedCash,
+          difference,
+          byMethod,
+          salesCount:    completed.length,
+          salesTotal,
+          notes:         notes.trim() || undefined,
+          isCommandsOnly,
+          currency,
+        })
+      }
+    } catch {
+      toast.error('No se pudo imprimir el reporte')
+    } finally {
+      setPrinting(false)
+    }
+  }
 
   return (
     <AnimatePresence>
@@ -307,6 +504,14 @@ export function CloseCashModal({ open, onClose, register, isCommandsOnly = false
                     {(closeMutation.error as Error)?.message ?? 'Error al cerrar la caja'}
                   </p>
                 )}
+
+                {/* Imprimir el reporte antes de cerrar (misma impresora que la factura) */}
+                <button type="button" onClick={handlePrintReport} disabled={printing}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-grafito-200 dark:border-white/10 py-2.5 text-sm font-semibold text-grafito-700 dark:text-grafito-200 hover:bg-grafito-100 dark:hover:bg-white/5 transition-colors disabled:opacity-60">
+                  {printing
+                    ? <><Loader2 className="h-4 w-4 animate-spin" /> Imprimiendo…</>
+                    : <><Printer className="h-4 w-4" /> Imprimir reporte de cierre</>}
+                </button>
 
                 <div className="flex gap-3">
                   <button type="button" onClick={onClose}

@@ -59,6 +59,9 @@ export interface CartTab {
   customerId?: string
   tableId?: string
   restaurantOrderId?: string   // ID de la orden de restaurante vinculada
+  /** ID de la venta PENDING (comanda de otra caja) que esta pestaña va a cobrar.
+   *  Si está presente, al cobrar se COMPLETA esa venta en vez de crear una nueva. */
+  pendingSaleId?: string
   waiterName?: string          // Mesero principal de la mesa
   tip: number                  // Propina (no impositiva)
   notes: string
@@ -104,8 +107,9 @@ export interface PendingSale {
   tenantId:   string
   branchId:   string
   userId:     string
-  /** payload completo de createSale, con order_number FIJO (idempotencia) */
-  payload:    Record<string, unknown> & { order_number: string }
+  /** payload completo de createSale, con client_ref FIJO (idempotencia).
+   *  El número de orden lo asigna el servidor al sincronizar (migración 062). */
+  payload:    Record<string, unknown> & { client_ref: string }
   createdAt:  string
   status:     'PENDING' | 'REVIEW'
   error?:     string
@@ -150,6 +154,13 @@ interface POSActions {
     label:              string
     waiterName?:        string
     items:              Omit<CartItem, 'id' | 'total' | 'taxAmount' | 'discountAmount'>[]
+  }) => void
+  /** Carga una comanda PENDING (creada en otra caja) como cuenta del POS */
+  loadPendingSale: (params: {
+    saleId:      string
+    label:       string
+    waiterName?: string
+    items:       Omit<CartItem, 'id' | 'total' | 'taxAmount' | 'discountAmount'>[]
   }) => void
 
   // Cola de ventas offline
@@ -291,6 +302,37 @@ export const usePOSStore = create<POSState & POSActions>()(
         setTable:    (tableId)    => mutateActive(tab => { tab.tableId = tableId }),
         setNotes:    (notes)      => mutateActive(tab => { tab.notes = notes }),
         setTip:      (amount)     => mutateActive(tab => { tab.tip = Math.max(0, amount) }),
+
+        loadPendingSale: ({ saleId, label, waiterName, items }) => set(state => {
+          const build = () => items.map(it => {
+            const calc = calcItemTotal(it)
+            return { ...it, id: nanoid(), ...calc }
+          })
+          // Si ya hay una pestaña para esta comanda, actualizarla y activarla
+          const existing = state.tabs.find(t => t.pendingSaleId === saleId)
+          if (existing) {
+            existing.label      = label
+            existing.waiterName = waiterName
+            existing.items      = build()
+            state.activeTabId   = existing.id
+            return
+          }
+          const tab: CartTab = {
+            id:            nanoid(6),
+            label,
+            items:         build(),
+            discounts:     [],
+            payments:      [],
+            customerId:    undefined,
+            tableId:       undefined,
+            pendingSaleId: saleId,
+            waiterName,
+            tip:           0,
+            notes:         '',
+          }
+          state.tabs.push(tab)
+          state.activeTabId = tab.id
+        }),
 
         loadTableOrder: ({ tableId, restaurantOrderId, label, waiterName, items }) => set(state => {
           // Reusar tab existente si ya está abierta para esa mesa

@@ -1,15 +1,156 @@
-import { useState, useRef, useEffect } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { updateTenant, uploadTenantLogo, type PlatformTenantRow, type UpdateTenantInput } from '@lib/db'
+import { useState, useRef, useEffect, useMemo } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
+import {
+  updateTenant, uploadTenantLogo,
+  getMarketplaceModules, getMyModuleSlugs, setTenantModule, resetTenantModules,
+  type PlatformTenantRow, type UpdateTenantInput, type MarketplaceModuleRow,
+} from '@lib/db'
 import {
   X, Loader2, Building2, CheckCircle, AlertCircle,
-  UploadCloud, Palette, Image as ImageIcon, Trash2,
+  UploadCloud, Palette, Image as ImageIcon, Trash2, Grid, RotateCcw, Lock,
 } from 'lucide-react'
 import { cn } from '@shared/utils/cn'
 
 interface EditTenantModalProps {
   tenant: PlatformTenantRow | null
   onClose: () => void
+}
+
+const MODULE_CATEGORY_LABELS: Record<string, string> = {
+  core:       'Núcleo (siempre activo)',
+  restaurant: 'Restaurante y F&B',
+  retail:     'Retail',
+  pharmacy:   'Farmacia',
+  hardware:   'Ferretería y Servicios Técnicos',
+  services:   'Servicios',
+  finance:    'Finanzas',
+  hr:         'Talento Humano',
+  advanced:   'Avanzado',
+}
+const MODULE_CATEGORY_ORDER = ['core','restaurant','retail','pharmacy','hardware','services','finance','hr','advanced']
+const PLAN_RANK: Record<string, number> = { FREE: 0, BASIC: 1, PROFESSIONAL: 2, ENTERPRISE: 3 }
+
+/** Sección de módulos del tenant — mismos RPC que usa el Marketplace del cliente. */
+function TenantModulesSection({ tenantId, tenantPlan }: { tenantId: string; tenantPlan: string }) {
+  const qc = useQueryClient()
+
+  const { data: catalog = [], isLoading: loadingCatalog } = useQuery({
+    queryKey: ['marketplace-modules'],
+    queryFn: getMarketplaceModules,
+  })
+  const { data: enabledSlugs = [], isLoading: loadingSlugs } = useQuery({
+    queryKey: ['my-module-slugs', tenantId],
+    queryFn: () => getMyModuleSlugs(tenantId),
+    enabled: !!tenantId,
+  })
+  const enabled = useMemo(() => new Set(enabledSlugs), [enabledSlugs])
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['my-module-slugs', tenantId] })
+
+  const toggle = useMutation({
+    mutationFn: ({ slug, on }: { slug: string; on: boolean }) => setTenantModule(tenantId, slug, on),
+    onSuccess: (_d, v) => { invalidate(); toast.success(v.on ? 'Módulo activado' : 'Módulo desactivado') },
+    onError: (e: any) => toast.error(e?.message ?? 'No se pudo cambiar el módulo'),
+  })
+
+  const reset = useMutation({
+    mutationFn: () => resetTenantModules(tenantId),
+    onSuccess: () => { invalidate(); toast.success('Módulos restablecidos según el tipo de negocio') },
+    onError: (e: any) => toast.error(e?.message ?? 'No se pudo restablecer'),
+  })
+
+  const byCategory = useMemo(() => {
+    const map = new Map<string, MarketplaceModuleRow[]>()
+    for (const m of catalog) {
+      const arr = map.get(m.category) ?? []
+      arr.push(m)
+      map.set(m.category, arr)
+    }
+    return map
+  }, [catalog])
+
+  if (loadingCatalog || loadingSlugs) {
+    return (
+      <div className="flex items-center gap-2 py-6 text-sm text-grafito-500">
+        <Loader2 className="h-4 w-4 animate-spin" /> Cargando módulos…
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-grafito-500">
+          Los cambios se guardan al instante (no dependen del botón Guardar).
+        </p>
+        <button
+          type="button"
+          onClick={() => reset.mutate()}
+          disabled={reset.isPending}
+          className="flex items-center gap-1.5 rounded-lg border border-grafito-200 dark:border-white/10 px-3 py-1.5 text-xs font-semibold text-grafito-600 dark:text-grafito-300 hover:bg-grafito-100 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
+        >
+          {reset.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+          Restablecer por tipo
+        </button>
+      </div>
+
+      {MODULE_CATEGORY_ORDER.filter(cat => byCategory.has(cat)).map(cat => (
+        <div key={cat} className="space-y-2">
+          <p className="text-xs font-bold uppercase tracking-wider text-grafito-500">
+            {MODULE_CATEGORY_LABELS[cat] ?? cat}
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {(byCategory.get(cat) ?? []).map(m => {
+              const isCore     = m.category === 'core'
+              const on         = isCore || enabled.has(m.slug)
+              const planLocked = PLAN_RANK[m.min_plan] > (PLAN_RANK[tenantPlan] ?? 0)
+              const disabled   = isCore || toggle.isPending
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => toggle.mutate({ slug: m.slug, on: !on })}
+                  title={isCore ? 'Módulo del núcleo: no se puede desactivar' : undefined}
+                  className={cn(
+                    'flex items-start justify-between gap-3 rounded-xl border p-3 text-left transition-colors',
+                    on
+                      ? 'border-brand-500/40 bg-brand-50 dark:bg-brand-500/10'
+                      : 'border-grafito-200 dark:border-white/10 bg-white dark:bg-white/[0.02] hover:border-grafito-300 dark:hover:border-white/20',
+                    disabled && 'cursor-not-allowed opacity-70',
+                  )}
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <p className="truncate text-sm font-semibold text-grafito-900 dark:text-white">{m.name}</p>
+                      {isCore && <Lock className="h-3 w-3 shrink-0 text-grafito-400" />}
+                    </div>
+                    {m.description && (
+                      <p className="mt-0.5 line-clamp-2 text-xs text-grafito-500">{m.description}</p>
+                    )}
+                    {planLocked && (
+                      <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                        Requiere plan {m.min_plan}
+                      </p>
+                    )}
+                  </div>
+                  <span
+                    className={cn(
+                      'mt-0.5 flex h-5 w-9 shrink-0 items-center rounded-full px-0.5 transition-colors',
+                      on ? 'bg-brand-500' : 'bg-grafito-300 dark:bg-white/15',
+                    )}
+                  >
+                    <span className={cn('h-4 w-4 rounded-full bg-white transition-transform', on && 'translate-x-4')} />
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 const BUSINESS_TYPES = [
@@ -368,6 +509,11 @@ export function EditTenantModal({ tenant, onClose }: EditTenantModalProps) {
               </Section>
             </div>
           </div>
+
+          {/* Módulos activos del tenant */}
+          <Section title="Módulos activos" icon={<Grid className="h-3.5 w-3.5" />}>
+            <TenantModulesSection tenantId={tenant.id} tenantPlan={tenant.plan} />
+          </Section>
 
           {mutation.isError && (
             <div className="flex items-start gap-2 rounded-xl bg-red-500/10 border border-red-500/20 p-3 text-sm text-red-500">

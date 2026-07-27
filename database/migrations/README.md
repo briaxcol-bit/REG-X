@@ -41,6 +41,7 @@ el proyecto "SGIO"). Todas se corren en el SQL Editor, en orden numérico.
 | 059 ★ | `059_role_policies_initplan.sql` | RLS de roles → InitPlan (`get_user_role_tenant_ids`). Requiere 058 |
 | 060 ★ | `060_realtime_orders_and_report_rpc.sql` | Realtime para `orders`/`order_items` + RPC `get_sales_report_stats` |
 | 061 | `061_validate_sale_totals.sql` | `create_sale_transaction` v5: el servidor valida totales, cantidades y pagos |
+| 062 | `062_sequential_order_numbers.sql` | v6: número de orden consecutivo por tenant (1, 2, 3…) + `client_ref` para idempotencia offline. Requiere 061 |
 
 Tras aplicar migraciones que crean/cambian RPCs, regenerar los tipos del
 frontend:

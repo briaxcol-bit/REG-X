@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Banknote, CreditCard, Smartphone, CheckCircle2, Printer, ChevronRight, RotateCcw, CircleDollarSign, Gift } from 'lucide-react'
 import { toast } from 'sonner'
@@ -9,7 +10,7 @@ import { cn } from '@shared/utils/cn'
 import { useCreateSale } from '@modules/pos/hooks/useCreateSale'
 import { useCashSession } from '@modules/pos/hooks/useCashSession'
 import { ReceiptTemplate, type ReceiptData } from './ReceiptTemplate'
-import { closeAllRestaurantOrdersForTable, getCustomerById, createTip, type CustomerRow } from '@lib/db'
+import { closeAllRestaurantOrdersForTable, getCustomerById, createTip, completeSale, type CustomerRow } from '@lib/db'
 import { openCashDrawer, linkCashDrawer, cashDrawerLinked, cashDrawerSupported, getCashDrawerBridgeUrl } from '@lib/cash-drawer'
 import { buildEscPosReceipt, bytesToBase64 } from '@lib/escpos'
 import { isUsbPrinterSupported, usbPrinterLinked, linkUsbPrinter, printUsbRaw, openDrawerUsb, usbAccessDenied, lastUsbError } from '@lib/usb-printer'
@@ -112,13 +113,16 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
   const [customerData, setCustomerData] = useState<CustomerRow | null>(null)
   const [printMsg, setPrintMsg]         = useState('')  // estado visible de la última impresión
 
-  const { tabs, activeTabId, clearCart, lastReceipt, setLastReceipt } = usePOSStore()
+  const qc = useQueryClient()
+  const { tabs, activeTabId, clearCart, removeTab, lastReceipt, setLastReceipt } = usePOSStore()
   const activeTab  = tabs.find(t => t.id === activeTabId) ?? tabs[0]
   const items      = activeTab?.items      ?? []
   const discounts  = activeTab?.discounts  ?? []
   const payments   = activeTab?.payments   ?? []
   const customerId  = activeTab?.customerId
   const waiterName  = activeTab?.waiterName
+  /** Comanda PENDING que esta cuenta va a cobrar (viene de otra caja) */
+  const pendingSaleId = activeTab?.pendingSaleId
   const notes       = activeTab?.notes      ?? ''
   const { tenant, branch, profile } = useAuthStore()
   const { mutateAsync: createSale, isPending } = useCreateSale()
@@ -168,7 +172,27 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
       // El total de la venta (sin propina) — la propina se anota en notas
       const saleTotal    = total - tip
 
-      const createdSale = await createSale({
+      // Si esta cuenta viene de una comanda PENDING creada en otra caja,
+      // se COMPLETA esa venta (no se crea una nueva ni se descuenta stock
+      // dos veces). El stock ya se descontó cuando se envió la comanda.
+      if (pendingSaleId) {
+        const paymentsPayload = method === 'MIXED'
+          ? [
+              { method: 'CASH',     amount: mixedCash },
+              { method: 'TRANSFER', amount: mixedTransfer },
+            ]
+          : [{
+              method:    method === 'NEQUI' || method === 'DAVIPLATA' ? 'QR' : method,
+              amount:    paidAmount,
+              reference: method === 'GIFT_CARD' ? giftCardCode.trim().toUpperCase() : undefined,
+            }]
+        await completeSale(pendingSaleId, profile?.id ?? '', paymentsPayload)
+        qc.invalidateQueries({ queryKey: ['pending-sales'], refetchType: 'all' })
+        qc.invalidateQueries({ queryKey: ['sales-history'], refetchType: 'all' })
+        qc.invalidateQueries({ queryKey: ['shift-sales'],   refetchType: 'all' })
+      }
+
+      const createdSale = pendingSaleId ? null : await createSale({
         items: items.map(it => ({
           product_id:      it.productId,
           name:            it.name,
@@ -253,7 +277,12 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
         businessName:   tenant?.tenantName ?? 'Mi Negocio',
         branchName:     branch?.branchName ?? '',
         nit:            '000.000.000-0',
-        orderNumber:    `ORD-${Date.now().toString(36).toUpperCase()}`,
+        // Si se cobró una comanda existente, conservar SU número de orden
+        // (la etiqueta de la pestaña es "#ORD-XXXX") para que el recibo
+        // coincida con el tiquete que ya tiene el cliente.
+        orderNumber:    pendingSaleId
+          ? (activeTab?.label ?? '').replace(/^#/, '')
+          : ((createdSale as any)?.order_number ?? `ORD-${Date.now().toString(36).toUpperCase()}`),
         cashierName:    profile?.fullName ?? 'Cajero',
         waiterName:     waiterName,
         date:           new Date(),
@@ -468,7 +497,13 @@ export function CheckoutModal({ open, onClose, total, tip = 0, currency, tableId
   }
 
   const handleNewSale = () => {
-    clearCart()
+    // Si la cuenta era una comanda de otra caja, su pestaña ya no tiene
+    // razón de existir una vez cobrada.
+    if (pendingSaleId && activeTab && activeTab.id !== 'main') {
+      removeTab(activeTab.id)
+    } else {
+      clearCart()
+    }
     setSuccess(false)
     setCashInput('')
     setMixedCashInput('')
