@@ -27,6 +27,7 @@ const PlatformPlans     = lazy(() => import('@modules/platform/pages/PlatformPla
 const PlatformModules   = lazy(() => import('@modules/platform/pages/PlatformModulesPage'))
 const PlatformModuleMap = lazy(() => import('@modules/platform/pages/PlatformModuleMapPage'))
 const PlatformPayments  = lazy(() => import('@modules/platform/pages/PlatformPaymentsPage'))
+const PlatformCatalogs  = lazy(() => import('@modules/platform/pages/PlatformCatalogsPage'))
 
 const POSPage          = lazy(() => import('@modules/pos/pages/POSPage'))
 
@@ -227,6 +228,7 @@ export const router = createBrowserRouter([
           { path: 'modules',  element: <Page><PlatformModules /></Page> },
           { path: 'module-map', element: <Page><PlatformModuleMap /></Page> },
           { path: 'payments',   element: <Page><PlatformPayments /></Page> },
+          { path: 'catalogs',   element: <Page><PlatformCatalogs /></Page> },
         ],
       },
 

@@ -99,6 +99,7 @@ const PLATFORM_NAV_ITEMS: NavItem[] = [
   { to: '/admin/payments', icon: Landmark,       label: 'Pasarela',      group: 'Plataforma' },
   { to: '/admin/modules', icon: Puzzle,          label: 'Módulos',       group: 'Plataforma' },
   { to: '/admin/module-map', icon: Network,      label: 'Explorador',    group: 'Plataforma' },
+  { to: '/admin/catalogs', icon: BookOpen,       label: 'Catálogos',     group: 'Plataforma' },
   { to: '/settings',      icon: Settings,        label: 'Ajustes',       group: 'Sistema' },
 ]
 

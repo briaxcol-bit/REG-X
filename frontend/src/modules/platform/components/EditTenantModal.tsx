@@ -4,11 +4,13 @@ import { toast } from 'sonner'
 import {
   updateTenant, uploadTenantLogo,
   getMarketplaceModules, getMyModuleSlugs, setTenantModule, resetTenantModules,
+  getCatalogTemplates, applyCatalogTemplate,
   type PlatformTenantRow, type UpdateTenantInput, type MarketplaceModuleRow,
+  type ApplyCatalogResult,
 } from '@lib/db'
 import {
   X, Loader2, Building2, CheckCircle, AlertCircle,
-  UploadCloud, Palette, Image as ImageIcon, Trash2, Grid, RotateCcw, Lock,
+  UploadCloud, Palette, Image as ImageIcon, Trash2, Grid, RotateCcw, Lock, BookOpen,
 } from 'lucide-react'
 import { cn } from '@shared/utils/cn'
 
@@ -30,6 +32,79 @@ const MODULE_CATEGORY_LABELS: Record<string, string> = {
 }
 const MODULE_CATEGORY_ORDER = ['core','restaurant','retail','pharmacy','hardware','services','finance','hr','advanced']
 const PLAN_RANK: Record<string, number> = { FREE: 0, BASIC: 1, PROFESSIONAL: 2, ENTERPRISE: 3 }
+
+/** Carga de un catálogo maestro al tenant (productos de arranque). */
+function TenantCatalogSection({ tenantId }: { tenantId: string }) {
+  const [templateId, setTemplateId] = useState('')
+  const [result, setResult] = useState<ApplyCatalogResult | null>(null)
+
+  const { data: templates = [], isLoading } = useQuery({
+    queryKey: ['catalog-templates'],
+    queryFn:  getCatalogTemplates,
+  })
+
+  const apply = useMutation({
+    mutationFn: () => applyCatalogTemplate(tenantId, templateId),
+    onSuccess: (r) => {
+      setResult(r)
+      toast.success(`${r.created} producto${r.created === 1 ? '' : 's'} cargado${r.created === 1 ? '' : 's'}`)
+    },
+    onError: (e: any) => toast.error(e?.message ?? 'No se pudo cargar el catálogo'),
+  })
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2 py-4 text-sm text-grafito-500">
+        <Loader2 className="h-4 w-4 animate-spin" /> Cargando catálogos…
+      </div>
+    )
+  }
+
+  if (templates.length === 0) {
+    return (
+      <p className="text-xs text-grafito-500">
+        Aún no hay catálogos maestros. Créalos en Plataforma → Catálogos.
+      </p>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-grafito-500">
+        Carga productos de arranque (nombre, categoría e imagen). No toca los productos
+        que el negocio ya tenga ni los precios: se puede repetir sin duplicar.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <select
+          value={templateId}
+          onChange={e => { setTemplateId(e.target.value); setResult(null) }}
+          className="flex-1 min-w-[200px] rounded-xl border border-grafito-200 dark:border-white/10 bg-white dark:bg-grafito-800 px-3 py-2 text-sm text-grafito-900 dark:text-white outline-none focus:ring-2 focus:ring-brand-500/40"
+        >
+          <option value="">Selecciona un catálogo…</option>
+          {templates.map(t => (
+            <option key={t.id} value={t.id}>{t.name} ({t.item_count ?? 0} productos)</option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={() => apply.mutate()}
+          disabled={!templateId || apply.isPending}
+          className="flex items-center gap-2 rounded-xl bg-brand-500 px-4 py-2 text-sm font-bold text-white hover:bg-brand-600 disabled:opacity-50 transition-colors"
+        >
+          {apply.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <BookOpen className="h-4 w-4" />}
+          Cargar
+        </button>
+      </div>
+      {result && (
+        <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/20 p-3 text-xs text-emerald-600 dark:text-emerald-400">
+          <p><strong>{result.created}</strong> productos creados · <strong>{result.categories_created}</strong> categorías nuevas
+            {result.skipped > 0 && <> · <strong>{result.skipped}</strong> ya existían</>}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
 
 /** Sección de módulos del tenant — mismos RPC que usa el Marketplace del cliente. */
 function TenantModulesSection({ tenantId, tenantPlan }: { tenantId: string; tenantPlan: string }) {
@@ -509,6 +584,11 @@ export function EditTenantModal({ tenant, onClose }: EditTenantModalProps) {
               </Section>
             </div>
           </div>
+
+          {/* Catálogo de productos de arranque */}
+          <Section title="Cargar catálogo de productos" icon={<BookOpen className="h-3.5 w-3.5" />}>
+            <TenantCatalogSection tenantId={tenant.id} />
+          </Section>
 
           {/* Módulos activos del tenant */}
           <Section title="Módulos activos" icon={<Grid className="h-3.5 w-3.5" />}>
